@@ -18,4 +18,5 @@
 # vendor/
 
 # Go workspace file
-go.work
+# NOTE: go.work is intentionally committed — it is the canonical layout of
+# this monorepo's workspace and tools (gopls, agents, CI) rely on it.
