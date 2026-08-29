@@ -28,5 +28,16 @@ RabbitMQ message bus.
 
 ## Status
 
-Scaffold only — structure and workspace set up, no functionality implemented
-yet. See `CONTEXT.md` and `docs/adr/` for decisions and context.
+Scaffold stage — workspace, local infrastructure, and per-service connectivity
+are in place; no business functionality implemented yet. Each Go service loads
+`apps/<service>/.env` (see `docker-compose.yml` for the local infrastructure)
+and verifies its PostgreSQL connection and the RabbitMQ broker at startup.
+
+## Local development
+
+```sh
+docker compose up -d    # 4x Postgres + 1x RabbitMQ
+cd apps/user-service && go run .   # connects to user_db + RabbitMQ, exits 0 on success
+```
+
+See `CONTEXT.md` and `docs/adr/` for decisions and context.
