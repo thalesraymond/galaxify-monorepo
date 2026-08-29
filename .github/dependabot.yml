@@ -1,0 +1,55 @@
+# Dependabot version updates — https://docs.github.com/code-security/dependabot
+#
+# This repo is a Go workspace monorepo: one go.work at the root unites the
+# modules in `pkg/` and `apps/*/` (see docs/adr/0001-go-workspace-monorepo.md).
+#
+# Each Go module is listed explicitly below (rather than relying on go.work
+# auto-discovery) so every update job is scoped to exactly one module
+# directory: PRs only touch that module's go.mod/go.sum, which keeps them in
+# sync with the per-module CI workflows (CI_<module>.yml) and their path
+# filters (e.g. CI_user-service.yml runs on `apps/user-service/**`).
+# When a new module is added to go.work, add its directory here too.
+#
+# The repo root is intentionally NOT listed here: it has no go.mod of its
+# own, and a root-scoped gomod job would update across all workspace modules
+# in a single PR instead of one scoped PR per module.
+version: 2
+updates:
+  # Go modules
+  - package-ecosystem: gomod
+    directories:
+      - /apps/daily-service
+      - /apps/expedition-service
+      - /apps/ship-service
+      - /apps/user-service
+      - /pkg
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: UTC
+    labels:
+      - dependencies
+    open-pull-requests-limit: 5
+    groups:
+      # Minor/patch updates are grouped into a single PR per module; major
+      # updates get their own PR since they may contain breaking changes.
+      go-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # GitHub Actions — keep workflow actions (checkout, setup-go, ...) up to date
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: UTC
+    labels:
+      - dependencies
+    groups:
+      actions:
+        patterns:
+          - '*'
