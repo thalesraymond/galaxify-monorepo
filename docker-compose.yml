@@ -23,6 +23,8 @@ services:
       POSTGRES_PASSWORD: password
     ports:
       - "5431:5432"
+    volumes:
+      - user_db_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d user_db"]
       interval: 10s
@@ -37,6 +39,8 @@ services:
       POSTGRES_PASSWORD: password
     ports:
       - "5432:5432"
+    volumes:
+      - daily_db_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d daily_db"]
       interval: 10s
@@ -51,6 +55,8 @@ services:
       POSTGRES_PASSWORD: password
     ports:
       - "5433:5432"
+    volumes:
+      - ship_db_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d ship_db"]
       interval: 10s
@@ -65,8 +71,16 @@ services:
       POSTGRES_PASSWORD: password
     ports:
       - "5434:5432"
+    volumes:
+      - expedition_db_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d expedition_db"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+volumes:
+  user_db_data:
+  daily_db_data:
+  ship_db_data:
+  expedition_db_data:
