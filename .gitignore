@@ -20,3 +20,7 @@
 # Go workspace file
 # NOTE: go.work is intentionally committed — it is the canonical layout of
 # this monorepo's workspace and tools (gopls, agents, CI) rely on it.
+
+# Go build output — AGENTS.md requires binaries to be written to a
+# per-module bin/ folder (never committed).
+bin/
