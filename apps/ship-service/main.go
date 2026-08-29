@@ -68,7 +68,7 @@ func run(logger *slog.Logger) error {
 
 	srv := &http.Server{
 		Addr:    httpAddr,
-		Handler: newHandler(),
+		Handler: NewHealthHandler(),
 	}
 
 	serveErr := make(chan error, 1)

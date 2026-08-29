@@ -48,4 +48,34 @@ Each service listens on its own HTTP port
 `expedition-service` :8084); overridable via `HTTP_ADDR` in the service's
 `.env`.
 
+## Commands (Makefile)
+
+The root [`Makefile`](Makefile) runs the per-service tooling for **all**
+services at once (user, daily, ship, expedition) from the repo root — no need
+to `cd` into each service. `goose-up`/`goose-down` require the local
+infrastructure to be up (`docker compose up -d`); `sqlc`, `build`, and `vet`
+require `sqlc` and `go` on the `PATH` respectively. Run `make help` to list
+all targets.
+
+| Command           | What it does                                                       |
+| ----------------- | ------------------------------------------------------------------ |
+| `make test`       | `go test ./...` in every service                                   |
+| `make coverage`   | `go test -cover ./...` in every service                            |
+| `make goose-up`   | `goose up` in every service (applies `sql/schema` migrations)      |
+| `make goose-down` | `goose down` in every service (rolls back one migration)           |
+| `make sqlc`       | `sqlc generate` in every service (regenerates `internal/database`) |
+| `make build`      | `go build` every service into `apps/<service>/bin/`                |
+| `make vet`        | `go vet ./...` in every service **and** `pkg/`                     |
+| `make fmt`        | `gofmt -w` on every `.go` file in the repo                         |
+| `make tidy`       | `go mod tidy` in every module (services + `pkg/`)                  |
+| `make help`       | List all targets with descriptions                                 |
+
+Two commands take extra care:
+
+- **`make build`** writes each binary to the module-local `bin/` folder
+  (gitignored) — never to the module root — so nothing compiled ever ends up
+  committed.
+- **`make vet`** also covers `pkg/`, since a change there affects every module
+  that imports it.
+
 See `CONTEXT.md` and `docs/adr/` for decisions and context.
