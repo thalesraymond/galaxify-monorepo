@@ -41,9 +41,26 @@ go test  ./...
 go vet   ./...
 ```
 
-Alternatively, from the repo root, `go build ./...`, `go test ./...`, and
-`go vet ./...` cover the whole workspace in one pass. A change is not done
-until all three pass with no failures.
+(The repo root has no `go.mod`, so `go build ./...` from the root does not
+work; run the three commands per module instead. gopls sees the full module
+map via `go.work`.)
+
+## Build artifacts (never commit binaries)
+
+- **Always** write compiled binaries to the module's local `bin/` folder —
+  **never** to the module root or anywhere else in the tree.
+- **Never commit binaries.** `bin/` is gitignored. A binary that shows up in
+  `git status` outside `bin/` is a mistake: remove it before committing — do
+  not `git add` it, do not `git commit` it.
+
+```sh
+cd apps/<service>          # or any module with a main package
+mkdir -p bin
+go build -o bin/ .         # writes bin/<service>
+```
+
+A change is not done until the build/test/vet checks above pass with no
+failures.
 
 ## Agent skills
 
