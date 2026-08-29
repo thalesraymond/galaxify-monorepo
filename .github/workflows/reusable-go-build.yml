@@ -1,0 +1,47 @@
+# Reusable Go build job — shared by every CI_<module>.yml wrapper.
+#
+# Callers (CI_pkg.yml, CI_user-service.yml, ...) decide whether this module is
+# affected by the push/PR (their own paths AND the paths of every module they
+# depend on) and call this workflow with the module path. Keeping the actual
+# build/vet/test steps here means the Go version and the checks live in one
+# place.
+name: Reusable Go build
+
+on:
+  workflow_call:
+    inputs:
+      module:
+        description: >-
+          Path of the Go module to build, vet, and test, relative to the repo
+          root (e.g. `pkg` or `apps/user-service`).
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: ${{ inputs.module }} — build + vet + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        # Run all go commands inside the module so only that module is
+        # rebuilt. Workspace resolution (go.work) still applies, so imports
+        # of other local modules (e.g. apps -> pkg) resolve to this checkout.
+        working-directory: ${{ inputs.module }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...

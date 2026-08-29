@@ -1,0 +1,57 @@
+# CI for the ship-service module.
+#
+# Dependency-propagation rule: this service imports the shared library
+# `pkg`, so changes to `pkg/**` must trigger a rebuild of this service too
+# (breaking-change guard). Own code changes trigger it as well.
+#
+# If this service ever gains another local dependency (e.g. another app
+# module), add that module's path to the filters below.
+name: CI ship-service
+
+on:
+  pull_request:
+    paths:
+      - 'apps/ship-service/**'
+      - 'pkg/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/ship-service/**'
+      - 'pkg/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-ship-service-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      affected: ${{ steps.filter.outputs.affected }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Base ref: PR base commit for pull requests, the pre-push commit for
+      # pushes to main, and the default branch for manual dispatches.
+      - name: Detect changes vs base
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          base: ${{ github.event.pull_request.base.sha || github.event.before || 'main' }}
+          filters: |
+            affected:
+              - 'apps/ship-service/**'
+              - 'pkg/**'
+
+  build:
+    needs: changes
+    if: needs.changes.outputs.affected == 'true' || github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/reusable-go-build.yml
+    with:
+      module: apps/ship-service

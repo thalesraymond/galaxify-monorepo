@@ -1,0 +1,56 @@
+# CI for the shared library module `pkg` (events, rabbitmq).
+#
+# `pkg` is the foundational library: it has no local dependencies of its own,
+# but every service depends on it. So this workflow runs when `pkg/**`
+# changes, and every service wrapper below ALSO listens to `pkg/**` — that
+# propagation is what forces dependents to rebuild when a shared package
+# changes (breaking-change guard).
+#
+# If `pkg` ever starts depending on another local module, add that module's
+# path to the filters below.
+name: CI pkg
+
+on:
+  pull_request:
+    paths:
+      - 'pkg/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'pkg/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-pkg-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      affected: ${{ steps.filter.outputs.affected }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Base ref: PR base commit for pull requests, the pre-push commit for
+      # pushes to main, and the default branch for manual dispatches.
+      - name: Detect changes vs base
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          base: ${{ github.event.pull_request.base.sha || github.event.before || 'main' }}
+          filters: |
+            affected:
+              - 'pkg/**'
+
+  build:
+    needs: changes
+    if: needs.changes.outputs.affected == 'true' || github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/reusable-go-build.yml
+    with:
+      module: pkg
