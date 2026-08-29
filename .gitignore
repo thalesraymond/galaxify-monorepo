@@ -11,6 +11,10 @@
 # Test binary, built with `go test -c`
 *.test
 
+# Binaries built by `go build ./...` in a module root: the output is named
+# after the module directory (e.g. apps/user-service/user-service).
+apps/*-service/*-service
+
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 
