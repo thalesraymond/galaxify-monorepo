@@ -24,3 +24,7 @@
 # Go build output — AGENTS.md requires binaries to be written to a
 # per-module bin/ folder (never committed).
 bin/
+
+# Environment files — secrets and local overrides are never committed.
+# Copy the committed .env.example per app instead.
+.env
