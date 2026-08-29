@@ -1,0 +1,72 @@
+# Local development infrastructure for the Galaxify monorepo.
+# Database-per-service: one isolated PostgreSQL instance per Go service,
+# plus a single RabbitMQ broker for the event bus.
+#
+# Usage: docker compose up -d
+services:
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI (guest/guest)
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-user:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: user_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5431:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d user_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-daily:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: daily_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d daily_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-ship:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ship_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ship_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-expedition:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: expedition_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d expedition_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

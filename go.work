@@ -1,0 +1,9 @@
+go 1.25.7
+
+use (
+	./apps/daily-service
+	./apps/expedition-service
+	./apps/ship-service
+	./apps/user-service
+	./pkg
+)
