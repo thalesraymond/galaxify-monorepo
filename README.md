@@ -28,16 +28,24 @@ RabbitMQ message bus.
 
 ## Status
 
-Scaffold stage — workspace, local infrastructure, and per-service connectivity
-are in place; no business functionality implemented yet. Each Go service loads
-`apps/<service>/.env` (see `docker-compose.yml` for the local infrastructure)
-and verifies its PostgreSQL connection and the RabbitMQ broker at startup.
+Scaffold stage — workspace, local infrastructure, per-service connectivity, and
+the HTTP server shell are in place; no business functionality implemented yet.
+Each Go service loads `apps/<service>/.env` (see `docker-compose.yml` for the
+local infrastructure), verifies its PostgreSQL connection and the RabbitMQ
+broker at startup, then serves its HTTP API — `GET /health` for now — until it
+receives SIGINT/SIGTERM (see ADR-0002).
 
 ## Local development
 
 ```sh
-docker compose up -d    # 4x Postgres + 1x RabbitMQ
-cd apps/user-service && go run .   # connects to user_db + RabbitMQ, exits 0 on success
+docker compose up -d                     # 4x Postgres + 1x RabbitMQ
+cd apps/user-service && go run .          # serves HTTP on :8081
+curl localhost:8081/health                # {"status":"ok","service":"user-service"}
 ```
+
+Each service listens on its own HTTP port
+(`user-service` :8081, `daily-service` :8082, `ship-service` :8083,
+`expedition-service` :8084); overridable via `HTTP_ADDR` in the service's
+`.env`.
 
 See `CONTEXT.md` and `docs/adr/` for decisions and context.
