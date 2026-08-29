@@ -62,6 +62,17 @@ go build -o bin/ .         # writes bin/<service>
 A change is not done until the build/test/vet checks above pass with no
 failures.
 
+## Code conventions
+
+- **Avoid repetition across services**: analyze whether the same piece of code
+  (generally a helper function) is being used and recreated multiple times in
+  different services; if so, create a shared piece of code in `pkg/` under a
+  proper module to share between services.
+- **Name things with context**: instead of generic names like `NewHandler` or
+  `Builder`, include the domain in the name — better names: `NewDailyApiHandler`,
+  `LoggerBuilder`. Since Go functions are "loose" (package-level), names are
+  very important.
+
 ## Agent skills
 
 ### Issue tracker
