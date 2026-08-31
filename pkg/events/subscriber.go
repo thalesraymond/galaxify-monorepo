@@ -85,15 +85,15 @@ func (s *Subscriber) Start(ctx context.Context) error {
 
 				if !ok {
 					log.Default().Printf("No handler registered for event type: %s", msg.RoutingKey)
-					err = msg.Nack(false, true)
-					if err != nil {
+					nackErr := msg.Nack(false, true)
+					if nackErr != nil {
 						log.Default().Printf("Failed to nack message: %v", err)
 					}
 					continue
 				}
-				err = handler(handlerCtx, msg.RoutingKey, msg.Body)
+				handlerErr := handler(handlerCtx, msg.RoutingKey, msg.Body)
 
-				if err != nil {
+				if handlerErr != nil {
 					log.Default().Printf("Handler error: %v", err)
 					_ = msg.Nack(false, true)
 
