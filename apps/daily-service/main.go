@@ -64,8 +64,6 @@ func run(logger *slog.Logger) error {
 	}
 	defer conn.Close()
 
-	logger.Info(serviceName + ": connected to PostgreSQL and RabbitMQ")
-
 	srv := &http.Server{
 		Addr:    httpAddr,
 		Handler: NewHealthHandler(),

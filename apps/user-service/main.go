@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/rabbitmq"
 )
 
@@ -64,6 +65,22 @@ func run(logger *slog.Logger) error {
 	}
 	defer conn.Close()
 
+	publisher, err := events.NewPublisher(conn) // Initialize the publisher
+	
+	if err != nil {
+		return fmt.Errorf("create publisher: %w", err)
+	}
+	
+	defer publisher.Close()
+
+	// TODO: REMOVE THIS TEST BEFORE DEPLOYMENT. This is just to test the publisher.
+	publisher.Publish(context.Background(), "user.created", events.UserCreated{
+		Version:  1,
+		UserID:   "123e4567-e89b-12d3-a456-426614174000",
+		Email:    "test@test.com",
+		Username: "testuser",
+	})
+	// END OF TEST
 	logger.Info(serviceName + ": connected to PostgreSQL and RabbitMQ")
 
 	srv := &http.Server{

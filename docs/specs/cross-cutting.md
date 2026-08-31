@@ -35,7 +35,7 @@ Every message published has this shape:
   "event_type": "string (routing key)",
   "occurred_at": "RFC3339 with sub-second precision",
   "version":    1,
-  "payload":    { /* typed payload, see §1.3 */ }
+  "payload":    { /* typed payload, see §Phase 1 event types */ }
 }
 ```
 
