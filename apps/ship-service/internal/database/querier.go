@@ -12,6 +12,7 @@ import (
 
 type Querier interface {
 	CreateTestTable(ctx context.Context, name string) (TestTable, error)
+	DeleteOldProcessedEvents(ctx context.Context) (int64, error)
 	DeleteTestTable(ctx context.Context, id int64) error
 	GetTestTable(ctx context.Context, id int64) (TestTable, error)
 	InsertProcessedEvent(ctx context.Context, eventID pgtype.UUID) (int64, error)

@@ -11,6 +11,18 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deleteOldProcessedEvents = `-- name: DeleteOldProcessedEvents :execrows
+DELETE FROM processed_events WHERE processed_at < now() - interval '30 days'
+`
+
+func (q *Queries) DeleteOldProcessedEvents(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOldProcessedEvents)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const insertProcessedEvent = `-- name: InsertProcessedEvent :execrows
 INSERT INTO processed_events (event_id) VALUES ($1)
 ON CONFLICT (event_id) DO NOTHING
