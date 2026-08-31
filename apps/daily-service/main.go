@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/rabbitmq"
 )
 
@@ -63,6 +64,22 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer conn.Close()
+
+	// TODO: REMOVE THIS TEST BEFORE DEPLOYMENT. This is just to test the subscriber.
+	subscriber, err := events.NewSubscriber(conn, "daily-service")
+	if err != nil {
+		return fmt.Errorf("create subscriber: %w", err)
+	}
+
+	subscriber.On("user.created", events.HandlerFunc(func(ctx context.Context, eventType string, payload []byte) error {
+		logger.Info("Received user.created event", "payload", string(payload))
+		return nil
+	}))
+
+	if err := subscriber.Start(ctx); err != nil {
+		return fmt.Errorf("start subscriber: %w", err)
+	}
+	// END TEST
 
 	srv := &http.Server{
 		Addr:    httpAddr,
