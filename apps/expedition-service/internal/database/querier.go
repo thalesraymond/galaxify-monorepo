@@ -6,12 +6,15 @@ package database
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
 	CreateTestTable(ctx context.Context, name string) (TestTable, error)
 	DeleteTestTable(ctx context.Context, id int64) error
 	GetTestTable(ctx context.Context, id int64) (TestTable, error)
+	InsertProcessedEvent(ctx context.Context, eventID pgtype.UUID) (int64, error)
 	ListTestTables(ctx context.Context) ([]TestTable, error)
 	UpdateTestTable(ctx context.Context, arg UpdateTestTableParams) (TestTable, error)
 }
