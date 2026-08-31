@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/thalesraymond/galaxify-monorepo/apps/daily-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/rabbitmq"
 )
@@ -59,6 +61,8 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("ping postgres: %w", err)
 	}
 
+	db := database.New(pool)
+
 	conn, err := rabbitmq.Connect(amqpURL)
 	if err != nil {
 		return err
@@ -72,7 +76,26 @@ func run(logger *slog.Logger) error {
 	}
 
 	subscriber.On("user.created", events.HandlerFunc(func(ctx context.Context, eventType string, payload []byte) error {
-		logger.Info("Received user.created event", "payload", string(payload))
+		var envelope events.Envelope
+		if err := json.Unmarshal(payload, &envelope); err != nil {
+			return fmt.Errorf("unmarshal envelope: %w", err)
+		}
+
+		idempotency := events.NewProcessedEvents(db)
+
+		logger.Info("Received user.created event", "event_id", envelope.EventId, "payload", string(payload))
+
+		should_process, err := idempotency.MarkProcessed(ctx, envelope.EventId)
+		if err != nil {
+			return err
+		}
+
+		if should_process {
+			logger.Info("Processing event", "event_id", envelope.EventId)
+		} else {
+			logger.Info("Event already processed, skipping", "event_id", envelope.EventId)
+			return nil
+		}
 		return nil
 	}))
 
