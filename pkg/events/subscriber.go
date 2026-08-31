@@ -18,6 +18,7 @@ type Subscriber struct {
 	handlers    map[string]HandlerFunc
 
 	mu sync.RWMutex
+	wg sync.WaitGroup
 }
 
 func NewSubscriber(conn *amqp091.Connection, serviceName string) (*Subscriber, error) {
@@ -66,7 +67,9 @@ func (s *Subscriber) Start(ctx context.Context) error {
 			return fmt.Errorf("failed to consume messages: %w", err)
 		}
 
+		s.wg.Add(1)
 		go func() {
+			defer s.wg.Done()
 			for msg := range msgs {
 				handlerCtx := ctx
 
@@ -139,6 +142,19 @@ func (s *Subscriber) Shutdown(ctx context.Context) error {
 	err := s.channel.Cancel("", false)
 	if err != nil {
 		return fmt.Errorf("failed to cancel consumer: %w", err)
+	}
+
+	// Wait for in-flight handlers to finish, or for ctx to expire.
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+		return fmt.Errorf("timed out waiting for in-flight handlers: %w", ctx.Err())
 	}
 
 	err = s.channel.Close()

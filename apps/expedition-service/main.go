@@ -45,16 +45,22 @@ func run(logger *slog.Logger) error {
 	amqpURL := envOr("RABBITMQ_URL", defaultRabbitMQURL)
 	httpAddr := envOr("HTTP_ADDR", defaultHTTPAddr)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, dbURL)
+	// Long-lived context for the event subscriber. The startup ctx above has a
+	// 15s timeout and must NOT be reused for handlers — it expires shortly
+	// after boot, so every handler would fail with "context deadline exceeded".
+	// subCtx, subCancel := context.WithCancel(context.Background())
+	// defer subCancel()
+
+	pool, err := pgxpool.New(timeoutCtx, dbURL)
 	if err != nil {
 		return fmt.Errorf("connect to postgres: %w", err)
 	}
 	defer pool.Close()
 
-	if err := pool.Ping(ctx); err != nil {
+	if err := pool.Ping(timeoutCtx); err != nil {
 		return fmt.Errorf("ping postgres: %w", err)
 	}
 

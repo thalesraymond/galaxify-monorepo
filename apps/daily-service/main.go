@@ -48,16 +48,22 @@ func run(logger *slog.Logger) error {
 	amqpURL := envOr("RABBITMQ_URL", defaultRabbitMQURL)
 	httpAddr := envOr("HTTP_ADDR", defaultHTTPAddr)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, dbURL)
+	// Long-lived context for the event subscriber. The startup ctx above has a
+	// 15s timeout and must NOT be reused for handlers — it expires shortly
+	// after boot, so every handler would fail with "context deadline exceeded".
+	subCtx, subCancel := context.WithCancel(context.Background())
+	defer subCancel()
+
+	pool, err := pgxpool.New(timeoutCtx, dbURL)
 	if err != nil {
 		return fmt.Errorf("connect to postgres: %w", err)
 	}
 	defer pool.Close()
 
-	if err := pool.Ping(ctx); err != nil {
+	if err := pool.Ping(timeoutCtx); err != nil {
 		return fmt.Errorf("ping postgres: %w", err)
 	}
 
@@ -99,7 +105,7 @@ func run(logger *slog.Logger) error {
 		return nil
 	}))
 
-	if err := subscriber.Start(ctx); err != nil {
+	if err := subscriber.Start(subCtx); err != nil {
 		return fmt.Errorf("start subscriber: %w", err)
 	}
 	// END TEST
@@ -131,6 +137,10 @@ func run(logger *slog.Logger) error {
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("graceful shutdown: %w", err)
+		}
+		// Stop consuming and wait for in-flight event handlers to finish.
+		if err := subscriber.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("subscriber shutdown: %w", err)
 		}
 		return nil
 	}
