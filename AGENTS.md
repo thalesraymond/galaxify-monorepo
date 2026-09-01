@@ -95,6 +95,25 @@ failures.
   `LoggerBuilder`. Since Go functions are "loose" (package-level), names are
   very important.
 
+## Shared infrastructure (cross-cutting `pkg/`)
+
+The cross-cutting subsystems (`pkg/sharedhttp`, `pkg/auth`, `pkg/events`,
+`pkg/rabbitmq`) implement foundational decisions that affect every service.
+Each subsystem has an ADR recording the design rationale and the contract —
+read the ADR before touching the corresponding code.
+
+| Subsystem                                                                 | ADR                                                                                                                              | Read when…                                                                          |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `pkg/sharedhttp` — error envelope, request ID middleware, auth middleware | [ADR-0006](docs/adr/0006-shared-http-error-envelope-and-request-id.md)                                                           | writing/modifying HTTP handlers, adding error codes, wiring middleware in `main.go` |
+| `pkg/auth` — EdDSA JWT, JWKS cache, password hashing, refresh tokens      | [ADR-0003](docs/adr/0003-asymmetric-jwt-eddsa-with-jwks.md)                                                                      | working on auth flows, login/signup/refresh, JWT verification                       |
+| `pkg/events` — event bus topology, envelope, outbox pattern               | [ADR-0004](docs/adr/0004-transactional-outbox-http-triggered-drain.md), [ADR-0005](docs/adr/0005-galaxify-event-bus-topology.md) | emitting or consuming events, designing new event types, declaring queues           |
+
+The implementation contract and on-the-wire shapes live in
+[`docs/specs/cross-cutting.md`](docs/specs/cross-cutting.md); the
+implementation itself lives under each `pkg/` module
+([errors.go](pkg/sharedhttp/errors.go), [middleware.go](pkg/sharedhttp/middleware.go),
+[auth/\*](pkg/auth)).
+
 ## Agent skills
 
 ### Issue tracker
