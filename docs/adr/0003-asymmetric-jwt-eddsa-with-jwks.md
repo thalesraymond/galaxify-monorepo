@@ -80,7 +80,11 @@ Use **asymmetric JWTs signed with EdDSA (Ed25519)**:
 - Refresh tokens add a `refresh_tokens` table to `user_db` and a
   `POST /auth/refresh` endpoint. Rotation invalidates the old refresh token on
   use, limiting the blast radius of a stolen refresh token.
-- Keypair bootstrap: User Service generates the keypair on first startup if
-  `JWT_PRIVATE_KEY` env var is not set, writing to a configured path
-  (`./keys/jwt-private.pem`, `./keys/jwt-public.pem`). On subsequent startups,
-  the existing keypair is loaded.
+- Keypair bootstrap: User Service stores the Ed25519 keypair in `user_db`
+  (table `jwt_keys`). On startup, User Service checks if a keypair exists; if
+  not, it generates one and persists it. This avoids env var management and
+  ensures all User Service instances share the same keypair without external
+  secret stores. Other services remain unaware of this storage detail — they
+  only depend on User Service's JWKS endpoint. For a study project, this
+  trade-off (DB dependency for key storage) is acceptable; production systems
+  would use a dedicated secret manager (AWS Secrets Manager, Vault, etc.).
