@@ -1,0 +1,56 @@
+name: release-please
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Release Please
+        id: release
+        uses: googleapis/release-please-action@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          target-branch: main
+
+      - name: Checkout
+        if: ${{ steps.release.outputs.releases_created }}
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        if: ${{ steps.release.outputs.releases_created }}
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.25.7"
+          cache: true
+
+      - name: Verify builds
+        if: ${{ steps.release.outputs.releases_created }}
+        run: |
+          for module in apps/daily-service apps/expedition-service apps/ship-service apps/user-service pkg; do
+            echo "Building $module..."
+            (cd "$module" && go build ./...)
+          done
+
+      - name: Verify tests
+        if: ${{ steps.release.outputs.releases_created }}
+        run: |
+          for module in apps/daily-service apps/expedition-service apps/ship-service apps/user-service pkg; do
+            echo "Testing $module..."
+            (cd "$module" && go test ./...)
+          done
+
+      - name: Run go vet
+        if: ${{ steps.release.outputs.releases_created }}
+        run: |
+          for module in apps/daily-service apps/expedition-service apps/ship-service apps/user-service pkg; do
+            echo "Running vet on $module..."
+            (cd "$module" && go vet ./...)
+          done
