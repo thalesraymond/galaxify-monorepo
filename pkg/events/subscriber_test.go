@@ -3,6 +3,8 @@ package events
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -140,6 +142,20 @@ func TestNewSubscriber(t *testing.T) {
 	}
 	if s.serviceName != "daily-service" {
 		t.Errorf("service name = %q, want %q", s.serviceName, "daily-service")
+	}
+	if s.logger != slog.Default() {
+		t.Error("expected default logger to be slog.Default()")
+	}
+}
+
+func TestNewSubscriberWithLogger(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	s, err := NewSubscriber(newFakeSubscriberChannel(), "daily-service", WithLogger(logger))
+	if err != nil {
+		t.Fatalf("NewSubscriber returned error: %v", err)
+	}
+	if s.logger != logger {
+		t.Error("expected custom logger to be set")
 	}
 }
 

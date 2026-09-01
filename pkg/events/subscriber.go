@@ -3,7 +3,7 @@ package events
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"maps"
 	"sync"
 
@@ -29,13 +29,20 @@ type Subscriber struct {
 	serviceName string
 	channel     SubscriberChannel
 	handlers    map[string]HandlerFunc
+	logger      *slog.Logger
 
 	mu sync.RWMutex
 	wg sync.WaitGroup
 }
 
-func NewSubscriber(channel SubscriberChannel, serviceName string) (*Subscriber, error) {
-	return &Subscriber{serviceName: serviceName, channel: channel, handlers: make(map[string]HandlerFunc)}, nil
+func NewSubscriber(channel SubscriberChannel, serviceName string, opts ...Option) (*Subscriber, error) {
+	o := applyOptions(opts)
+	return &Subscriber{
+		serviceName: serviceName,
+		channel:     channel,
+		handlers:    make(map[string]HandlerFunc),
+		logger:      o.logger,
+	}, nil
 }
 
 func (s *Subscriber) On(eventType string, handler HandlerFunc) {
@@ -51,7 +58,7 @@ func (s *Subscriber) Start(ctx context.Context) error {
 	s.mu.RUnlock()
 
 	if len(handlers) == 0 {
-		log.Default().Printf("No handlers registered, subscriber will not start")
+		s.logger.Info("No handlers registered, subscriber will not start")
 		return nil
 	}
 
@@ -92,17 +99,25 @@ func (s *Subscriber) Start(ctx context.Context) error {
 				s.mu.RUnlock()
 
 				if !ok {
-					log.Default().Printf("No handler registered for event type: %s", msg.RoutingKey)
+					s.logger.Warn("No handler registered for event type",
+						"event_type", msg.RoutingKey,
+					)
 					nackErr := msg.Nack(false, true)
 					if nackErr != nil {
-						log.Default().Printf("Failed to nack message: %v", nackErr)
+						s.logger.Error("Failed to nack message",
+							"event_type", msg.RoutingKey,
+							"error", nackErr,
+						)
 					}
 					continue
 				}
 				handlerErr := handler(handlerCtx, msg.RoutingKey, msg.Body)
 
 				if handlerErr != nil {
-					log.Default().Printf("Handler error: %v", handlerErr)
+					s.logger.Error("Handler error",
+						"event_type", msg.RoutingKey,
+						"error", handlerErr,
+					)
 					_ = msg.Nack(false, true)
 
 				} else {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/rabbitmq/amqp091-go"
@@ -62,6 +64,29 @@ func TestNewPublisher(t *testing.T) {
 		ch := &fakePublisherChannel{declareErr: wantErr}
 		if _, err := NewPublisher(ch); !errors.Is(err, wantErr) {
 			t.Fatalf("expected declare error %v, got %v", wantErr, err)
+		}
+	})
+
+	t.Run("defaults to slog.Default logger", func(t *testing.T) {
+		ch := &fakePublisherChannel{}
+		p, err := NewPublisher(ch)
+		if err != nil {
+			t.Fatalf("NewPublisher returned error: %v", err)
+		}
+		if p.logger != slog.Default() {
+			t.Error("expected default logger to be slog.Default()")
+		}
+	})
+
+	t.Run("uses custom logger when provided", func(t *testing.T) {
+		ch := &fakePublisherChannel{}
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		p, err := NewPublisher(ch, WithLogger(logger))
+		if err != nil {
+			t.Fatalf("NewPublisher returned error: %v", err)
+		}
+		if p.logger != logger {
+			t.Error("expected custom logger to be set")
 		}
 	})
 }

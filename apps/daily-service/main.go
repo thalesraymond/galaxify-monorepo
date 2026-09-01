@@ -15,8 +15,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/thalesraymond/galaxify-monorepo/apps/daily-service/internal/database"
+	"github.com/thalesraymond/galaxify-monorepo/apps/daily-service/internal/handler"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/rabbitmq"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
 const serviceName = "daily-service"
@@ -115,9 +117,12 @@ func run(logger *slog.Logger) error {
 	}
 	// END TEST
 
+	mux := http.NewServeMux()
+	handler.NewHealthHandler(serviceName).RegisterHealthRoutes(mux)
+
 	srv := &http.Server{
 		Addr:    httpAddr,
-		Handler: NewHealthHandler(),
+		Handler: sharedhttp.RequestIDMiddleware(mux),
 	}
 
 	serveErr := make(chan error, 1)

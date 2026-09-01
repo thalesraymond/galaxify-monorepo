@@ -13,7 +13,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/thalesraymond/galaxify-monorepo/apps/ship-service/internal/handler"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/rabbitmq"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
 const serviceName = "ship-service"
@@ -72,9 +74,12 @@ func run(logger *slog.Logger) error {
 
 	logger.Info(serviceName + ": connected to PostgreSQL and RabbitMQ")
 
+	mux := http.NewServeMux()
+	handler.NewHealthHandler(serviceName).RegisterHealthRoutes(mux)
+
 	srv := &http.Server{
 		Addr:    httpAddr,
-		Handler: NewHealthHandler(),
+		Handler: sharedhttp.RequestIDMiddleware(mux),
 	}
 
 	serveErr := make(chan error, 1)

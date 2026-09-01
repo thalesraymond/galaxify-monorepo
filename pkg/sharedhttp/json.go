@@ -1,5 +1,5 @@
 // Package http provides shared HTTP helpers used by the Galaxify services.
-package http
+package sharedhttp
 
 import (
 	"encoding/json"

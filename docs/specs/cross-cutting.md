@@ -95,7 +95,9 @@ ticket.
 // Publisher side — services that emit events.
 type PublisherChannel interface { /* subset of amqp091.Channel */ }
 type Publisher struct { /* ... */ }
-func NewPublisher(channel PublisherChannel) (*Publisher, error)
+func NewPublisher(channel PublisherChannel, opts ...Option) (*Publisher, error)
+//   - Accepts functional options; WithLogger(logger *slog.Logger) sets the
+//     logger used for debug output (defaults to slog.Default()).
 func (p *Publisher) Publish(ctx context.Context, eventType string, payload any) error
 //   - Generates event_id (UUID v4).
 //   - Sets occurred_at (now).
@@ -108,7 +110,9 @@ func (p *Publisher) Publish(ctx context.Context, eventType string, payload any) 
 // Subscriber side — services that receive events.
 type SubscriberChannel interface { /* subset of amqp091.Channel */ }
 type Subscriber struct { /* ... */ }
-func NewSubscriber(channel SubscriberChannel, serviceName string) (*Subscriber, error)
+func NewSubscriber(channel SubscriberChannel, serviceName string, opts ...Option) (*Subscriber, error)
+//   - Accepts functional options; WithLogger(logger *slog.Logger) sets the
+//     logger used for handler/nack diagnostics (defaults to slog.Default()).
 func (s *Subscriber) On(eventType string, handler HandlerFunc)
 //   - Registers a handler for one event type.
 //   - Internally creates a queue bound to galaxify.events with routing key
