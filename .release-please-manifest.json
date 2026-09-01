@@ -1,0 +1,7 @@
+{
+  "apps/daily-service": "0.0.0",
+  "apps/expedition-service": "0.0.0",
+  "apps/ship-service": "0.0.0",
+  "apps/user-service": "0.0.0",
+  "pkg": "0.0.0"
+}

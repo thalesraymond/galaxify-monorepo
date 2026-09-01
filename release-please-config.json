@@ -1,0 +1,35 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    "apps/daily-service": {
+      "release-type": "go",
+      "package-name": "daily-service",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true
+    },
+    "apps/expedition-service": {
+      "release-type": "go",
+      "package-name": "expedition-service",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true
+    },
+    "apps/ship-service": {
+      "release-type": "go",
+      "package-name": "ship-service",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true
+    },
+    "apps/user-service": {
+      "release-type": "go",
+      "package-name": "user-service",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true
+    },
+    "pkg": {
+      "release-type": "go",
+      "package-name": "pkg",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true
+    }
+  }
+}
