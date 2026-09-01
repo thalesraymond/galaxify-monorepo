@@ -45,3 +45,15 @@ func (rw *responseWriter) WriteHeader(status int) {
 	rw.Header().Set("X-Request-Id", rw.requestID)
 	rw.ResponseWriter.WriteHeader(status)
 }
+
+type contextKey string
+
+const userIDKey contextKey = "userID"
+
+func RequireAuth(cache JWKSCache) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		})
+	}
+}
