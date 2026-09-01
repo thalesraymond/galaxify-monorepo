@@ -52,7 +52,9 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"sync"
+	"time"
 )
 
 // JWKSCache is the interface for caching JWKS public keys.
@@ -80,7 +82,7 @@ type JWKSCache interface {
 // ensuring exclusive writes (ForceRefresh). This is critical because HTTP
 // servers handle requests concurrently.
 type SimpleJWKSCache struct {
-	// mu protects the keys map. RWMutex allows multiple goroutines to read
+	// mu protects the keys map and refresh timestamps. RWMutex allows multiple goroutines to read
 	// simultaneously (RLock) but only one to write (Lock).
 	mu sync.RWMutex
 
@@ -95,6 +97,13 @@ type SimpleJWKSCache struct {
 	// fetchFn is the function used to fetch JWKS. Defaults to FetchJWKS.
 	// Exposed for testing - tests can inject a mock fetcher.
 	fetchFn func(ctx context.Context, url string) ([]JWK, error)
+
+	// lastRefresh records when the cache was last refreshed.
+	lastRefresh time.Time
+
+	// minRefreshInterval specifies the minimum cooldown between consecutive JWKS refreshes
+	// to prevent JWKS amplification and denial-of-service attacks.
+	minRefreshInterval time.Duration
 }
 
 // NewSimpleJWKSCache creates a new cache that will fetch keys from jwksURL.
@@ -103,10 +112,18 @@ type SimpleJWKSCache struct {
 // or let the middleware call it on-demand when a JWT has an unknown kid.
 func NewSimpleJWKSCache(jwksURL string) *SimpleJWKSCache {
 	return &SimpleJWKSCache{
-		keys:    make(map[string]crypto.PublicKey),
-		jwksURL: jwksURL,
-		fetchFn: FetchJWKS, // default fetcher from jwt.go
+		keys:               make(map[string]crypto.PublicKey),
+		jwksURL:            jwksURL,
+		fetchFn:            FetchJWKS, // default fetcher from jwt.go
+		minRefreshInterval: 10 * time.Second,
 	}
+}
+
+// SetMinRefreshInterval configures the cooldown duration between consecutive JWKS fetches.
+func (c *SimpleJWKSCache) SetMinRefreshInterval(interval time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.minRefreshInterval = interval
 }
 
 // GetKey retrieves a cached public key by its key ID.
@@ -123,38 +140,43 @@ func (c *SimpleJWKSCache) GetKey(kid string) (crypto.PublicKey, bool) {
 // ForceRefresh fetches the JWKS document and replaces the cache contents.
 //
 // Flow:
-//  1. Fetch JWKS from the configured URL (HTTP GET)
-//  2. Parse each JWK and convert to ed25519.PublicKey
-//  3. Replace the entire cache atomically (under write lock)
+//  1. Check refresh cooldown to protect against DoS/amplification attacks.
+//  2. Fetch JWKS from the configured URL (HTTP GET outside lock).
+//  3. Parse each JWK and convert to ed25519.PublicKey outside write lock.
+//  4. Replace the entire cache atomically (under write lock).
 //
-// Invalid keys (wrong format, wrong curve, etc.) are silently skipped.
+// Invalid keys (wrong format, wrong curve, etc.) are skipped and logged with slog.Warn.
 // This ensures a single malformed key doesn't break the entire cache.
-//
-// Uses Lock (write lock) so no other goroutine can read or write during update.
 func (c *SimpleJWKSCache) ForceRefresh(ctx context.Context) error {
-	// Step 1: Fetch the JWKS document from the user-service
+	c.mu.RLock()
+	if c.minRefreshInterval > 0 && !c.lastRefresh.IsZero() && time.Since(c.lastRefresh) < c.minRefreshInterval {
+		c.mu.RUnlock()
+		return nil
+	}
+	c.mu.RUnlock()
+
+	// Step 1: Fetch the JWKS document from the user-service (outside lock)
 	jwks, err := c.fetchFn(ctx, c.jwksURL)
 	if err != nil {
 		return fmt.Errorf("failed to fetch JWKS: %w", err)
 	}
 
-	// Step 2: Acquire exclusive write lock
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	// Step 3: Replace the entire cache (atomic swap)
-	// We create a new map rather than updating in-place to ensure consistency.
-	c.keys = make(map[string]crypto.PublicKey)
-
-	// Step 4: Convert each JWK to a public key and add to cache
+	// Step 2: Convert each JWK to a public key (outside lock)
+	newKeys := make(map[string]crypto.PublicKey, len(jwks))
 	for _, jwk := range jwks {
 		pubKey, err := jwkToPublicKey(jwk)
 		if err != nil {
-			// Skip invalid keys - log in production, but don't fail the refresh
+			slog.Warn("skipping invalid JWKS key", "kid", jwk.Kid, "error", err)
 			continue
 		}
-		c.keys[jwk.Kid] = pubKey
+		newKeys[jwk.Kid] = pubKey
 	}
+
+	// Step 3: Acquire exclusive write lock and atomically swap
+	c.mu.Lock()
+	c.keys = newKeys
+	c.lastRefresh = time.Now()
+	c.mu.Unlock()
 
 	return nil
 }

@@ -120,19 +120,35 @@ func TestRequireAuth_MissingAuthorizationHeader(t *testing.T) {
 }
 
 func TestRequireAuth_MalformedBearerToken(t *testing.T) {
-	cache := newMockJWKSCache()
-	handler := RequireAuth(cache)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Error("handler should not be called")
-	}))
+	tests := []struct {
+		name       string
+		authHeader string
+	}{
+		{name: "invalid format", authHeader: "InvalidFormat"},
+		{name: "single char", authHeader: "B"},
+		{name: "partial prefix", authHeader: "Bear"},
+		{name: "prefix without trailing space", authHeader: "BearerToken"},
+		{name: "empty bearer token", authHeader: "Bearer "},
+		{name: "malformed token string", authHeader: "Bearer invalid-token-string"},
+	}
 
-	req := httptest.NewRequest("GET", "/protected", nil)
-	req.Header.Set("Authorization", "InvalidFormat")
-	rec := httptest.NewRecorder()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := newMockJWKSCache()
+			handler := RequireAuth(cache)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				t.Error("handler should not be called")
+			}))
 
-	handler.ServeHTTP(rec, req)
+			req := httptest.NewRequest("GET", "/protected", nil)
+			req.Header.Set("Authorization", tt.authHeader)
+			rec := httptest.NewRecorder()
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusUnauthorized {
+				t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+			}
+		})
 	}
 }
 

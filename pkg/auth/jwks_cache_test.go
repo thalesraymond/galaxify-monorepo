@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"testing"
+	"time"
 )
 
 // mockFetchJWKS returns a mock fetch function for testing.
@@ -173,6 +174,7 @@ func TestSimpleJWKSCache_ForceRefresh(t *testing.T) {
 		jwk2, _, _ := generateTestJWK(t, "key-2")
 
 		cache := NewSimpleJWKSCache("http://example.com/jwks")
+		cache.SetMinRefreshInterval(0)
 
 		// First refresh with key-1
 		cache.fetchFn = mockFetchJWKS([]JWK{jwk1}, nil)
@@ -196,6 +198,50 @@ func TestSimpleJWKSCache_ForceRefresh(t *testing.T) {
 		}
 		if _, ok := cache.GetKey("key-2"); !ok {
 			t.Error("key-2 not found after rotation")
+		}
+	})
+
+	t.Run("throttles rapid refreshes within minRefreshInterval", func(t *testing.T) {
+		t.Parallel()
+
+		jwk1, _, _ := generateTestJWK(t, "key-1")
+		jwk2, _, _ := generateTestJWK(t, "key-2")
+
+		fetchCount := 0
+		fetchFn := func(ctx context.Context, url string) ([]JWK, error) {
+			fetchCount++
+			if fetchCount == 1 {
+				return []JWK{jwk1}, nil
+			}
+			return []JWK{jwk2}, nil
+		}
+
+		cache := NewSimpleJWKSCache("http://example.com/jwks")
+		cache.SetMinRefreshInterval(10 * time.Second)
+		cache.fetchFn = fetchFn
+
+		// First refresh should hit fetchFn
+		if err := cache.ForceRefresh(context.Background()); err != nil {
+			t.Fatalf("first ForceRefresh failed: %v", err)
+		}
+		if fetchCount != 1 {
+			t.Fatalf("fetchCount = %d, want 1", fetchCount)
+		}
+
+		// Immediate second refresh within interval should be throttled (no fetchFn call)
+		if err := cache.ForceRefresh(context.Background()); err != nil {
+			t.Fatalf("second ForceRefresh failed: %v", err)
+		}
+		if fetchCount != 1 {
+			t.Fatalf("fetchCount = %d, want 1 (should have been throttled)", fetchCount)
+		}
+
+		// key-1 should still be present, key-2 not yet
+		if _, ok := cache.GetKey("key-1"); !ok {
+			t.Error("key-1 not found")
+		}
+		if _, ok := cache.GetKey("key-2"); ok {
+			t.Error("key-2 should not be found because refresh was throttled")
 		}
 	})
 

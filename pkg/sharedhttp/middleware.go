@@ -1,18 +1,22 @@
 package sharedhttp
 
 import (
+	"context"
 	"net/http"
+	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
 
-	"context"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
 )
 
 type ctxKey int
 
-const requestIDKey ctxKey = iota
+const (
+	requestIDKey ctxKey = iota
+	userIDKey
+)
 
 func RequestIDMiddleware(next http.Handler) http.Handler {
 	requestIDHeader := "X-Request-Id"
@@ -48,21 +52,23 @@ func (rw *responseWriter) WriteHeader(status int) {
 	rw.ResponseWriter.WriteHeader(status)
 }
 
-type contextKey string
-
-const userIDKey contextKey = "userID"
-
 func RequireAuth(cache auth.JWKSCache) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
-				http.Error(w, "Authorization header missing", http.StatusUnauthorized)
+				WriteError(w, http.StatusUnauthorized, "AUTH_MISSING_HEADER", "Authorization header missing")
+				return
+			}
+
+			const bearerPrefix = "Bearer "
+			if !strings.HasPrefix(authHeader, bearerPrefix) {
+				WriteError(w, http.StatusUnauthorized, "AUTH_INVALID_TOKEN", "invalid authorization format")
 				return
 			}
 
 			// Extract bearer token from the Authorization header
-			tokenString := authHeader[len("Bearer "):]
+			tokenString := strings.TrimPrefix(authHeader, bearerPrefix)
 
 			parser := jwt.NewParser()
 			token, _, err := parser.ParseUnverified(tokenString, &auth.Claims{})
