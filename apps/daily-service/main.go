@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/thalesraymond/galaxify-monorepo/apps/daily-service/internal/database"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/rabbitmq"
 )
 
@@ -45,18 +48,26 @@ func run(logger *slog.Logger) error {
 	amqpURL := envOr("RABBITMQ_URL", defaultRabbitMQURL)
 	httpAddr := envOr("HTTP_ADDR", defaultHTTPAddr)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, dbURL)
+	// Long-lived context for the event subscriber. The startup ctx above has a
+	// 15s timeout and must NOT be reused for handlers — it expires shortly
+	// after boot, so every handler would fail with "context deadline exceeded".
+	subCtx, subCancel := context.WithCancel(context.Background())
+	defer subCancel()
+
+	pool, err := pgxpool.New(timeoutCtx, dbURL)
 	if err != nil {
 		return fmt.Errorf("connect to postgres: %w", err)
 	}
 	defer pool.Close()
 
-	if err := pool.Ping(ctx); err != nil {
+	if err := pool.Ping(timeoutCtx); err != nil {
 		return fmt.Errorf("ping postgres: %w", err)
 	}
+
+	db := database.New(pool)
 
 	conn, err := rabbitmq.Connect(amqpURL)
 	if err != nil {
@@ -64,7 +75,45 @@ func run(logger *slog.Logger) error {
 	}
 	defer conn.Close()
 
-	logger.Info(serviceName + ": connected to PostgreSQL and RabbitMQ")
+	ch, err := conn.Channel()
+	if err != nil {
+		return fmt.Errorf("create channel: %w", err)
+	}
+
+	// TODO: REMOVE THIS TEST BEFORE DEPLOYMENT. This is just to test the subscriber.
+	subscriber, err := events.NewSubscriber(ch, "daily-service")
+	if err != nil {
+		return fmt.Errorf("create subscriber: %w", err)
+	}
+
+	subscriber.On("user.created", events.HandlerFunc(func(ctx context.Context, eventType string, payload []byte) error {
+		var envelope events.Envelope
+		if err := json.Unmarshal(payload, &envelope); err != nil {
+			return fmt.Errorf("unmarshal envelope: %w", err)
+		}
+
+		idempotency := events.NewProcessedEvents(db)
+
+		logger.Info("Received user.created event", "event_id", envelope.EventId, "payload", string(payload))
+
+		should_process, err := idempotency.MarkProcessed(ctx, envelope.EventId)
+		if err != nil {
+			return err
+		}
+
+		if should_process {
+			logger.Info("Processing event", "event_id", envelope.EventId)
+		} else {
+			logger.Info("Event already processed, skipping", "event_id", envelope.EventId)
+			return nil
+		}
+		return nil
+	}))
+
+	if err := subscriber.Start(subCtx); err != nil {
+		return fmt.Errorf("start subscriber: %w", err)
+	}
+	// END TEST
 
 	srv := &http.Server{
 		Addr:    httpAddr,
@@ -93,6 +142,10 @@ func run(logger *slog.Logger) error {
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("graceful shutdown: %w", err)
+		}
+		// Stop consuming and wait for in-flight event handlers to finish.
+		if err := subscriber.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("subscriber shutdown: %w", err)
 		}
 		return nil
 	}

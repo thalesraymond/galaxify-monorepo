@@ -41,6 +41,12 @@ go test  ./...
 go vet   ./...
 ```
 
+This includes `pkg/` itself, even when only one service depends on it: a
+change in `pkg/` affects every module that imports it, so run the three
+commands there too, and keep the repo-root `Makefile` targets (`make test`,
+`make coverage`, `make vet`, …) covering `pkg/` so a single command exercises
+every module.
+
 (The repo root has no `go.mod`, so `go build ./...` from the root does not
 work; run the three commands per module instead. gopls sees the full module
 map via `go.work`.)
@@ -62,12 +68,28 @@ go build -o bin/ .         # writes bin/<service>
 A change is not done until the build/test/vet checks above pass with no
 failures.
 
+## Workflow discipline
+
+- **Apply follow-up refinements before reporting done**: When the user refines
+  or corrects a previous request in the same session (e.g. "the test command
+  should use `-race`"), treat it as an amendment, not a new suggestion. Verify
+  the refinement actually landed in the code (`grep`, `git diff`) before
+  finishing — if it didn't, apply it or report it as unfinished. Never mark a
+  change done when a requested follow-up is still pending.
+- **Repeated request = previous attempt failed**: If the user re-sends the same
+  request verbatim (identical prompt sent twice), the earlier attempt likely
+  did not complete. Before redoing the work, check `git status` and
+  `git log` to see whether part of it already landed, and tell the user what
+  you found.
+
 ## Code conventions
 
-- **Avoid repetition across services**: analyze whether the same piece of code
-  (generally a helper function) is being used and recreated multiple times in
-  different services; if so, create a shared piece of code in `pkg/` under a
-  proper module to share between services.
+- **Check `pkg/` before writing any service helper**: When a service needs a
+  helper function (JSON encoding, error helpers, logging, etc.), first check
+  whether an equivalent already exists in a shared `pkg/` module — reuse it
+  instead of recreating it in the service. Only create a new shared piece of
+  code in `pkg/` (under a proper module) when a helper is being duplicated
+  across two or more services.
 - **Name things with context**: instead of generic names like `NewHandler` or
   `Builder`, include the domain in the name — better names: `NewDailyApiHandler`,
   `LoggerBuilder`. Since Go functions are "loose" (package-level), names are

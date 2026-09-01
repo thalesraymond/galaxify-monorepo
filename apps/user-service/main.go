@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/rabbitmq"
 )
 
@@ -45,16 +46,22 @@ func run(logger *slog.Logger) error {
 	amqpURL := envOr("RABBITMQ_URL", defaultRabbitMQURL)
 	httpAddr := envOr("HTTP_ADDR", defaultHTTPAddr)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, dbURL)
+	// Long-lived context for the event subscriber. The startup ctx above has a
+	// 15s timeout and must NOT be reused for handlers — it expires shortly
+	// after boot, so every handler would fail with "context deadline exceeded".
+	subCtx, subCancel := context.WithCancel(context.Background())
+	defer subCancel()
+
+	pool, err := pgxpool.New(timeoutCtx, dbURL)
 	if err != nil {
 		return fmt.Errorf("connect to postgres: %w", err)
 	}
 	defer pool.Close()
 
-	if err := pool.Ping(ctx); err != nil {
+	if err := pool.Ping(timeoutCtx); err != nil {
 		return fmt.Errorf("ping postgres: %w", err)
 	}
 
@@ -64,6 +71,27 @@ func run(logger *slog.Logger) error {
 	}
 	defer conn.Close()
 
+	ch, err := conn.Channel()
+	if err != nil {
+		return fmt.Errorf("create channel: %w", err)
+	}
+
+	publisher, err := events.NewPublisher(ch) // Initialize the publisher
+
+	if err != nil {
+		return fmt.Errorf("create publisher: %w", err)
+	}
+
+	defer publisher.Close()
+
+	// TODO: REMOVE THIS TEST BEFORE DEPLOYMENT. This is just to test the publisher.
+	publisher.Publish(subCtx, "user.created", events.UserCreated{
+		Version:  1,
+		UserID:   "123e4567-e89b-12d3-a456-426614174000",
+		Email:    "test@test.com",
+		Username: "testuser",
+	})
+	// END OF TEST
 	logger.Info(serviceName + ": connected to PostgreSQL and RabbitMQ")
 
 	srv := &http.Server{

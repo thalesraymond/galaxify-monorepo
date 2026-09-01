@@ -31,11 +31,13 @@ Every message published has this shape:
 
 ```json
 {
-  "event_id":   "UUID v4",
+  "event_id": "UUID v4",
   "event_type": "string (routing key)",
   "occurred_at": "RFC3339 with sub-second precision",
-  "version":    1,
-  "payload":    { /* typed payload, see §1.3 */ }
+  "version": 1,
+  "payload": {
+    /* typed payload, see §Phase 1 event types */
+  }
 }
 ```
 
@@ -91,8 +93,9 @@ ticket.
 
 ```go
 // Publisher side — services that emit events.
+type PublisherChannel interface { /* subset of amqp091.Channel */ }
 type Publisher struct { /* ... */ }
-func NewPublisher(conn *amqp.Connection) *Publisher
+func NewPublisher(channel PublisherChannel) (*Publisher, error)
 func (p *Publisher) Publish(ctx context.Context, eventType string, payload any) error
 //   - Generates event_id (UUID v4).
 //   - Sets occurred_at (now).
@@ -103,8 +106,9 @@ func (p *Publisher) Publish(ctx context.Context, eventType string, payload any) 
 //     responsible for retry/leave-pending semantics).
 
 // Subscriber side — services that receive events.
+type SubscriberChannel interface { /* subset of amqp091.Channel */ }
 type Subscriber struct { /* ... */ }
-func NewSubscriber(conn *amqp.Connection) *Subscriber
+func NewSubscriber(channel SubscriberChannel, serviceName string) (*Subscriber, error)
 func (s *Subscriber) On(eventType string, handler HandlerFunc)
 //   - Registers a handler for one event type.
 //   - Internally creates a queue bound to galaxify.events with routing key
@@ -182,7 +186,7 @@ loaded. The public key is exposed via JWKS.
       "kid": "2026-08-31",
       "kty": "OKP",
       "crv": "Ed25519",
-      "x":   "<base64url-encoded public key>",
+      "x": "<base64url-encoded public key>",
       "use": "sig",
       "alg": "EdDSA"
     }
@@ -194,11 +198,11 @@ loaded. The public key is exposed via JWKS.
 
 ```json
 {
-  "sub":   "user_id (UUID)",
-  "iss":   "galaxify-user-service",
-  "aud":   "galaxify",
-  "iat":   1725024131,
-  "exp":   1725027731,
+  "sub": "user_id (UUID)",
+  "iss": "galaxify-user-service",
+  "aud": "galaxify",
+  "iat": 1725024131,
+  "exp": 1725027731,
   "email": "user@example.com"
 }
 ```
@@ -258,7 +262,7 @@ Every error response has this shape:
 ```json
 {
   "error": {
-    "code":    "DAILY_NOT_FOUND",
+    "code": "DAILY_NOT_FOUND",
     "message": "Daily task not found"
   }
 }
@@ -291,11 +295,11 @@ uniqueness.
 ```json
 {
   "error": {
-    "code":    "VALIDATION_FAILED",
+    "code": "VALIDATION_FAILED",
     "message": "request validation failed",
     "details": {
       "field_errors": {
-        "title":      "is required",
+        "title": "is required",
         "difficulty": "must be one of: EASY, MEDIUM, HARD"
       }
     }
@@ -318,7 +322,7 @@ parse failure (e.g., `{"body": "invalid JSON"}`).
 ```json
 {
   "error": {
-    "code":    "INTERNAL_ERROR",
+    "code": "INTERNAL_ERROR",
     "message": "An unexpected error occurred"
   }
 }

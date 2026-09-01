@@ -4,6 +4,15 @@
 
 package database
 
+import (
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+type ProcessedEvent struct {
+	EventID     pgtype.UUID
+	ProcessedAt pgtype.Timestamptz
+}
+
 type TestTable struct {
 	ID   int64
 	Name string
