@@ -1,4 +1,4 @@
-package httperr
+package sharedhttp
 
 import (
 	"bytes"
