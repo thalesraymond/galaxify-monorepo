@@ -13,7 +13,9 @@ unblocked.
 The decisions recorded here are also captured in
 [ADR-0003](../adr/0003-asymmetric-jwt-eddsa-with-jwks.md) (auth),
 [ADR-0004](../adr/0004-transactional-outbox-http-triggered-drain.md) (outbox),
-and [ADR-0005](../adr/0005-galaxify-event-bus-topology.md) (event bus).
+[ADR-0005](../adr/0005-galaxify-event-bus-topology.md) (event bus), and
+[ADR-0006](../adr/0006-shared-http-error-envelope-and-request-id.md) (HTTP
+error envelope and request ID middleware).
 
 ---
 
@@ -220,23 +222,29 @@ loaded. The public key is exposed via JWKS.
 
 ### Verification flow (non-user service)
 
-The auth middleware in `pkg/auth/middleware.go`:
+The auth middleware in `pkg/sharedhttp/middleware.go`:
 
 1. Read `Authorization: Bearer <token>`.
 2. Decode JWT header, extract `kid`.
-3. Look up `kid` in cached JWKS (1-hour TTL on the whole document).
-4. If `kid` not in cache, **force-refresh** the JWKS document immediately,
-   then retry the lookup.
-5. If still missing, return 401 with code `AUTH_INVALID_TOKEN` (see §3).
-6. Verify signature with the public key (EdDSA).
-7. Verify `iss == "galaxify-user-service"`, `aud == "galaxify"`, `exp > now`.
-8. Set `userID` (from `sub`) into `context.Context` for handler use.
+3. Look up `kid` in `auth.SimpleJWKSCache`. The cache has no time-based TTL;
+   when `kid` is missing, the middleware **force-refreshes** the JWKS
+   document (subject to a 10-second cooldown) and retries.
+4. If still missing, return 401 with code `AUTH_UNKNOWN_KID`.
+5. Verify signature with the public key (EdDSA).
+6. Verify `iss == "galaxify-user-service"`, `aud == "galaxify"`, `exp > now`.
+7. Set `userID` (from `sub`) into `context.Context` for handler use.
+
+The complete error-code matrix emitted by the middleware
+(`AUTH_MISSING_HEADER`, `AUTH_INVALID_TOKEN`, `AUTH_MISSING_KID`,
+`AUTH_UNKNOWN_KID`, `AUTH_KEY_FETCH_FAILED`) is documented in
+[ADR-0006](../adr/0006-shared-http-error-envelope-and-request-id.md).
 
 ### Password hashing
 
-bcrypt at cost 12 (`golang.org/x/crypto/bcrypt`). The hashing function lives
-in `pkg/auth/password.go` for reuse; User Service calls it from its signup
-handler.
+argon2id via `alexedwards/argon2id` with default params. The hashing function
+lives in `pkg/auth/password.go` (`auth.HashPassword` /
+`auth.ComparePasswordAndHash`) for reuse; User Service calls it from its
+signup handler.
 
 ### Refresh token storage
 
@@ -257,7 +265,12 @@ auth package free of User Service's specific schema.
 
 ---
 
-## 3. HTTP error envelope (`pkg/httperr`)
+## 3. HTTP error envelope (`pkg/sharedhttp`)
+
+> Design rationale, alternatives considered, and the full contract:
+> [ADR-0006](../adr/0006-shared-http-error-envelope-and-request-id.md).
+> This section records the on-the-wire shape the spec and tests assert
+> against.
 
 ### Shape
 
@@ -289,8 +302,9 @@ uniqueness.
 - **Ship Service**: `SHIP_NOT_FOUND`, `SHIP_INSUFFICIENT_MATERIALS`,
   `SHIP_HULL_FULL`
 - **Expedition Service**: `EXPEDITION_NOT_FOUND`, `EXPEDITION_ALREADY_ACTIVE`
-- **Cross-cutting**: `AUTH_INVALID_TOKEN`, `AUTH_TOKEN_EXPIRED`,
-  `AUTH_REFRESH_INVALID`, `VALIDATION_FAILED`, `INTERNAL_ERROR`
+- **Cross-cutting**: `AUTH_MISSING_HEADER`, `AUTH_INVALID_TOKEN`,
+  `AUTH_MISSING_KID`, `AUTH_UNKNOWN_KID`, `AUTH_KEY_FETCH_FAILED`,
+  `VALIDATION_FAILED`, `INTERNAL_ERROR`
 
 ### Validation errors
 
@@ -339,13 +353,17 @@ key.
 ### Status ↔ code mapping
 
 Codes are **not** derivable from HTTP status — they're orthogonal. Clients
-branch on `code`, not status. Multiple errors can share a status
-(e.g., `USER_EMAIL_TAKEN` is 409 Conflict; `USER_INVALID_CREDENTIALS` is 401
+branch on `code`, not status. Multiple errors can share a status (e.g.,
+`USER_EMAIL_TAKEN` is 409 Conflict; `USER_INVALID_CREDENTIALS` is 401
 Unauthorized).
 
 ---
 
-## 4. Cross-cutting HTTP middleware (`pkg/http`)
+## 4. Cross-cutting HTTP middleware (`pkg/sharedhttp`)
+
+> Design rationale and contract: see
+> [ADR-0006](../adr/0006-shared-http-error-envelope-and-request-id.md).
+> This section records the middleware behavior on the wire.
 
 ### Request ID middleware
 
@@ -483,12 +501,13 @@ map #8:
 2. **`pkg/auth` package** — Ed25519 keypair generation, JWT signing/verification,
    JWKS fetcher with TTL + force-refresh, HTTP middleware, refresh token store
    interface, password hashing.
-3. **`pkg/httperr` package** — ErrorResponse struct, WriteError,
-   WriteValidationError, WriteInternal helpers.
-4. **Request ID middleware** in `pkg/http` — `X-Request-Id` propagation through
-   `context.Context`.
+3. **`pkg/sharedhttp` package** — ErrorResponse struct, WriteError,
+   WriteValidationError, WriteInternal helpers, and the request ID
+   middleware (per [ADR-0006](../adr/0006-shared-http-error-envelope-and-request-id.md)).
+   (Originally specified as `pkg/httperr` + `pkg/http`; the two packages were
+   merged into `pkg/sharedhttp` for consistency.)
 
 Per-service implementation (User Service signup/login/refresh/JWKS endpoint;
 Daily/Ship/Expedition handlers and consumers) is specified in the per-service
-spec tickets (#9, #13, #12, #10), which are unblocked once these four
+spec tickets (#9, #13, #12, #10), which are unblocked once these three
 implementation tickets land.

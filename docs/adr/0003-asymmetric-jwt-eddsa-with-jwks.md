@@ -1,7 +1,7 @@
 # ADR-0003: Asymmetric JWT (EdDSA) with JWKS endpoint
 
 - **Status:** Accepted
-- **Date:** 2026-08-31
+- **Date:** 2026-08-31 (revised 2026-09-01)
 - **Source:** Phase 1 cross-cutting ticket [#11](https://github.com/thalesraymond/galaxify-monorepo/issues/11)
 
 ## Context
@@ -23,8 +23,13 @@ Use **asymmetric JWTs signed with EdDSA (Ed25519)**:
   the **public key verifies**.
 - The public key is exposed via `GET /.well-known/jwks.json` on User Service as
   a JWK with a `kid` (key ID).
-- Non-user services fetch the JWKS document on startup and cache it with a
-  **1-hour TTL**.
+- Non-user services fetch the JWKS document on startup via
+  `auth.NewSimpleJWKSCache(jwksURL)` and call `ForceRefresh(ctx)` to populate
+  it. The cache has **no time-based TTL**; freshness is event-driven — when a
+  JWT arrives with an unknown `kid`, the auth middleware calls
+  `ForceRefresh` once and retries. A 10-second cooldown on `ForceRefresh`
+  prevents JWKS amplification attacks; user-service serves both old and new
+  keys in the JWKS for a 30-minute rotation window.
 - On verification, if a token's `kid` is not in the cached JWKS, the service
   **force-refreshes** the JWKS document immediately, then retries. This handles
   mid-rotation windows without waiting for TTL expiry.
@@ -36,7 +41,8 @@ Use **asymmetric JWTs signed with EdDSA (Ed25519)**:
 - Access tokens: 15-minute lifetime. Refresh tokens: 7-day lifetime, **rotated**
   on every `POST /auth/refresh` call (old refresh token invalidated atomically
   with issuance of the new one).
-- Password hashing: bcrypt at cost 12.
+- Password hashing: argon2id via `alexedwards/argon2id` with default params
+  (`auth.HashPassword` / `auth.ComparePasswordAndHash`).
 
 ## Alternatives Considered
 
@@ -80,6 +86,12 @@ Use **asymmetric JWTs signed with EdDSA (Ed25519)**:
 - Refresh tokens add a `refresh_tokens` table to `user_db` and a
   `POST /auth/refresh` endpoint. Rotation invalidates the old refresh token on
   use, limiting the blast radius of a stolen refresh token.
+- The HTTP auth middleware lives in `pkg/sharedhttp/middleware.go`, not in
+  `pkg/auth` — it depends on `auth.JWKSCache` but is otherwise generic HTTP
+  middleware. The auth-specific error codes it emits (`AUTH_MISSING_HEADER`,
+  `AUTH_INVALID_TOKEN`, `AUTH_MISSING_KID`, `AUTH_UNKNOWN_KID`,
+  `AUTH_KEY_FETCH_FAILED`) follow the envelope defined in
+  [ADR-0006](0006-shared-http-error-envelope-and-request-id.md).
 - Keypair bootstrap: User Service stores the Ed25519 keypair in `user_db`
   (table `jwt_keys`). On startup, User Service checks if a keypair exists; if
   not, it generates one and persists it. This avoids env var management and
