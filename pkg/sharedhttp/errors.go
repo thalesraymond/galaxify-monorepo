@@ -12,13 +12,11 @@
 // prefix by convention and there is no central registry. The X-Request-Id
 // response header is set by the request ID middleware on every response and
 // never appears in the envelope body.
-package httperr
+package sharedhttp
 
 import (
 	"log/slog"
 	"net/http"
-
-	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
 // ErrorResponse is the envelope for every error response.
@@ -43,7 +41,7 @@ type ErrorDetails struct {
 // message. Codes are not derivable from the HTTP status — they are orthogonal,
 // so clients branch on code, not status.
 func WriteError(w http.ResponseWriter, status int, code, message string) {
-	sharedhttp.WriteJSON(w, status, ErrorResponse{
+	WriteJSON(w, status, ErrorResponse{
 		Error: ErrorBody{
 			Code:    code,
 			Message: message,
@@ -55,7 +53,7 @@ func WriteError(w http.ResponseWriter, status int, code, message string) {
 // code VALIDATION_FAILED and a flat {field: human_message} map describing each
 // failing field.
 func WriteValidationError(w http.ResponseWriter, fieldErrors map[string]string) {
-	sharedhttp.WriteJSON(w, http.StatusUnprocessableEntity, ErrorResponse{
+	WriteJSON(w, http.StatusUnprocessableEntity, ErrorResponse{
 		Error: ErrorBody{
 			Code:    "VALIDATION_FAILED",
 			Message: "request validation failed",
@@ -69,7 +67,7 @@ func WriteValidationError(w http.ResponseWriter, fieldErrors map[string]string) 
 // to the failed request. The X-Request-Id response header is the lookup key.
 func WriteInternal(w http.ResponseWriter, r *http.Request, err error, logger *slog.Logger) {
 	logger.Error("internal error",
-		"request_id", sharedhttp.RequestIDFromContext(r.Context()),
+		"request_id", RequestIDFromContext(r.Context()),
 		"error", err,
 	)
 	WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "An unexpected error occurred")
