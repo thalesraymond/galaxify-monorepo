@@ -75,8 +75,13 @@ func run(logger *slog.Logger) error {
 	}
 	defer conn.Close()
 
+	ch, err := conn.Channel()
+	if err != nil {
+		return fmt.Errorf("create channel: %w", err)
+	}
+
 	// TODO: REMOVE THIS TEST BEFORE DEPLOYMENT. This is just to test the subscriber.
-	subscriber, err := events.NewSubscriber(conn, "daily-service")
+	subscriber, err := events.NewSubscriber(ch, "daily-service")
 	if err != nil {
 		return fmt.Errorf("create subscriber: %w", err)
 	}

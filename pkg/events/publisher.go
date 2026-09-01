@@ -14,17 +14,23 @@ type contextKey string
 
 const requestIDKey contextKey = "X-Request-ID"
 
-type Publisher struct {
-	channel *amqp091.Channel
+// PublisherChannel is the subset of amqp091.Channel the Publisher needs.
+// *amqp091.Channel satisfies it directly; tests can substitute a fake.
+type PublisherChannel interface {
+	ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp091.Table) error
+	Publish(exchange, key string, mandatory, immediate bool, msg amqp091.Publishing) error
+	Close() error
 }
 
-func NewPublisher(conn *amqp091.Connection) (*Publisher, error) {
-	ch, err := conn.Channel()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create channel: %w", err)
-	}
+// Compile-time assertion that *amqp091.Channel satisfies PublisherChannel.
+var _ PublisherChannel = (*amqp091.Channel)(nil)
 
-	err = ch.ExchangeDeclare(
+type Publisher struct {
+	channel PublisherChannel
+}
+
+func NewPublisher(channel PublisherChannel) (*Publisher, error) {
+	err := channel.ExchangeDeclare(
 		"galaxify.events", // name
 		"topic",           // kind
 		true,              // durable
@@ -38,7 +44,7 @@ func NewPublisher(conn *amqp091.Connection) (*Publisher, error) {
 		return nil, fmt.Errorf("failed to declare exchange: %w", err)
 	}
 
-	return &Publisher{channel: ch}, nil
+	return &Publisher{channel: channel}, nil
 }
 
 func (p *Publisher) Publish(ctx context.Context, eventType string, payload interface{}) error {

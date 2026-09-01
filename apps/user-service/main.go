@@ -71,7 +71,12 @@ func run(logger *slog.Logger) error {
 	}
 	defer conn.Close()
 
-	publisher, err := events.NewPublisher(conn) // Initialize the publisher
+	ch, err := conn.Channel()
+	if err != nil {
+		return fmt.Errorf("create channel: %w", err)
+	}
+
+	publisher, err := events.NewPublisher(ch) // Initialize the publisher
 
 	if err != nil {
 		return fmt.Errorf("create publisher: %w", err)

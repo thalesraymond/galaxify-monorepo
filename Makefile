@@ -9,6 +9,9 @@ test: ## Run go test for every service
 		cd apps/$$s && go test ./...  || exit 1; \
 		cd ../..; \
 	done
+	echo "==> go test ./... (pkg)"; \
+	cd pkg && go test ./... || exit 1; \
+	cd ../..; \
 
 coverage: ## Run go test -cover for every service
 	@for s in $(SERVICES); do \

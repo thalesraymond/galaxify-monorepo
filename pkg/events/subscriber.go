@@ -12,22 +12,30 @@ import (
 
 type HandlerFunc func(ctx context.Context, eventType string, payload []byte) error
 
+// SubscriberChannel is the subset of amqp091.Channel the Subscriber needs.
+// *amqp091.Channel satisfies it directly; tests can substitute a fake.
+type SubscriberChannel interface {
+	QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp091.Table) (amqp091.Queue, error)
+	QueueBind(name, key, exchange string, noWait bool, args amqp091.Table) error
+	Consume(queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp091.Table) (<-chan amqp091.Delivery, error)
+	Cancel(consumer string, noWait bool) error
+	Close() error
+}
+
+// Compile-time assertion that *amqp091.Channel satisfies SubscriberChannel.
+var _ SubscriberChannel = (*amqp091.Channel)(nil)
+
 type Subscriber struct {
 	serviceName string
-	channel     *amqp091.Channel
+	channel     SubscriberChannel
 	handlers    map[string]HandlerFunc
 
 	mu sync.RWMutex
 	wg sync.WaitGroup
 }
 
-func NewSubscriber(conn *amqp091.Connection, serviceName string) (*Subscriber, error) {
-	ch, err := conn.Channel()
-	if err != nil {
-		return nil, err
-	}
-
-	return &Subscriber{serviceName: serviceName, channel: ch, handlers: make(map[string]HandlerFunc)}, nil
+func NewSubscriber(channel SubscriberChannel, serviceName string) (*Subscriber, error) {
+	return &Subscriber{serviceName: serviceName, channel: channel, handlers: make(map[string]HandlerFunc)}, nil
 }
 
 func (s *Subscriber) On(eventType string, handler HandlerFunc) {
@@ -87,14 +95,14 @@ func (s *Subscriber) Start(ctx context.Context) error {
 					log.Default().Printf("No handler registered for event type: %s", msg.RoutingKey)
 					nackErr := msg.Nack(false, true)
 					if nackErr != nil {
-						log.Default().Printf("Failed to nack message: %v", err)
+						log.Default().Printf("Failed to nack message: %v", nackErr)
 					}
 					continue
 				}
 				handlerErr := handler(handlerCtx, msg.RoutingKey, msg.Body)
 
 				if handlerErr != nil {
-					log.Default().Printf("Handler error: %v", err)
+					log.Default().Printf("Handler error: %v", handlerErr)
 					_ = msg.Nack(false, true)
 
 				} else {
