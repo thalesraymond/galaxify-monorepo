@@ -1,9 +1,14 @@
 package auth
 
 import (
+	"context"
 	"crypto"
+	"crypto/ed25519"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -70,4 +75,58 @@ func VerifyAccessToken(pubKey crypto.PublicKey, tokenString string) (claims *Cla
 	}
 
 	return claims, nil
+}
+
+type JWK struct {
+	Kty string `json:"kty"`
+	Crv string `json:"crv"`
+	X   string `json:"x"`
+	Kid string `json:"kid"`
+	Use string `json:"use,omitempty"`
+	Alg string `json:"alg,omitempty"`
+}
+
+func PublicKeyToJWK(pubKey crypto.PublicKey, kid string) (JWK, error) {
+	edPub, ok := pubKey.(ed25519.PublicKey)
+
+	if !ok {
+		return JWK{}, errors.New("not an Ed25519 key")
+	}
+
+	return JWK{
+		Kty: "OKP",
+		Crv: "Ed25519",
+		X:   base64.RawURLEncoding.EncodeToString(edPub),
+		Kid: kid,
+		Use: "sig",
+		Alg: "EdDSA",
+	}, nil
+}
+
+type jwksDocument struct {
+	Keys []JWK `json:"keys"`
+}
+
+func FetchJWKS(ctx context.Context, jwksURL string) ([]JWK, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, jwksURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch JWKS: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch JWKS: status code %d", resp.StatusCode)
+	}
+
+	var jwks jwksDocument
+	if err := json.NewDecoder(resp.Body).Decode(&jwks); err != nil {
+		return nil, fmt.Errorf("failed to decode JWKS: %w", err)
+	}
+
+	return jwks.Keys, nil
 }
