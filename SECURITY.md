@@ -14,9 +14,7 @@ Since this is an educational project:
 
 1. **For learning purposes**: If you find a security issue, please open a GitHub Issue to discuss it openly. This helps everyone learn from the discovery.
 
-2. **For serious concerns**: If you believe you've found a critical vulnerability, please email me directly at [your-email@example.com](mailto:your-email@example.com) before creating a public issue.
-
-3. **What to include**:
+2. **What to include**:
    - Description of the vulnerability
    - Steps to reproduce
    - Potential impact
