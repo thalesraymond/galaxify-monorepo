@@ -1,4 +1,4 @@
-package main
+package handler
 
 import (
 	"encoding/json"
@@ -8,10 +8,13 @@ import (
 )
 
 func TestHealthHandler(t *testing.T) {
+	mux := http.NewServeMux()
+	NewHealthHandler("ship-service").RegisterHealthRoutes(mux)
+
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 
-	NewHealthHandler().ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /health status = %d, want %d", rec.Code, http.StatusOK)
@@ -24,16 +27,19 @@ func TestHealthHandler(t *testing.T) {
 	if got.Status != "ok" {
 		t.Errorf("status field = %q, want %q", got.Status, "ok")
 	}
-	if got.Service != serviceName {
-		t.Errorf("service field = %q, want %q", got.Service, serviceName)
+	if got.Service != "ship-service" {
+		t.Errorf("service field = %q, want %q", got.Service, "ship-service")
 	}
 }
 
 func TestHealthHandlerRejectsOtherMethods(t *testing.T) {
+	mux := http.NewServeMux()
+	NewHealthHandler("ship-service").RegisterHealthRoutes(mux)
+
 	req := httptest.NewRequest(http.MethodPost, "/health", nil)
 	rec := httptest.NewRecorder()
 
-	NewHealthHandler().ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("POST /health status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)

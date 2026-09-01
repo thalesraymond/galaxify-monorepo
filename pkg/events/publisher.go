@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,9 +28,12 @@ var _ PublisherChannel = (*amqp091.Channel)(nil)
 
 type Publisher struct {
 	channel PublisherChannel
+	logger  *slog.Logger
 }
 
-func NewPublisher(channel PublisherChannel) (*Publisher, error) {
+func NewPublisher(channel PublisherChannel, opts ...Option) (*Publisher, error) {
+	o := applyOptions(opts)
+
 	err := channel.ExchangeDeclare(
 		"galaxify.events", // name
 		"topic",           // kind
@@ -44,7 +48,7 @@ func NewPublisher(channel PublisherChannel) (*Publisher, error) {
 		return nil, fmt.Errorf("failed to declare exchange: %w", err)
 	}
 
-	return &Publisher{channel: channel}, nil
+	return &Publisher{channel: channel, logger: o.logger}, nil
 }
 
 func (p *Publisher) Publish(ctx context.Context, eventType string, payload interface{}) error {
@@ -86,6 +90,11 @@ func (p *Publisher) Publish(ctx context.Context, eventType string, payload inter
 	if err != nil {
 		return fmt.Errorf("failed to publish event: %w", err)
 	}
+
+	p.logger.Debug("event published",
+		"event_id", eventID,
+		"event_type", eventType,
+	)
 
 	return nil
 }
