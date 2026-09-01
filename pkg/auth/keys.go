@@ -20,7 +20,7 @@ func GeneratePrivatePublicKeyPair() (privatePEM, publicPEM []byte, err error) {
 	}
 
 	privatePEM = pem.EncodeToMemory(&pem.Block{
-		Type: "PRIVATE KEY",
+		Type:  "PRIVATE KEY",
 		Bytes: privDER,
 	})
 
@@ -30,7 +30,7 @@ func GeneratePrivatePublicKeyPair() (privatePEM, publicPEM []byte, err error) {
 	}
 
 	publicPEM = pem.EncodeToMemory(&pem.Block{
-		Type: "PUBLIC KEY",
+		Type:  "PUBLIC KEY",
 		Bytes: pubDER,
 	})
 

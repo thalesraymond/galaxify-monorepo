@@ -5,10 +5,11 @@ go 1.25.7
 require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/joho/godotenv v1.5.1
-	github.com/thalesraymond/galaxify-monorepo/pkg v0.0.0-20260831034806-a7b03331eeb1
+	github.com/thalesraymond/galaxify-monorepo/pkg v0.0.0-20260901060349-1b2dfdd06a43
 )
 
 require (
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
