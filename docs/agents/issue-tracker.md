@@ -10,6 +10,7 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 - **Comment on an issue**: `gh issue comment <number> --body "..."`
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: `gh issue close <number> --comment "..."`
+- **Native relationships (always)**: When creating or updating tickets, **always** set GitHub's native issue relationships (blocked_by, sub-issues) in addition to any body-text references like `Part of #X` or `Blocked by: #Y`. Native relationships are UI-visible and machine-queryable; body text is fallback. Use `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>` for blocking, and the sub-issues endpoint for parent/child linkage. Resolve database IDs with `gh api repos/<owner>/<repo>/issues/<n> --jq .id` (not `#number` or `node_id`).
 
 Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
