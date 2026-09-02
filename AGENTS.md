@@ -14,12 +14,14 @@ root `go.work` (committed) unites them:
 ├── go.work                  ← workspace root, lists all Go modules
 ├── docker-compose.yml       ← local infrastructure
 ├── apps/
-│   ├── daily-service/       ← Go module
-│   ├── expedition-service/  ← Go module
-│   ├── ship-service/        ← Go module
-│   ├── user-service/        ← Go module
+│   ├── daily-service/       ← Go module (HTTP API)
+│   ├── expedition-service/  ← Go module (HTTP API)
+│   ├── ship-service/        ← Go module (HTTP API)
+│   ├── user-service/        ← Go module (HTTP API)
 │   └── web-frontend/        ← frontend, NO Go module
-└── pkg/                     ← shared code Go module (events, rabbitmq)
+├── pkg/                     ← shared code Go module (events, rabbitmq)
+└── workers/                 ← background workers and crons (Lambdas/Functions)
+    └── daily-cron/          ← Go module (Missed dailies worker)
 ```
 
 - Add a service by adding a directory with a `go.mod` and one line in `go.work`
