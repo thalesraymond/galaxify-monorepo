@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/rabbitmq/amqp091-go"
+
+	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
 // fakePublisherChannel is a stand-in for *amqp091.Channel that records calls.
@@ -140,7 +142,7 @@ func TestPublisherPublish(t *testing.T) {
 			t.Fatalf("NewPublisher returned error: %v", err)
 		}
 
-		ctx := WithRequestID(context.Background(), "req-123")
+		ctx := sharedhttp.WithRequestID(context.Background(), "req-123")
 		if err := p.Publish(ctx, "user.created", nil); err != nil {
 			t.Fatalf("Publish returned error: %v", err)
 		}
