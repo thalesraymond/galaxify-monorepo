@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/rabbitmq/amqp091-go"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
 type HandlerFunc func(ctx context.Context, eventType string, payload []byte) error
@@ -90,7 +91,7 @@ func (s *Subscriber) Start(ctx context.Context) error {
 
 				if msg.Headers != nil {
 					if requestID, ok := msg.Headers["X-Request-ID"].(string); ok {
-						handlerCtx = WithRequestID(handlerCtx, requestID)
+						handlerCtx = sharedhttp.WithRequestID(handlerCtx, requestID)
 					}
 				}
 

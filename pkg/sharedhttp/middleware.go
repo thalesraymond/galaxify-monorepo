@@ -42,6 +42,10 @@ func RequestIDFromContext(ctx context.Context) string {
 	return ""
 }
 
+func WithRequestID(ctx context.Context, requestID string) context.Context {
+	return context.WithValue(ctx, requestIDKey, requestID)
+}
+
 type responseWriter struct {
 	http.ResponseWriter
 	requestID string
