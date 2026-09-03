@@ -25,13 +25,17 @@ func RequestIDMiddleware(next http.Handler) http.Handler {
 			requestID = uuid.New().String()
 		}
 
-		ctx := context.WithValue(r.Context(), requestIDKey, requestID)
+		ctx := WithRequestID(r.Context(), requestID)
 		r = r.WithContext(ctx)
 
 		w.Header().Set(requestIDHeader, requestID)
 
 		next.ServeHTTP(&responseWriter{ResponseWriter: w, requestID: requestID}, r)
 	})
+}
+
+func WithRequestID(ctx context.Context, requestID string) context.Context {
+	return context.WithValue(ctx, requestIDKey, requestID)
 }
 
 func RequestIDFromContext(ctx context.Context) string {
