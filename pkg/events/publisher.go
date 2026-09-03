@@ -51,7 +51,7 @@ func NewPublisher(channel PublisherChannel, opts ...Option) (*Publisher, error) 
 	return &Publisher{channel: channel, logger: o.logger}, nil
 }
 
-func (p *Publisher) Publish(ctx context.Context, eventType string, payload interface{}) error {
+func (p *Publisher) Publish(ctx context.Context, eventType string, payload any) error {
 	eventID := uuid.New().String()
 
 	envelope := Envelope{
