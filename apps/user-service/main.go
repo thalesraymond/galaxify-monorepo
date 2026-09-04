@@ -96,11 +96,20 @@ func run(logger *slog.Logger) error {
 
 	mux := http.NewServeMux()
 	db := database.New(pool)
-	handleKeyGeneration(db)
+	jwtKey, err := getKeyPair(db)
+	if err != nil {
+		return fmt.Errorf("failed to get JWT key: %w", err)
+	}
+	_, pub, err := auth.LoadPrivatePublicKeyPair(jwtKey.PrivateKey)
+	if err != nil {
+		return fmt.Errorf("failed to load JWT key pair: %w", err)
+	}
 
-	handlerRegister := handler.NewHandlerRegister(mux, db, publisher)
+	healthHandler := handler.NewHealthHandler(serviceName)
+	healthHandler.RegisterHealthRoutes(mux)
 
-	handlerRegister.RegisterAllHandlers()
+	authHandler := handler.NewAuthHandler(serviceName, pub, db, logger)
+	authHandler.RegisterAuthRoutes(mux)
 
 	srv := &http.Server{
 		Addr:    httpAddr,
@@ -141,30 +150,30 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-func handleKeyGeneration(querier database.Querier) error {
+func getKeyPair(querier database.Querier) (database.JwtKey, error) {
 	existingKey, err := querier.GetLatestSigningKey(context.Background())
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("failed to get latest signing key: %w", err)
+		return database.JwtKey{}, fmt.Errorf("failed to get latest signing key: %w", err)
 	}
 
 	if existingKey.Kid != "" {
-		return nil // Key already exists, no need to generate a new one
+		return existingKey, nil // Key already exists, no need to generate a new one
 	}
 
 	privatePEM, publicPEM, err := auth.GeneratePrivatePublicKeyPair()
 	if err != nil {
-		return fmt.Errorf("failed to generate key pair: %w", err)
+		return database.JwtKey{}, fmt.Errorf("failed to generate key pair: %w", err)
 	}
 
-	_, err = querier.InsertSigningKey(context.Background(), database.InsertSigningKeyParams{
+	createdKey, err := querier.InsertSigningKey(context.Background(), database.InsertSigningKeyParams{
 		Kid:        uuid.New().String(),
 		PublicKey:  publicPEM,
 		PrivateKey: privatePEM,
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to insert signing key into database: %w", err)
+		return database.JwtKey{}, fmt.Errorf("failed to insert signing key into database: %w", err)
 	}
 
-	return nil
+	return createdKey, nil
 }
