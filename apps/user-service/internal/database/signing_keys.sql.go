@@ -10,14 +10,14 @@ import (
 )
 
 const getLatestSigningKey = `-- name: GetLatestSigningKey :one
-SELECT kid, private_key, public_key, created_at FROM signing_keys
+SELECT kid, private_key, public_key, created_at FROM jwt_keys
 ORDER BY created_at DESC
 LIMIT 1
 `
 
-func (q *Queries) GetLatestSigningKey(ctx context.Context) (SigningKey, error) {
+func (q *Queries) GetLatestSigningKey(ctx context.Context) (JwtKey, error) {
 	row := q.db.QueryRow(ctx, getLatestSigningKey)
-	var i SigningKey
+	var i JwtKey
 	err := row.Scan(
 		&i.Kid,
 		&i.PrivateKey,
@@ -28,7 +28,7 @@ func (q *Queries) GetLatestSigningKey(ctx context.Context) (SigningKey, error) {
 }
 
 const insertSigningKey = `-- name: InsertSigningKey :one
-INSERT INTO signing_keys (kid, private_key, public_key)
+INSERT INTO jwt_keys (kid, private_key, public_key)
 VALUES ($1, $2, $3)
 RETURNING kid, private_key, public_key, created_at
 `
@@ -39,9 +39,9 @@ type InsertSigningKeyParams struct {
 	PublicKey  []byte
 }
 
-func (q *Queries) InsertSigningKey(ctx context.Context, arg InsertSigningKeyParams) (SigningKey, error) {
+func (q *Queries) InsertSigningKey(ctx context.Context, arg InsertSigningKeyParams) (JwtKey, error) {
 	row := q.db.QueryRow(ctx, insertSigningKey, arg.Kid, arg.PrivateKey, arg.PublicKey)
-	var i SigningKey
+	var i JwtKey
 	err := row.Scan(
 		&i.Kid,
 		&i.PrivateKey,

@@ -1,5 +1,5 @@
 -- +goose Up
-CREATE TABLE signing_keys (
+CREATE TABLE jwt_keys (
     kid         TEXT        PRIMARY KEY,
     private_key BYTEA       NOT NULL,
     public_key  BYTEA       NOT NULL,
@@ -7,4 +7,4 @@ CREATE TABLE signing_keys (
 );
 
 -- +goose Down
-DROP TABLE signing_keys;
+DROP TABLE jwt_keys;

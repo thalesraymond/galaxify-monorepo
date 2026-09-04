@@ -8,6 +8,13 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type JwtKey struct {
+	Kid        string
+	PrivateKey []byte
+	PublicKey  []byte
+	CreatedAt  pgtype.Timestamptz
+}
+
 type ProcessedEvent struct {
 	EventID     pgtype.UUID
 	ProcessedAt pgtype.Timestamptz
@@ -21,13 +28,6 @@ type RefreshToken struct {
 	Used      bool
 	ExpiresAt pgtype.Timestamptz
 	CreatedAt pgtype.Timestamptz
-}
-
-type SigningKey struct {
-	Kid        string
-	PrivateKey []byte
-	PublicKey  []byte
-	CreatedAt  pgtype.Timestamptz
 }
 
 type User struct {
