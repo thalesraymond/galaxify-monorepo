@@ -9,11 +9,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rabbitmq/amqp091-go"
+
+	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
-
-type contextKey string
-
-const requestIDKey contextKey = "X-Request-ID"
 
 // PublisherChannel is the subset of amqp091.Channel the Publisher needs.
 // *amqp091.Channel satisfies it directly; tests can substitute a fake.
@@ -51,7 +49,7 @@ func NewPublisher(channel PublisherChannel, opts ...Option) (*Publisher, error) 
 	return &Publisher{channel: channel, logger: o.logger}, nil
 }
 
-func (p *Publisher) Publish(ctx context.Context, eventType string, payload interface{}) error {
+func (p *Publisher) Publish(ctx context.Context, eventType string, payload any) error {
 	eventID := uuid.New().String()
 
 	envelope := Envelope{
@@ -73,7 +71,7 @@ func (p *Publisher) Publish(ctx context.Context, eventType string, payload inter
 		Body:         body,
 	}
 
-	if requestID := RequestIDFromContext(ctx); requestID != "" {
+	if requestID := sharedhttp.RequestIDFromContext(ctx); requestID != "" {
 		if props.Headers == nil {
 			props.Headers = amqp091.Table{}
 		}
@@ -101,30 +99,4 @@ func (p *Publisher) Publish(ctx context.Context, eventType string, payload inter
 
 func (p *Publisher) Close() error {
 	return p.channel.Close()
-}
-
-// RequestIDFromContext extracts the request ID from the context.
-// This is a placeholder — the real implementation will live in pkg/http
-// once the request ID middleware is implemented. For now, it returns empty
-// string so compilation succeeds.
-//
-// TODO: Replace with actual implementation from pkg/http when available.
-func RequestIDFromContext(ctx context.Context) string {
-	if ctx == nil {
-		return ""
-	}
-	v := ctx.Value(requestIDKey)
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return ""
-}
-
-// WithRequestID returns a new context with the given request ID attached.
-// This is used by the request ID middleware to propagate the ID through
-// the handler chain.
-//
-// TODO: Move to pkg/http when the middleware is implemented.
-func WithRequestID(ctx context.Context, requestID string) context.Context {
-	return context.WithValue(ctx, requestIDKey, requestID)
 }

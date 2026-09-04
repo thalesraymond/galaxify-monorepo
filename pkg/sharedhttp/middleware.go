@@ -3,7 +3,6 @@ package sharedhttp
 import (
 	"context"
 	"net/http"
-	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -26,13 +25,17 @@ func RequestIDMiddleware(next http.Handler) http.Handler {
 			requestID = uuid.New().String()
 		}
 
-		ctx := context.WithValue(r.Context(), requestIDKey, requestID)
+		ctx := WithRequestID(r.Context(), requestID)
 		r = r.WithContext(ctx)
 
 		w.Header().Set(requestIDHeader, requestID)
 
 		next.ServeHTTP(&responseWriter{ResponseWriter: w, requestID: requestID}, r)
 	})
+}
+
+func WithRequestID(ctx context.Context, requestID string) context.Context {
+	return context.WithValue(ctx, requestIDKey, requestID)
 }
 
 func RequestIDFromContext(ctx context.Context) string {
@@ -62,13 +65,13 @@ func RequireAuth(cache auth.JWKSCache) func(next http.Handler) http.Handler {
 			}
 
 			const bearerPrefix = "Bearer "
-			if !strings.HasPrefix(authHeader, bearerPrefix) {
+			if len(authHeader) < len(bearerPrefix) || authHeader[:len(bearerPrefix)] != bearerPrefix {
 				WriteError(w, http.StatusUnauthorized, "AUTH_INVALID_TOKEN", "invalid authorization format")
 				return
 			}
 
 			// Extract bearer token from the Authorization header
-			tokenString := strings.TrimPrefix(authHeader, bearerPrefix)
+			tokenString := authHeader[len(bearerPrefix):]
 
 			parser := jwt.NewParser()
 			token, _, err := parser.ParseUnverified(tokenString, &auth.Claims{})

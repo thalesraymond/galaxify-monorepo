@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/rabbitmq/amqp091-go"
+
+	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
 // fakeSubscriberChannel is a stand-in for *amqp091.Channel that records calls
@@ -345,7 +347,7 @@ func TestSubscriberDispatch(t *testing.T) {
 		handlerDone := make(chan struct{})
 		var gotRequestID string
 		s.On("user.created", func(ctx context.Context, eventType string, payload []byte) error {
-			gotRequestID = RequestIDFromContext(ctx)
+			gotRequestID = sharedhttp.RequestIDFromContext(ctx)
 			close(handlerDone)
 			return nil
 		})
