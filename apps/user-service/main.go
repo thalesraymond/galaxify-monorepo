@@ -11,9 +11,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/handler"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/rabbitmq"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
@@ -88,9 +92,13 @@ func run(logger *slog.Logger) error {
 
 	logger.Info(serviceName + ": connected to PostgreSQL and RabbitMQ")
 
-	mux := http.NewServeMux()
+	logger.Info("Generating or Checking Existance of Signing Keys")
 
-	handlerRegister := handler.NewHandlerRegister(mux, pool, publisher)
+	mux := http.NewServeMux()
+	db := database.New(pool)
+	handleKeyGeneration(db)
+
+	handlerRegister := handler.NewHandlerRegister(mux, db, publisher)
 
 	handlerRegister.RegisterAllHandlers()
 
@@ -131,4 +139,32 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func handleKeyGeneration(querier database.Querier) error {
+	existingKey, err := querier.GetLatestSigningKey(context.Background())
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("failed to get latest signing key: %w", err)
+	}
+
+	if existingKey.Kid != "" {
+		return nil // Key already exists, no need to generate a new one
+	}
+
+	privatePEM, publicPEM, err := auth.GeneratePrivatePublicKeyPair()
+	if err != nil {
+		return fmt.Errorf("failed to generate key pair: %w", err)
+	}
+
+	_, err = querier.InsertSigningKey(context.Background(), database.InsertSigningKeyParams{
+		Kid:        uuid.New().String(),
+		PublicKey:  publicPEM,
+		PrivateKey: privatePEM,
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to insert signing key into database: %w", err)
+	}
+
+	return nil
 }

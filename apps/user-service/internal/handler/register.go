@@ -3,31 +3,30 @@ package handler
 import (
 	"net/http"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 )
 
 const serviceName = "user-service"
 
 type HandlerRegister struct {
-	Mux       *http.ServeMux
-	pool      *pgxpool.Pool
+	mux       *http.ServeMux
+	querier   database.Querier
 	publisher *events.Publisher
 }
 
-func NewHandlerRegister(mux *http.ServeMux, pool *pgxpool.Pool, publisher *events.Publisher) *HandlerRegister {
+func NewHandlerRegister(mux *http.ServeMux, querier database.Querier, publisher *events.Publisher) *HandlerRegister {
 	return &HandlerRegister{
-		Mux:       mux,
-		pool:      pool,
+		mux:       mux,
+		querier:   querier,
 		publisher: publisher,
 	}
 }
 
-
 func (r *HandlerRegister) RegisterAllHandlers() {
 	// Register health check routes
 	healthHandler := NewHealthHandler(serviceName)
-	healthHandler.RegisterHealthRoutes(r.Mux)
+	healthHandler.RegisterHealthRoutes(r.mux)
 
 	// Register user routes
 	// userHandler := NewUserHandler(pool, publisher)
