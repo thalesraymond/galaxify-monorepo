@@ -68,6 +68,7 @@ transport.
 Routing keys follow `<entity>.<verb>`:
 
 - `user.created`
+- `user.deleted`
 - `daily.completed`
 - `daily.missed`
 - `ship.status_updated`

@@ -85,11 +85,17 @@ type ShipStatusUpdated struct {
     HullHealth       int    `json:"hull_health"`       // 0-100
     MaterialsBalance int    `json:"materials_balance"`
 }
+
+// pkg/events/user_deleted.go
+type UserDeleted struct {
+    Version int    `json:"version"`        // 1
+    UserID  string `json:"user_id"`        // UUID
+}
 ```
 
 The `expedition.process` queue referenced in the project notes is a
 **command queue**, not an event broadcast — it belongs in the Expedition spec
-ticket.
+ticket (Note: pending implementation).
 
 ### Go API (`pkg/events`)
 

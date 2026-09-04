@@ -19,7 +19,7 @@ We will extract background workers and cron jobs into their own dedicated direct
 The repository structure is now:
 - `/apps/`: Stateless HTTP API services.
 - `/pkg/`: Shared Go libraries.
-- `/workers/`: Background workers, cron jobs, and async task processors.
+- `/workers/`: Background workers, cron jobs, and async task processors. *(Note: pending implementation in the codebase)*
 
 ## Consequences
 

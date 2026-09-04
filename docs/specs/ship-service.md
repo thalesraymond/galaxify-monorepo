@@ -43,7 +43,7 @@ Auth: Required (Bearer token via cross-cutting middleware).
 
 All consumers use `processed_events` for idempotency on `event_id` (the UUID from the event envelope, per cross-cutting spec §1).
 
-All consumers publish `ship.status_updated` via the outbox (or an empty interface until #20 lands) **after** state changes, in the same database transaction.
+All consumers publish `ship.status_updated` via the outbox **after** state changes, in the same database transaction.
 
 - **`user.created`**:
   - Subscribes to `user.created` events on `galaxify.events`.
@@ -63,17 +63,7 @@ All consumers publish `ship.status_updated` via the outbox (or an empty interfac
 
 ## Event Publication
 
-Events published via the outbox pattern to the `galaxify.events` exchange.
-
-Until #20 (outbox implementation) lands, consumers and handlers use an empty interface:
-
-```go
-type EventPublisher interface {
-    Publish(ctx context.Context, eventType string, payload any) error
-}
-```
-
-The implementation is a no-op or in-memory fake for now. When #20 lands, wire in the real outbox-based publisher.
+Events published via the outbox pattern to the `galaxify.events` exchange, using `pkg/events.Publisher`.
 
 - **`ship.status_updated`**:
   - Published whenever hull or materials change (post-write, in the same transaction).
