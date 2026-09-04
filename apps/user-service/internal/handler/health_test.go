@@ -9,7 +9,7 @@ import (
 
 func TestHealthHandler(t *testing.T) {
 	mux := http.NewServeMux()
-	NewHealthHandler("user-service").RegisterHealthRoutes(mux)
+	NewUserHealthHandler("user-service").RegisterHealthRoutes(mux)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -34,7 +34,7 @@ func TestHealthHandler(t *testing.T) {
 
 func TestHealthHandlerRejectsOtherMethods(t *testing.T) {
 	mux := http.NewServeMux()
-	NewHealthHandler("user-service").RegisterHealthRoutes(mux)
+	NewUserHealthHandler("user-service").RegisterHealthRoutes(mux)
 
 	req := httptest.NewRequest(http.MethodPost, "/health", nil)
 	rec := httptest.NewRecorder()

@@ -6,15 +6,15 @@ import (
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
-type HealthHandler struct {
+type UserHealthHandler struct {
 	serviceName string
 }
 
-func NewHealthHandler(serviceName string) *HealthHandler {
-	return &HealthHandler{serviceName: serviceName}
+func NewUserHealthHandler(serviceName string) *UserHealthHandler {
+	return &UserHealthHandler{serviceName: serviceName}
 }
 
-func (h *HealthHandler) RegisterHealthRoutes(mux *http.ServeMux) {
+func (h *UserHealthHandler) RegisterHealthRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		sharedhttp.WriteJSON(w, http.StatusOK, healthResponse{
 			Status:  "ok",

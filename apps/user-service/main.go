@@ -11,9 +11,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/handler"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/rabbitmq"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
@@ -54,7 +58,7 @@ func run(logger *slog.Logger) error {
 	// Long-lived context for the event subscriber. The startup ctx above has a
 	// 15s timeout and must NOT be reused for handlers — it expires shortly
 	// after boot, so every handler would fail with "context deadline exceeded".
-	subCtx, subCancel := context.WithCancel(context.Background())
+	_, subCancel := context.WithCancel(context.Background())
 	defer subCancel()
 
 	pool, err := pgxpool.New(timeoutCtx, dbURL)
@@ -86,20 +90,26 @@ func run(logger *slog.Logger) error {
 
 	defer publisher.Close()
 
-	// TODO: REMOVE THIS TEST BEFORE DEPLOYMENT. This is just to test the publisher.
-	publisher.Publish(subCtx, "user.created", events.UserCreated{
-		Version:  1,
-		UserID:   "123e4567-e89b-12d3-a456-426614174000",
-		Email:    "test@test.com",
-		Username: "testuser",
-	})
-	// END OF TEST
 	logger.Info(serviceName + ": connected to PostgreSQL and RabbitMQ")
 
-	mux := http.NewServeMux()
+	logger.Info("Generating or Checking Existance of Signing Keys")
 
-	healthHandler := handler.NewHealthHandler(serviceName)
+	mux := http.NewServeMux()
+	db := database.New(pool)
+	jwtKey, err := getKeyPair(db)
+	if err != nil {
+		return fmt.Errorf("failed to get JWT key: %w", err)
+	}
+	priv, _, err := auth.LoadPrivatePublicKeyPair(jwtKey.PrivateKey)
+	if err != nil {
+		return fmt.Errorf("failed to load JWT key pair: %w", err)
+	}
+
+	healthHandler := handler.NewUserHealthHandler(serviceName)
 	healthHandler.RegisterHealthRoutes(mux)
+
+	authHandler := handler.NewAuthHandler(serviceName, priv, jwtKey.Kid, db, publisher, logger)
+	authHandler.RegisterAuthRoutes(mux)
 
 	srv := &http.Server{
 		Addr:    httpAddr,
@@ -138,4 +148,32 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func getKeyPair(querier database.Querier) (database.JwtKey, error) {
+	existingKey, err := querier.GetLatestSigningKey(context.Background())
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return database.JwtKey{}, fmt.Errorf("failed to get latest signing key: %w", err)
+	}
+
+	if existingKey.Kid != "" {
+		return existingKey, nil // Key already exists, no need to generate a new one
+	}
+
+	privatePEM, publicPEM, err := auth.GeneratePrivatePublicKeyPair()
+	if err != nil {
+		return database.JwtKey{}, fmt.Errorf("failed to generate key pair: %w", err)
+	}
+
+	createdKey, err := querier.InsertSigningKey(context.Background(), database.InsertSigningKeyParams{
+		Kid:        uuid.New().String(),
+		PublicKey:  publicPEM,
+		PrivateKey: privatePEM,
+	})
+
+	if err != nil {
+		return database.JwtKey{}, fmt.Errorf("failed to insert signing key into database: %w", err)
+	}
+
+	return createdKey, nil
 }
