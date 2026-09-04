@@ -45,11 +45,3 @@ jobs:
 
       - name: Test
         run: go test -coverprofile=coverage.out -covermode=atomic ./...
-
-      - name: Upload coverage artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-${{ inputs.module }}
-          path: ${{ inputs.module }}/coverage.out
-          retention-days: 1
