@@ -84,12 +84,12 @@ contains token theft — see §4.3.
 **Cleanup**: expired tokens (`expires_at < now()`) are eligible for periodic
 deletion. A cron or manual cleanup query suffices for Phase 1.
 
-### 2.3 `signing_keys` table
+### 2.3 `jwt_keys` table
 
 ```sql
 -- 005_signing_keys.sql
 -- +goose Up
-CREATE TABLE signing_keys (
+CREATE TABLE jwt_keys (
     kid         TEXT        PRIMARY KEY,
     private_key BYTEA       NOT NULL,
     public_key  BYTEA       NOT NULL,
@@ -97,7 +97,7 @@ CREATE TABLE signing_keys (
 );
 
 -- +goose Down
-DROP TABLE signing_keys;
+DROP TABLE jwt_keys;
 ```
 
 **Deviation from cross-cutting spec / ADR-0003**: the keypair is stored in
@@ -106,7 +106,7 @@ var and works correctly when multiple instances scale up — every instance
 loads the same keypair from the DB instead of generating its own.
 
 **Bootstrap** (on startup):
-1. `SELECT * FROM signing_keys ORDER BY created_at DESC LIMIT 1`.
+1. `SELECT * FROM jwt_keys ORDER BY created_at DESC LIMIT 1`.
 2. If zero rows: generate Ed25519 keypair via `pkg/auth`, insert with
    `kid = today's date (YYYY-MM-DD)`.
 3. Cache the keypair in memory for the lifetime of the process.
