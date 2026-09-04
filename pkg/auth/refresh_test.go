@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -48,7 +49,7 @@ func TestMockRefreshStore_Rotate(t *testing.T) {
 
 	// Old token must be gone.
 	_, _, err = store.Rotate(ctx, "old-token")
-	if err != ErrInvalidRefreshToken {
+	if !errors.Is(err, ErrInvalidRefreshToken) {
 		t.Fatalf("expected ErrInvalidRefreshToken for old token, got %v", err)
 	}
 
@@ -63,7 +64,7 @@ func TestMockRefreshStore_Rotate(t *testing.T) {
 
 	// Unknown token.
 	_, _, err = store.Rotate(ctx, "does-not-exist")
-	if err != ErrInvalidRefreshToken {
+	if !errors.Is(err, ErrInvalidRefreshToken) {
 		t.Fatalf("expected ErrInvalidRefreshToken, got %v", err)
 	}
 }

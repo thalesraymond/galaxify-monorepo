@@ -96,15 +96,13 @@ func run(logger *slog.Logger) error {
 	// END OF TEST
 	logger.Info(serviceName + ": connected to PostgreSQL and RabbitMQ")
 
-
 	mux := http.NewServeMux()
 
 	healthHandler := handler.NewHealthHandler(serviceName)
 	healthHandler.RegisterHealthRoutes(mux)
 
-
 	srv := &http.Server{
-		Addr: httpAddr,
+		Addr:    httpAddr,
 		Handler: sharedhttp.RequestIDMiddleware(mux),
 	}
 
