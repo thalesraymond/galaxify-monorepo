@@ -53,7 +53,7 @@ Events published via the outbox pattern to the `galaxify.events` exchange.
 ## Cron Worker (Missed Dailies)
 
 Finds expired `PENDING` dailies and marks them `MISSED`. 
-*Note: This runs as a standalone serverless function/worker in `workers/daily-cron`, completely separate from the stateless `apps/daily-service` API container, allowing the API to scale to zero independently.*
+*Note: This runs as a standalone serverless function/worker in `workers/daily-cron`, completely separate from the stateless `apps/daily-service` API container, allowing the API to scale to zero independently. (Note: The `workers/daily-cron` module is pending implementation).*
 
 - **Interval**: Continuous sweep every 5 minutes.
 - **Timezone Model**: Evaluates `due_date` against server UTC `now()`.
