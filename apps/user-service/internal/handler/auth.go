@@ -61,13 +61,29 @@ func NewAuthHandler(
 
 func (h *AuthHandler) RegisterAuthRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /users", h.Signup)
-	mux.HandleFunc("/.well-known/jwks.json", h.GetJWKSJson)
+	mux.HandleFunc("/.well-known/jwks.json", h.GetJWKS)
+}
+
+func (h *AuthHandler) GetJWKS(w http.ResponseWriter, r *http.Request) {
+	jwk, err := auth.PublicKeyToJWK(h.privateKey.Public().(ed25519.PublicKey), h.kid)
+	if err != nil {
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+		return
+	}
+
+	sharedhttp.WriteJSON(w, http.StatusOK, jwk)
 }
 
 type signupRequest struct {
 	Email    string `json:"email"`
 	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+type signupInput struct {
+	Email    string
+	Username string
+	Password string
 }
 
 type userResponse struct {
@@ -87,33 +103,29 @@ type signupResponse struct {
 func (h *AuthHandler) Signup(w http.ResponseWriter, r *http.Request) {
 	var req signupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sharedhttp.WriteError(w, http.StatusBadRequest, "VALIDATION_FAILED", "invalid JSON body")
+		sharedhttp.WriteValidationError(w, map[string]string{"body": "invalid JSON body"})
 		return
 	}
 
-	if fieldErrors := validateSignupRequest(req); len(fieldErrors) > 0 {
+	input, fieldErrors := validateSignupRequest(req)
+	if len(fieldErrors) > 0 {
 		sharedhttp.WriteValidationError(w, fieldErrors)
 		return
 	}
 
-	email := normalizeEmail(req.Email)
-
-	passwordHash, err := auth.HashPassword(req.Password)
+	passwordHash, err := auth.HashPassword(input.Password)
 	if err != nil {
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return
 	}
 
-	userData := database.InsertUserParams{
-		ID:           pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		Email:        email,
-		Username:     req.Username,
+	user, err := h.querier.InsertUser(r.Context(), database.InsertUserParams{
+		Email:        input.Email,
+		Username:     input.Username,
 		PasswordHash: passwordHash,
-	}
-
-	user, err := h.querier.InsertUser(r.Context(), userData)
+	})
 	if err != nil {
-		handleInsertUserError(w, r, err, h.logger)
+		h.handleInsertUserError(w, r, err)
 		return
 	}
 
@@ -126,7 +138,7 @@ func (h *AuthHandler) Signup(w http.ResponseWriter, r *http.Request) {
 	_, err = h.querier.InsertRefreshToken(r.Context(), database.InsertRefreshTokenParams{
 		UserID:    user.ID,
 		Token:     refreshToken,
-		FamilyID:  familyID,
+		FamilyID:  pgtype.UUID{Bytes: familyID, Valid: true},
 		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(7 * 24 * time.Hour), Valid: true},
 	})
 	if err != nil {
@@ -134,7 +146,7 @@ func (h *AuthHandler) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, err := auth.IssueAccessToken(h.privateKey, h.kid, pgUUIDToString(user.ID), email)
+	accessToken, err := auth.IssueAccessToken(h.privateKey, h.kid, pgUUIDToString(user.ID), input.Email)
 	if err != nil {
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return
@@ -143,8 +155,8 @@ func (h *AuthHandler) Signup(w http.ResponseWriter, r *http.Request) {
 	if err := h.publisher.Publish(r.Context(), "user.created", events.UserCreated{
 		Version:  1,
 		UserID:   pgUUIDToString(user.ID),
-		Email:    email,
-		Username: user.Username,
+		Email:    input.Email,
+		Username: input.Username,
 	}); err != nil {
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return
@@ -163,58 +175,47 @@ func (h *AuthHandler) Signup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *AuthHandler) GetJWKSJson(w http.ResponseWriter, r *http.Request) {
-	jwk, err := auth.PublicKeyToJWK(h.privateKey.Public().(ed25519.PublicKey), h.kid)
-	if err != nil {
-		sharedhttp.WriteInternal(w, r, err, h.logger)
-		return
+func validateSignupRequest(req signupRequest) (signupInput, map[string]string) {
+	input := signupInput{
+		Email:    strings.ToLower(strings.TrimSpace(req.Email)),
+		Username: req.Username,
+		Password: req.Password,
 	}
-
-	sharedhttp.WriteJSON(w, http.StatusOK, jwk)
-}
-
-func validateSignupRequest(req signupRequest) map[string]string {
 	fieldErrors := make(map[string]string)
 
-	email := strings.TrimSpace(req.Email)
-	if email == "" {
+	if input.Email == "" {
 		fieldErrors["email"] = "email is required"
-	} else if !emailRegex.MatchString(email) {
+	} else if !emailRegex.MatchString(input.Email) {
 		fieldErrors["email"] = "invalid email format"
 	}
 
-	if req.Username == "" {
+	if input.Username == "" {
 		fieldErrors["username"] = "username is required"
-	} else if !usernameRegex.MatchString(req.Username) {
+	} else if !usernameRegex.MatchString(input.Username) {
 		fieldErrors["username"] = "username must be 3-30 characters and contain only letters, numbers, underscores, and hyphens"
 	}
 
-	if req.Password == "" {
+	if input.Password == "" {
 		fieldErrors["password"] = "password is required"
-	} else if len(req.Password) < 8 {
+	} else if len(input.Password) < 8 {
 		fieldErrors["password"] = "password must be at least 8 characters"
 	}
 
-	return fieldErrors
+	return input, fieldErrors
 }
 
-func normalizeEmail(email string) string {
-	return strings.ToLower(strings.TrimSpace(email))
-}
-
-func generateRefreshTokenAndFamily() (token string, familyID pgtype.UUID, err error) {
+func generateRefreshTokenAndFamily() (token string, familyID uuid.UUID, err error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return "", pgtype.UUID{}, err
+		return "", uuid.UUID{}, err
 	}
 	token = base64.RawURLEncoding.EncodeToString(b)
 
-	familyUUID := uuid.New()
-	familyID = pgtype.UUID{Bytes: familyUUID, Valid: true}
+	familyID = uuid.New()
 	return token, familyID, nil
 }
 
-func handleInsertUserError(w http.ResponseWriter, r *http.Request, err error, logger *slog.Logger) {
+func (h *AuthHandler) handleInsertUserError(w http.ResponseWriter, r *http.Request, err error) {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		switch pgErr.ConstraintName {
@@ -226,7 +227,7 @@ func handleInsertUserError(w http.ResponseWriter, r *http.Request, err error, lo
 			return
 		}
 	}
-	sharedhttp.WriteInternal(w, r, err, logger)
+	sharedhttp.WriteInternal(w, r, err, h.logger)
 }
 
 func pgUUIDToString(u pgtype.UUID) string {

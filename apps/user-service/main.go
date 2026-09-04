@@ -105,7 +105,7 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("failed to load JWT key pair: %w", err)
 	}
 
-	healthHandler := handler.NewHealthHandler(serviceName)
+	healthHandler := handler.NewUserHealthHandler(serviceName)
 	healthHandler.RegisterHealthRoutes(mux)
 
 	authHandler := handler.NewAuthHandler(serviceName, priv, jwtKey.Kid, db, publisher, logger)
