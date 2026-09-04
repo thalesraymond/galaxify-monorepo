@@ -13,8 +13,6 @@ import (
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
-
-
 // PublisherChannel is the subset of amqp091.Channel the Publisher needs.
 // *amqp091.Channel satisfies it directly; tests can substitute a fake.
 type PublisherChannel interface {
@@ -102,4 +100,3 @@ func (p *Publisher) Publish(ctx context.Context, eventType string, payload any) 
 func (p *Publisher) Close() error {
 	return p.channel.Close()
 }
-
