@@ -11,13 +11,20 @@ import (
 )
 
 type Querier interface {
-	CreateTestTable(ctx context.Context, name string) (TestTable, error)
+	DeleteExpiredRefreshTokens(ctx context.Context) error
 	DeleteOldProcessedEvents(ctx context.Context) (int64, error)
-	DeleteTestTable(ctx context.Context, id int64) error
-	GetTestTable(ctx context.Context, id int64) (TestTable, error)
+	DeleteRefreshTokensByFamilyID(ctx context.Context, familyID pgtype.UUID) error
+	DeleteUserByID(ctx context.Context, id pgtype.UUID) error
+	GetLatestSigningKey(ctx context.Context) (SigningKey, error)
+	GetRefreshTokenByToken(ctx context.Context, token string) (RefreshToken, error)
+	GetUserByEmail(ctx context.Context, email string) (User, error)
+	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 	InsertProcessedEvent(ctx context.Context, eventID pgtype.UUID) (int64, error)
-	ListTestTables(ctx context.Context) ([]TestTable, error)
-	UpdateTestTable(ctx context.Context, arg UpdateTestTableParams) (TestTable, error)
+	InsertRefreshToken(ctx context.Context, arg InsertRefreshTokenParams) (RefreshToken, error)
+	InsertSigningKey(ctx context.Context, arg InsertSigningKeyParams) (SigningKey, error)
+	InsertUser(ctx context.Context, arg InsertUserParams) (User, error)
+	MarkRefreshTokenUsed(ctx context.Context, id int64) error
+	UpdateUserUsername(ctx context.Context, arg UpdateUserUsernameParams) (User, error)
 }
 
 var _ Querier = (*Queries)(nil)

@@ -13,7 +13,28 @@ type ProcessedEvent struct {
 	ProcessedAt pgtype.Timestamptz
 }
 
-type TestTable struct {
-	ID   int64
-	Name string
+type RefreshToken struct {
+	ID        int64
+	UserID    pgtype.UUID
+	Token     string
+	FamilyID  pgtype.UUID
+	Used      bool
+	ExpiresAt pgtype.Timestamptz
+	CreatedAt pgtype.Timestamptz
+}
+
+type SigningKey struct {
+	Kid        string
+	PrivateKey []byte
+	PublicKey  []byte
+	CreatedAt  pgtype.Timestamptz
+}
+
+type User struct {
+	ID           pgtype.UUID
+	Email        string
+	Username     string
+	PasswordHash string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
 }
