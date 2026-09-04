@@ -54,7 +54,7 @@ func run(logger *slog.Logger) error {
 	// Long-lived context for the event subscriber. The startup ctx above has a
 	// 15s timeout and must NOT be reused for handlers — it expires shortly
 	// after boot, so every handler would fail with "context deadline exceeded".
-	subCtx, subCancel := context.WithCancel(context.Background())
+	_, subCancel := context.WithCancel(context.Background())
 	defer subCancel()
 
 	pool, err := pgxpool.New(timeoutCtx, dbURL)
@@ -86,20 +86,13 @@ func run(logger *slog.Logger) error {
 
 	defer publisher.Close()
 
-	// TODO: REMOVE THIS TEST BEFORE DEPLOYMENT. This is just to test the publisher.
-	publisher.Publish(subCtx, "user.created", events.UserCreated{
-		Version:  1,
-		UserID:   "123e4567-e89b-12d3-a456-426614174000",
-		Email:    "test@test.com",
-		Username: "testuser",
-	})
-	// END OF TEST
 	logger.Info(serviceName + ": connected to PostgreSQL and RabbitMQ")
 
 	mux := http.NewServeMux()
 
-	healthHandler := handler.NewHealthHandler(serviceName)
-	healthHandler.RegisterHealthRoutes(mux)
+	handlerRegister := handler.NewHandlerRegister(mux, pool, publisher)
+
+	handlerRegister.RegisterAllHandlers()
 
 	srv := &http.Server{
 		Addr:    httpAddr,
