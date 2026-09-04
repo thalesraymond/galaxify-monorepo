@@ -108,8 +108,16 @@ func run(logger *slog.Logger) error {
 	healthHandler := handler.NewUserHealthHandler(serviceName)
 	healthHandler.RegisterHealthRoutes(mux)
 
-	authHandler := handler.NewAuthHandler(serviceName, priv, jwtKey.Kid, db, publisher, logger)
-	authHandler.RegisterAuthRoutes(mux)
+	tokenIssuer := handler.NewTokenIssuer(priv, jwtKey.Kid, db)
+
+	registrationHandler := handler.NewRegistrationHandler(db, tokenIssuer, publisher, logger)
+	registrationHandler.RegisterRoutes(mux)
+
+	sessionHandler := handler.NewSessionHandler(db, tokenIssuer, logger)
+	sessionHandler.RegisterRoutes(mux)
+
+	jwksHandler := handler.NewJWKSHandler(priv, jwtKey.Kid, logger)
+	jwksHandler.RegisterRoutes(mux)
 
 	srv := &http.Server{
 		Addr:    httpAddr,
