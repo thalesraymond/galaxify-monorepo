@@ -32,11 +32,19 @@ type EventPublisher interface {
 	Publish(ctx context.Context, eventType string, payload any) error
 }
 
+// authStore is the narrow database surface used by AuthHandler. Depending on
+// an interface owned by the handler keeps tests small — mocks only implement
+// the two methods actually exercised by auth endpoints.
+type authStore interface {
+	InsertUser(ctx context.Context, arg database.InsertUserParams) (database.User, error)
+	InsertRefreshToken(ctx context.Context, arg database.InsertRefreshTokenParams) (database.RefreshToken, error)
+}
+
 type AuthHandler struct {
 	serviceName string
 	privateKey  ed25519.PrivateKey
 	kid         string
-	querier     database.Querier
+	store       authStore
 	publisher   EventPublisher
 	logger      *slog.Logger
 }
@@ -45,7 +53,7 @@ func NewAuthHandler(
 	serviceName string,
 	privateKey ed25519.PrivateKey,
 	kid string,
-	querier database.Querier,
+	store authStore,
 	publisher EventPublisher,
 	logger *slog.Logger,
 ) *AuthHandler {
@@ -53,7 +61,7 @@ func NewAuthHandler(
 		serviceName: serviceName,
 		privateKey:  privateKey,
 		kid:         kid,
-		querier:     querier,
+		store:       store,
 		publisher:   publisher,
 		logger:      logger,
 	}
@@ -119,7 +127,7 @@ func (h *AuthHandler) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.querier.InsertUser(r.Context(), database.InsertUserParams{
+	user, err := h.store.InsertUser(r.Context(), database.InsertUserParams{
 		Email:        input.Email,
 		Username:     input.Username,
 		PasswordHash: passwordHash,
@@ -135,7 +143,7 @@ func (h *AuthHandler) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = h.querier.InsertRefreshToken(r.Context(), database.InsertRefreshTokenParams{
+	_, err = h.store.InsertRefreshToken(r.Context(), database.InsertRefreshTokenParams{
 		UserID:    user.ID,
 		Token:     refreshToken,
 		FamilyID:  pgtype.UUID{Bytes: familyID, Valid: true},

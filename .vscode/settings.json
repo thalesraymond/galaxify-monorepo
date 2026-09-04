@@ -1,0 +1,6 @@
+{
+  "sonarlint.connectedMode.project": {
+    "connectionId": "thalesraymond",
+    "projectKey": "thalesraymond_galaxify-monorepo"
+  }
+}

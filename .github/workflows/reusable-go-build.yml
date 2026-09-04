@@ -35,7 +35,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.25.x'
+          go-version: "1.25.x"
 
       - name: Build
         run: go build ./...
@@ -44,4 +44,12 @@ jobs:
         run: go vet ./...
 
       - name: Test
-        run: go test ./...
+        run: go test -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ inputs.module }}
+          path: ${{ inputs.module }}/coverage.out
+          retention-days: 1
