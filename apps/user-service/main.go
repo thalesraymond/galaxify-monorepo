@@ -100,7 +100,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("failed to get JWT key: %w", err)
 	}
-	_, pub, err := auth.LoadPrivatePublicKeyPair(jwtKey.PrivateKey)
+	priv, _, err := auth.LoadPrivatePublicKeyPair(jwtKey.PrivateKey)
 	if err != nil {
 		return fmt.Errorf("failed to load JWT key pair: %w", err)
 	}
@@ -108,7 +108,7 @@ func run(logger *slog.Logger) error {
 	healthHandler := handler.NewHealthHandler(serviceName)
 	healthHandler.RegisterHealthRoutes(mux)
 
-	authHandler := handler.NewAuthHandler(serviceName, pub, db, logger)
+	authHandler := handler.NewAuthHandler(serviceName, priv, jwtKey.Kid, db, publisher, logger)
 	authHandler.RegisterAuthRoutes(mux)
 
 	srv := &http.Server{

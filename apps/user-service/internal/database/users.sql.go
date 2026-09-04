@@ -60,19 +60,25 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 }
 
 const insertUser = `-- name: InsertUser :one
-INSERT INTO users (email, username, password_hash)
-VALUES ($1, $2, $3)
+INSERT INTO users (id, email, username, password_hash)
+VALUES ($1, $2, $3, $4)
 RETURNING id, email, username, password_hash, created_at, updated_at
 `
 
 type InsertUserParams struct {
+	ID           pgtype.UUID
 	Email        string
 	Username     string
 	PasswordHash string
 }
 
 func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, insertUser, arg.Email, arg.Username, arg.PasswordHash)
+	row := q.db.QueryRow(ctx, insertUser,
+		arg.ID,
+		arg.Email,
+		arg.Username,
+		arg.PasswordHash,
+	)
 	var i User
 	err := row.Scan(
 		&i.ID,
