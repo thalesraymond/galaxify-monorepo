@@ -106,7 +106,7 @@ func (h *SessionHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	sharedhttp.WriteJSON(w, http.StatusOK, authSessionResponse{
 		User: userResponse{
-			ID:        pgUUIDToString(user.ID),
+			ID:        sharedhttp.UUIDToString(user.ID),
 			Email:     user.Email,
 			Username:  user.Username,
 			CreatedAt: user.CreatedAt.Time.Format(time.RFC3339),
@@ -169,7 +169,7 @@ func (h *SessionHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, err := auth.IssueAccessToken(h.tokenIssuer.privateKey, h.tokenIssuer.kid, pgUUIDToString(user.ID), user.Email)
+	accessToken, err := auth.IssueAccessToken(h.tokenIssuer.privateKey, h.tokenIssuer.kid, sharedhttp.UUIDToString(user.ID), user.Email)
 	if err != nil {
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return

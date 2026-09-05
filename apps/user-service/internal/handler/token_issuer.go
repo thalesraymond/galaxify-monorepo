@@ -12,6 +12,7 @@ import (
 
 	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
 // refreshTokenStore is the narrow database surface used by TokenIssuer.
@@ -56,7 +57,7 @@ func (ti *TokenIssuer) IssueSession(ctx context.Context, userID pgtype.UUID, ema
 		return "", "", err
 	}
 
-	accessToken, err = auth.IssueAccessToken(ti.privateKey, ti.kid, pgUUIDToString(userID), email)
+	accessToken, err = auth.IssueAccessToken(ti.privateKey, ti.kid, sharedhttp.UUIDToString(userID), email)
 	if err != nil {
 		return "", "", err
 	}

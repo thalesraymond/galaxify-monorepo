@@ -109,7 +109,7 @@ func (h *RegistrationHandler) Signup(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.publisher.Publish(r.Context(), "user.created", events.UserCreated{
 		Version:  1,
-		UserID:   pgUUIDToString(user.ID),
+		UserID:   sharedhttp.UUIDToString(user.ID),
 		Email:    input.Email,
 		Username: input.Username,
 	}); err != nil {
@@ -119,7 +119,7 @@ func (h *RegistrationHandler) Signup(w http.ResponseWriter, r *http.Request) {
 
 	sharedhttp.WriteJSON(w, http.StatusCreated, authSessionResponse{
 		User: userResponse{
-			ID:        pgUUIDToString(user.ID),
+			ID:        sharedhttp.UUIDToString(user.ID),
 			Email:     user.Email,
 			Username:  user.Username,
 			CreatedAt: user.CreatedAt.Time.Format(time.RFC3339),

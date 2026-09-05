@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -62,7 +61,7 @@ type meResponse = userResponse
 // userToMeResponse maps a database.User to the on-the-wire meResponse shape.
 func userToMeResponse(user database.User) meResponse {
 	return meResponse{
-		ID:        pgUUIDToString(user.ID),
+		ID:        sharedhttp.UUIDToString(user.ID),
 		Email:     user.Email,
 		Username:  user.Username,
 		CreatedAt: user.CreatedAt.Time.Format(time.RFC3339),
@@ -70,18 +69,9 @@ func userToMeResponse(user database.User) meResponse {
 	}
 }
 
-// parseUserID parses a userID string into a pgtype.UUID.
-func parseUserID(userID string) (pgtype.UUID, error) {
-	id, err := uuid.Parse(userID)
-	if err != nil {
-		return pgtype.UUID{}, err
-	}
-	return pgtype.UUID{Bytes: id, Valid: true}, nil
-}
-
 // GetMe returns the authenticated user's identity fields. Spec §3.4.
 func (h *MeHandler) GetMe(w http.ResponseWriter, r *http.Request, userID string) {
-	pgID, err := parseUserID(userID)
+	pgID, err := sharedhttp.ParseUUID(userID)
 	if err != nil {
 		sharedhttp.WriteError(w, http.StatusUnauthorized, "AUTH_INVALID_TOKEN", "invalid user identity")
 		return
@@ -106,7 +96,7 @@ type updateMeRequest struct {
 
 // UpdateMe updates the authenticated user's username. Spec §3.5.
 func (h *MeHandler) UpdateMe(w http.ResponseWriter, r *http.Request, userID string) {
-	pgID, err := parseUserID(userID)
+	pgID, err := sharedhttp.ParseUUID(userID)
 	if err != nil {
 		sharedhttp.WriteError(w, http.StatusUnauthorized, "AUTH_INVALID_TOKEN", "invalid user identity")
 		return
@@ -142,7 +132,7 @@ type deleteMeRequest struct {
 
 // DeleteMe permanently deletes the authenticated user's account. Spec §3.6.
 func (h *MeHandler) DeleteMe(w http.ResponseWriter, r *http.Request, userID string) {
-	pgID, err := parseUserID(userID)
+	pgID, err := sharedhttp.ParseUUID(userID)
 	if err != nil {
 		sharedhttp.WriteError(w, http.StatusUnauthorized, "AUTH_INVALID_TOKEN", "invalid user identity")
 		return
