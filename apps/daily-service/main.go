@@ -86,6 +86,7 @@ func run(logger *slog.Logger) error {
 
 	userConsumer := consumer.NewUserConsumer(pool, logger)
 	subscriber.On("user.created", events.HandlerFunc(userConsumer.HandleUserCreated))
+	subscriber.On("user.deleted", events.HandlerFunc(userConsumer.HandleUserDeleted))
 
 	if err := subscriber.Start(subCtx); err != nil {
 		return fmt.Errorf("start subscriber: %w", err)

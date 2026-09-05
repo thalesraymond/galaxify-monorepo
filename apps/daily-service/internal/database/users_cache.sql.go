@@ -11,6 +11,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deleteUserCache = `-- name: DeleteUserCache :exec
+DELETE FROM users_cache WHERE id = $1
+`
+
+func (q *Queries) DeleteUserCache(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserCache, id)
+	return err
+}
+
 const upsertUserCache = `-- name: UpsertUserCache :exec
 INSERT INTO users_cache (id)
 VALUES ($1)
