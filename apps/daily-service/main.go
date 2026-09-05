@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,7 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
-	"github.com/thalesraymond/galaxify-monorepo/apps/daily-service/internal/database"
+	"github.com/thalesraymond/galaxify-monorepo/apps/daily-service/internal/consumer"
 	"github.com/thalesraymond/galaxify-monorepo/apps/daily-service/internal/handler"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/rabbitmq"
@@ -69,8 +68,6 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("ping postgres: %w", err)
 	}
 
-	db := database.New(pool)
-
 	conn, err := rabbitmq.Connect(amqpURL)
 	if err != nil {
 		return err
@@ -82,40 +79,17 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("create channel: %w", err)
 	}
 
-	// TODO: REMOVE THIS TEST BEFORE DEPLOYMENT. This is just to test the subscriber.
 	subscriber, err := events.NewSubscriber(ch, "daily-service")
 	if err != nil {
 		return fmt.Errorf("create subscriber: %w", err)
 	}
 
-	subscriber.On("user.created", events.HandlerFunc(func(ctx context.Context, eventType string, payload []byte) error {
-		var envelope events.Envelope
-		if err := json.Unmarshal(payload, &envelope); err != nil {
-			return fmt.Errorf("unmarshal envelope: %w", err)
-		}
-
-		idempotency := events.NewProcessedEvents(db)
-
-		logger.Info("Received user.created event", "event_id", envelope.EventId, "payload", string(payload))
-
-		should_process, err := idempotency.MarkProcessed(ctx, envelope.EventId)
-		if err != nil {
-			return err
-		}
-
-		if should_process {
-			logger.Info("Processing event", "event_id", envelope.EventId)
-		} else {
-			logger.Info("Event already processed, skipping", "event_id", envelope.EventId)
-			return nil
-		}
-		return nil
-	}))
+	userConsumer := consumer.NewUserConsumer(pool, logger)
+	subscriber.On("user.created", events.HandlerFunc(userConsumer.HandleUserCreated))
 
 	if err := subscriber.Start(subCtx); err != nil {
 		return fmt.Errorf("start subscriber: %w", err)
 	}
-	// END TEST
 
 	mux := http.NewServeMux()
 	handler.NewHealthHandler(serviceName).RegisterHealthRoutes(mux)

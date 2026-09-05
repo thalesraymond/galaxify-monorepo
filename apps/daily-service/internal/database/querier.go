@@ -28,6 +28,7 @@ type Querier interface {
 	MarkDailyMissed(ctx context.Context, id pgtype.UUID) (Daily, error)
 	UpdateDaily(ctx context.Context, arg UpdateDailyParams) (Daily, error)
 	UpdateTestTable(ctx context.Context, arg UpdateTestTableParams) (TestTable, error)
+	UpsertUserCache(ctx context.Context, id pgtype.UUID) error
 }
 
 var _ Querier = (*Queries)(nil)

@@ -53,6 +53,7 @@ func (h *SessionHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /auth/login", h.Login)
 	mux.HandleFunc("POST /auth/refresh", h.Refresh)
 }
+
 type loginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
