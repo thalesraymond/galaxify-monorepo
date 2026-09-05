@@ -26,12 +26,7 @@ func NewUserConsumer(pool *pgxpool.Pool, logger *slog.Logger) *UserConsumer {
 }
 
 func (c *UserConsumer) HandleUserCreated(ctx context.Context, eventType string, payload []byte) error {
-	type rawEnvelope struct {
-		EventId string          `json:"event_id"`
-		Payload json.RawMessage `json:"payload"`
-	}
-
-	var env rawEnvelope
+	var env events.Envelope
 	if err := json.Unmarshal(payload, &env); err != nil {
 		return fmt.Errorf("unmarshal envelope: %w", err)
 	}

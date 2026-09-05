@@ -98,12 +98,17 @@ func NewPublisher(channel PublisherChannel, opts ...Option) (*Publisher, error) 
 func (p *Publisher) Publish(ctx context.Context, eventType string, payload any) error {
 	eventID := uuid.New().String()
 
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
 	envelope := Envelope{
 		EventId:    eventID,
 		EventType:  eventType,
 		OccurredAt: time.Now(),
 		Version:    1,
-		Payload:    payload,
+		Payload:    payloadBytes,
 	}
 
 	body, err := json.Marshal(envelope)

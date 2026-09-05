@@ -44,63 +44,43 @@ func TestHandleUserCreated(t *testing.T) {
 
 	payloadBytes, _ := json.Marshal(payloadData)
 
-	env := struct {
-		EventId string          `json:"event_id"`
-		Payload json.RawMessage `json:"payload"`
-	}{
-		EventId: eventID,
-		Payload: payloadBytes,
+	env := events.Envelope{
+		EventId:    eventID,
+		Payload:    payloadBytes,
 	}
 
 	envBytes, _ := json.Marshal(env)
 
+	checkCache := func() {
+		t.Helper()
+		var count int
+		err = pool.QueryRow(ctx, "SELECT count(*) FROM users_cache WHERE id = $1", userID).Scan(&count)
+		if err != nil {
+			t.Fatalf("failed to query users_cache: %v", err)
+		}
+		if count != 1 {
+			t.Errorf("expected 1 user in cache, got %d", count)
+		}
+	}
+
 	// 1. Process event first time
-	err = c.HandleUserCreated(ctx, "user.created", envBytes)
-	if err != nil {
+	if err := c.HandleUserCreated(ctx, "user.created", envBytes); err != nil {
 		t.Fatalf("first HandleUserCreated failed: %v", err)
 	}
-
-	// Verify user is in cache
-	var count int
-	err = pool.QueryRow(ctx, "SELECT count(*) FROM users_cache WHERE id = $1", userID).Scan(&count)
-	if err != nil {
-		t.Fatalf("failed to query users_cache: %v", err)
-	}
-	if count != 1 {
-		t.Errorf("expected 1 user in cache, got %d", count)
-	}
+	checkCache()
 
 	// 2. Process same event again (idempotency)
-	err = c.HandleUserCreated(ctx, "user.created", envBytes)
-	if err != nil {
+	if err := c.HandleUserCreated(ctx, "user.created", envBytes); err != nil {
 		t.Fatalf("second HandleUserCreated failed: %v", err)
 	}
-
-	// Still 1 user in cache
-	err = pool.QueryRow(ctx, "SELECT count(*) FROM users_cache WHERE id = $1", userID).Scan(&count)
-	if err != nil {
-		t.Fatalf("failed to query users_cache after retry: %v", err)
-	}
-	if count != 1 {
-		t.Errorf("expected 1 user in cache after retry, got %d", count)
-	}
+	checkCache()
 
 	// 3. Process new event with same user_id (should upsert safely)
-	eventID2 := uuid.New().String()
-	env2 := env
-	env2.EventId = eventID2
-	envBytes2, _ := json.Marshal(env2)
+	env.EventId = uuid.New().String()
+	envBytes2, _ := json.Marshal(env)
 
-	err = c.HandleUserCreated(ctx, "user.created", envBytes2)
-	if err != nil {
+	if err := c.HandleUserCreated(ctx, "user.created", envBytes2); err != nil {
 		t.Fatalf("third HandleUserCreated failed: %v", err)
 	}
-
-	err = pool.QueryRow(ctx, "SELECT count(*) FROM users_cache WHERE id = $1", userID).Scan(&count)
-	if err != nil {
-		t.Fatalf("failed to query users_cache after second event: %v", err)
-	}
-	if count != 1 {
-		t.Errorf("expected 1 user in cache after second event, got %d", count)
-	}
+	checkCache()
 }
