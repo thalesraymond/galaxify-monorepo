@@ -28,10 +28,10 @@ type meStore interface {
 
 // MeHandler handles auth-protected /users/me endpoints (GET, PATCH, DELETE).
 type MeHandler struct {
-	store       meStore
-	publisher   EventPublisher
+	store         meStore
+	publisher     EventPublisher
 	authHandshake *sharedhttp.AuthHandshake
-	logger      *slog.Logger
+	logger        *slog.Logger
 }
 
 // NewMeHandler creates a MeHandler.
@@ -42,10 +42,10 @@ func NewMeHandler(
 	logger *slog.Logger,
 ) *MeHandler {
 	return &MeHandler{
-		store:       store,
-		publisher:   publisher,
+		store:         store,
+		publisher:     publisher,
 		authHandshake: authHandshake,
-		logger:      logger,
+		logger:        logger,
 	}
 }
 

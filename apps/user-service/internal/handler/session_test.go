@@ -21,12 +21,12 @@ import (
 )
 
 type mockSessionStore struct {
-	getUserByEmail             func(ctx context.Context, email string) (database.User, error)
-	getRefreshTokenByToken     func(ctx context.Context, token string) (database.RefreshToken, error)
-	markRefreshTokenUsed       func(ctx context.Context, id int64) error
+	getUserByEmail              func(ctx context.Context, email string) (database.User, error)
+	getRefreshTokenByToken      func(ctx context.Context, token string) (database.RefreshToken, error)
+	markRefreshTokenUsed        func(ctx context.Context, id int64) error
 	deleteRefreshTokensByFamily func(ctx context.Context, familyID pgtype.UUID) error
-	insertRefreshToken         func(ctx context.Context, arg database.InsertRefreshTokenParams) (database.RefreshToken, error)
-	getUserByID                func(ctx context.Context, id pgtype.UUID) (database.User, error)
+	insertRefreshToken          func(ctx context.Context, arg database.InsertRefreshTokenParams) (database.RefreshToken, error)
+	getUserByID                 func(ctx context.Context, id pgtype.UUID) (database.User, error)
 }
 
 func (m *mockSessionStore) GetUserByEmail(ctx context.Context, email string) (database.User, error) {

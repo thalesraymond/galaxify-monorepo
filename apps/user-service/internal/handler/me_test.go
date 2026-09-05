@@ -63,7 +63,7 @@ func newTestMeHandler(t *testing.T, store meStore, publisher EventPublisher) *Me
 type noopJWKSCache struct{}
 
 func (c *noopJWKSCache) GetKey(kid string) (crypto.PublicKey, bool) { return nil, false }
-func (c *noopJWKSCache) ForceRefresh(ctx context.Context) error    { return nil }
+func (c *noopJWKSCache) ForceRefresh(ctx context.Context) error     { return nil }
 
 func TestGetMe(t *testing.T) {
 	userID := uuid.New()
