@@ -12,8 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 
-	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
-	"github.com/thalesraymond/galaxify-monorepo/pkg/rabbitmq"
 	"github.com/thalesraymond/galaxify-monorepo/workers/daily-cron/internal/cron"
 )
 
@@ -23,9 +21,13 @@ const serviceName = "daily-cron"
 // infrastructure even without a .env file. .env overrides them.
 const (
 	defaultDatabaseURL = "postgres://postgres:password@localhost:5432/daily_db"
-	defaultRabbitMQURL = "amqp://guest:guest@localhost:5672/"
 	defaultInterval    = 5 * time.Minute
 )
+
+// NOTE: RabbitMQ / event publishing is intentionally absent here.
+// The daily.missed event will be written to the outbox table inside the same
+// transaction as the status update, once the outbox pattern is implemented in
+// https://github.com/thalesraymond/galaxify-monorepo/issues/20.
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -41,7 +43,6 @@ func run(logger *slog.Logger) error {
 	_ = godotenv.Load()
 
 	dbURL := envOr("DATABASE_URL", defaultDatabaseURL)
-	amqpURL := envOr("RABBITMQ_URL", defaultRabbitMQURL)
 	interval := envDurationOr("CRON_INTERVAL", defaultInterval)
 
 	startupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -57,25 +58,8 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("ping postgres: %w", err)
 	}
 
-	conn, err := rabbitmq.Connect(amqpURL)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	ch, err := conn.Channel()
-	if err != nil {
-		return fmt.Errorf("create channel: %w", err)
-	}
-	defer ch.Close()
-
-	publisher, err := events.NewPublisher(ch, events.WithLogger(logger))
-	if err != nil {
-		return fmt.Errorf("create publisher: %w", err)
-	}
-
 	store := cron.NewPgStore(pool)
-	worker := cron.NewWorker(store, publisher, cron.WithLogger(logger))
+	worker := cron.NewMissedDailyWorker(store, cron.WithLogger(logger))
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()

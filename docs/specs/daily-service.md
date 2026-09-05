@@ -52,13 +52,22 @@ Events published via the outbox pattern to the `galaxify.events` exchange.
 
 ## Cron Worker (Missed Dailies)
 
-Finds expired `PENDING` dailies and marks them `MISSED`. 
-*Note: This runs as a standalone serverless function/worker in `workers/daily-cron`, completely separate from the stateless `apps/daily-service` API container, allowing the API to scale to zero independently. (Note: The `workers/daily-cron` module is pending implementation).*
+Finds expired `PENDING` dailies and marks them `MISSED`. Runs as a standalone
+worker in `workers/daily-cron`, completely separate from the stateless
+`apps/daily-service` API container, so the API can scale to zero independently.
 
 - **Interval**: Continuous sweep every 5 minutes.
 - **Timezone Model**: Evaluates `due_date` against server UTC `now()`.
-- **Batch Size**: Processes in batches of 100 or 500 using `LIMIT` and `FOR UPDATE SKIP LOCKED` to prevent lock contention and enable safe concurrent execution.
-- **Idempotency / Double-Firing Prevention**: Finds `status = 'PENDING' AND due_date < now()`, updates status to `MISSED`, and inserts a `daily.missed` event into the outbox all within the same database transaction. The status update inherently prevents double processing.
+- **Batch Size**: Processes in batches of 500 using `LIMIT` and `FOR UPDATE SKIP LOCKED` to prevent lock contention and enable safe concurrent execution.
+- **Idempotency**: Marks `status = 'PENDING' AND due_date < now()` → `MISSED` inside a single transaction per batch. The status check prevents double-marking.
+
+### ⚠️ Event publication deferred to [#20](https://github.com/thalesraymond/galaxify-monorepo/issues/20)
+
+`daily.missed` events are **not yet published**. The outbox table, outbox drain
+logic, and RabbitMQ wiring are all part of issue #20 (transactional outbox
+pattern). Once #20 lands, the worker will write a `daily.missed` row to the
+`outbox` table **inside the same transaction** as the `MISSED` status update,
+guaranteeing atomicity between state change and event.
 
 ## Out of Scope (Phase 1)
 - Recurring daily templates.
