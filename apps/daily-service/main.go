@@ -102,6 +102,14 @@ func run(logger *slog.Logger) error {
 	handler.NewHealthHandler(serviceName).RegisterHealthRoutes(mux)
 
 	jwksCache := auth.NewSimpleJWKSCache(jwksURL)
+	// Warm the JWKS cache at startup so the first authenticated request doesn't
+	// have to hit the unknown-kid fallback path. SimpleJWKSCache starts empty;
+	// ForceRefresh populates it from user-service's JWKS endpoint. If user-service
+	// is unreachable here, fail boot loudly rather than failing the first request.
+	if err := jwksCache.ForceRefresh(timeoutCtx); err != nil {
+		return fmt.Errorf("warm jwks cache: %w", err)
+	}
+
 	authHandshake := sharedhttp.NewAuthHandshake(jwksCache)
 
 	dailyHandler := handler.NewDailyHandler(db, authHandshake, logger)

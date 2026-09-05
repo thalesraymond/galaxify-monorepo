@@ -30,8 +30,14 @@ func TestGetJWKS(t *testing.T) {
 
 	wantStatus(t, rec, http.StatusOK)
 
-	var jwk auth.JWK
-	decodeBody(t, rec, &jwk)
+	var doc struct {
+		Keys []auth.JWK `json:"keys"`
+	}
+	decodeBody(t, rec, &doc)
+	if len(doc.Keys) != 1 {
+		t.Fatalf("len(keys) = %d, want 1", len(doc.Keys))
+	}
+	jwk := doc.Keys[0]
 	if jwk.Kid != "test-key" {
 		t.Errorf("kid = %q, want test-key", jwk.Kid)
 	}

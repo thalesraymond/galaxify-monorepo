@@ -31,6 +31,11 @@ func (h *JWKSHandler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 // GetJWKS returns the active Ed25519 public key as a JWKS document.
+//
+// RFC 7517 §5 requires a JWKS document to be a JSON object with a "keys"
+// array. Serving a bare JWK object would cause JWKS consumers (e.g. daily-service's
+// SimpleJWKSCache) to decode the document into an empty keys slice — every
+// verification would fail with AUTH_UNKNOWN_KID.
 func (h *JWKSHandler) GetJWKS(w http.ResponseWriter, r *http.Request) {
 	jwk, err := auth.PublicKeyToJWK(h.privateKey.Public().(ed25519.PublicKey), h.kid)
 	if err != nil {
@@ -38,5 +43,7 @@ func (h *JWKSHandler) GetJWKS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sharedhttp.WriteJSON(w, http.StatusOK, jwk)
+	sharedhttp.WriteJSON(w, http.StatusOK, struct {
+		Keys []auth.JWK `json:"keys"`
+	}{Keys: []auth.JWK{jwk}})
 }

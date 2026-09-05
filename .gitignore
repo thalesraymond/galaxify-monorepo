@@ -28,3 +28,5 @@ bin/
 # Environment files — secrets and local overrides are never committed.
 # Copy the committed .env.example per app instead.
 .env
+
+.gocache/
