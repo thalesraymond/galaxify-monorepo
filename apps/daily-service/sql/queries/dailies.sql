@@ -24,7 +24,7 @@ UPDATE dailies SET
 WHERE id = $1 AND user_id = $2 AND status = 'PENDING'
 RETURNING *;
 
--- name: DeleteDaily :exec
+-- name: DeleteDaily :execrows
 DELETE FROM dailies WHERE id = $1 AND user_id = $2 AND status = 'PENDING';
 
 -- name: MarkDailyComplete :one

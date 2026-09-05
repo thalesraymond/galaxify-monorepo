@@ -15,7 +15,7 @@ type Querier interface {
 	CreateDailyHistory(ctx context.Context, arg CreateDailyHistoryParams) error
 	CreateTestTable(ctx context.Context, name string) (TestTable, error)
 	CreateUserCache(ctx context.Context, id pgtype.UUID) error
-	DeleteDaily(ctx context.Context, arg DeleteDailyParams) error
+	DeleteDaily(ctx context.Context, arg DeleteDailyParams) (int64, error)
 	DeleteOldProcessedEvents(ctx context.Context) (int64, error)
 	DeleteTestTable(ctx context.Context, id int64) error
 	DeleteUserCache(ctx context.Context, id pgtype.UUID) error
