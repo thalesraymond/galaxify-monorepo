@@ -18,6 +18,7 @@ type Querier interface {
 	DeleteDaily(ctx context.Context, arg DeleteDailyParams) error
 	DeleteOldProcessedEvents(ctx context.Context) (int64, error)
 	DeleteTestTable(ctx context.Context, id int64) error
+	DeleteUserCache(ctx context.Context, id pgtype.UUID) error
 	GetDaily(ctx context.Context, arg GetDailyParams) (Daily, error)
 	GetDifficultyReward(ctx context.Context, difficulty string) (DifficultyReward, error)
 	GetTestTable(ctx context.Context, id int64) (TestTable, error)
