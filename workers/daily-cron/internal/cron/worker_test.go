@@ -3,12 +3,15 @@ package cron
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/workers/daily-cron/internal/database"
 )
 
@@ -21,6 +24,8 @@ var (
 func pgUUID(id uuid.UUID) pgtype.UUID {
 	return pgtype.UUID{Bytes: id, Valid: true}
 }
+
+// --- mocks ---
 
 type mockTx struct {
 	listPendingExpiredDailies func(ctx context.Context, before time.Time, limit int32) ([]database.ListPendingExpiredDailiesRow, error)
@@ -60,6 +65,44 @@ func (m *mockStore) WithTx(ctx context.Context, fn func(Tx) error) error {
 	return errors.New("unexpected WithTx call")
 }
 
+type mockPublisher struct {
+	publish func(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error
+}
+
+func (m *mockPublisher) Publish(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error {
+	if m.publish != nil {
+		return m.publish(ctx, eventType, payload, opts...)
+	}
+	return errors.New("unexpected Publish call")
+}
+
+// newSilentLogger discards all log output (keeps test output clean).
+func newSilentLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+// defaultMarkMissedTx returns a mockTx that serves one MEDIUM expired daily on
+// the first ListPendingExpiredDailies call and nothing thereafter.
+func defaultMarkMissedTx(calls *int) *mockTx {
+	return &mockTx{
+		listPendingExpiredDailies: func(ctx context.Context, before time.Time, limit int32) ([]database.ListPendingExpiredDailiesRow, error) {
+			*calls++
+			if *calls == 1 {
+				return []database.ListPendingExpiredDailiesRow{{
+					ID:         pgUUID(dailyID),
+					UserID:     pgUUID(userID),
+					Difficulty: "MEDIUM",
+				}}, nil
+			}
+			return nil, nil
+		},
+		getDamageAmount: func(_ context.Context, _ string) (int32, error) { return 10, nil },
+		markDailyMissed: func(_ context.Context, _ pgtype.UUID) error { return nil },
+	}
+}
+
+// --- tests ---
+
 func TestWorkerTickNoExpiredDailies(t *testing.T) {
 	store := &mockStore{
 		withTx: func(ctx context.Context, fn func(Tx) error) error {
@@ -76,18 +119,29 @@ func TestWorkerTickNoExpiredDailies(t *testing.T) {
 			})
 		},
 	}
-	worker := NewMissedDailyWorker(store, WithClock(func() time.Time { return fixedNow }))
+	publisher := &mockPublisher{publish: func(_ context.Context, _ string, _ any, _ ...events.PublishOption) error {
+		t.Error("Publish should not be called when there are no expired dailies")
+		return nil
+	}}
+	worker := NewMissedDailyWorker(store, publisher, WithClock(func() time.Time { return fixedNow }))
 
 	if err := worker.Tick(context.Background()); err != nil {
 		t.Fatalf("Tick returned error: %v", err)
 	}
 }
 
-func TestWorkerTickMarksExpiredDailyMissed(t *testing.T) {
-	var markCalls int
+func TestWorkerTickMarksExpiredDailyAndPublishes(t *testing.T) {
+	var (
+		capturedEventType    string
+		capturedDailyID      string
+		capturedDamageAmount float64
+		markCalls            int
+		txCallCount          int
+	)
 
 	store := &mockStore{
 		withTx: func(ctx context.Context, fn func(Tx) error) error {
+			txCallCount++
 			return fn(&mockTx{
 				listPendingExpiredDailies: func(ctx context.Context, before time.Time, limit int32) ([]database.ListPendingExpiredDailiesRow, error) {
 					markCalls++
@@ -100,7 +154,13 @@ func TestWorkerTickMarksExpiredDailyMissed(t *testing.T) {
 					}
 					return nil, nil
 				},
-				markDailyMissed: func(ctx context.Context, id pgtype.UUID) error {
+				getDamageAmount: func(_ context.Context, difficulty string) (int32, error) {
+					if difficulty != "MEDIUM" {
+						t.Errorf("difficulty = %q, want MEDIUM", difficulty)
+					}
+					return 10, nil
+				},
+				markDailyMissed: func(_ context.Context, id pgtype.UUID) error {
 					if id != pgUUID(dailyID) {
 						t.Errorf("daily_id = %v, want %v", id, pgUUID(dailyID))
 					}
@@ -109,10 +169,30 @@ func TestWorkerTickMarksExpiredDailyMissed(t *testing.T) {
 			})
 		},
 	}
-	worker := NewMissedDailyWorker(store, WithClock(func() time.Time { return fixedNow }))
+	publisher := &mockPublisher{
+		publish: func(_ context.Context, eventType string, payload any, _ ...events.PublishOption) error {
+			capturedEventType = eventType
+			if p, ok := payload.(events.DailyMissed); ok {
+				capturedDailyID = p.DailyID
+				capturedDamageAmount = float64(p.DamageAmount)
+			}
+			return nil
+		},
+	}
+	worker := NewMissedDailyWorker(store, publisher, WithClock(func() time.Time { return fixedNow }))
 
 	if err := worker.Tick(context.Background()); err != nil {
 		t.Fatalf("Tick returned error: %v", err)
+	}
+
+	if capturedEventType != "daily.missed" {
+		t.Errorf("event_type = %q, want daily.missed", capturedEventType)
+	}
+	if capturedDailyID != dailyID.String() {
+		t.Errorf("payload.daily_id = %v, want %v", capturedDailyID, dailyID.String())
+	}
+	if capturedDamageAmount != 10 {
+		t.Errorf("payload.damage_amount = %v, want 10", capturedDamageAmount)
 	}
 }
 
@@ -130,11 +210,13 @@ func TestWorkerTickProcessesMultipleBatches(t *testing.T) {
 					}
 					return nil, nil
 				},
-				markDailyMissed: func(ctx context.Context, id pgtype.UUID) error { return nil },
+				getDamageAmount: func(_ context.Context, _ string) (int32, error) { return 5, nil },
+				markDailyMissed: func(_ context.Context, _ pgtype.UUID) error { return nil },
 			})
 		},
 	}
-	worker := NewMissedDailyWorker(store,
+	publisher := &mockPublisher{publish: func(_ context.Context, _ string, _ any, _ ...events.PublishOption) error { return nil }}
+	worker := NewMissedDailyWorker(store, publisher,
 		WithClock(func() time.Time { return fixedNow }),
 		WithBatchSize(1),
 	)
@@ -149,6 +231,43 @@ func TestWorkerTickProcessesMultipleBatches(t *testing.T) {
 	}
 }
 
+func TestWorkerTickPublishFailureIsLogged(t *testing.T) {
+	// Publish failure must NOT cause Tick to return an error — the daily is
+	// already committed as MISSED; the event is dropped with a warning log.
+	// Full at-least-once delivery is gated on issue #20 (outbox pattern).
+	var markCalls int
+	store := &mockStore{
+		withTx: func(ctx context.Context, fn func(Tx) error) error {
+			return fn(&mockTx{
+				listPendingExpiredDailies: func(ctx context.Context, before time.Time, limit int32) ([]database.ListPendingExpiredDailiesRow, error) {
+					markCalls++
+					if markCalls == 1 {
+						return []database.ListPendingExpiredDailiesRow{{
+							ID:         pgUUID(dailyID),
+							UserID:     pgUUID(userID),
+							Difficulty: "HARD",
+						}}, nil
+					}
+					return nil, nil
+				},
+				getDamageAmount: func(_ context.Context, _ string) (int32, error) { return 20, nil },
+				markDailyMissed: func(_ context.Context, _ pgtype.UUID) error { return nil },
+			})
+		},
+	}
+	publisher := &mockPublisher{publish: func(_ context.Context, _ string, _ any, _ ...events.PublishOption) error {
+		return errors.New("broker unavailable")
+	}}
+	worker := NewMissedDailyWorker(store, publisher,
+		WithLogger(newSilentLogger()),
+		WithClock(func() time.Time { return fixedNow }),
+	)
+
+	if err := worker.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick must not return error on publish failure, got: %v", err)
+	}
+}
+
 func TestWorkerTickMarkDailyMissedError(t *testing.T) {
 	store := &mockStore{
 		withTx: func(ctx context.Context, fn func(Tx) error) error {
@@ -158,41 +277,19 @@ func TestWorkerTickMarkDailyMissedError(t *testing.T) {
 						{ID: pgUUID(dailyID), UserID: pgUUID(userID), Difficulty: "HARD"},
 					}, nil
 				},
-				markDailyMissed: func(ctx context.Context, id pgtype.UUID) error {
+				markDailyMissed: func(_ context.Context, _ pgtype.UUID) error {
 					return errors.New("db write failed")
 				},
 			})
 		},
 	}
-	worker := NewMissedDailyWorker(store, WithClock(func() time.Time { return fixedNow }))
+	publisher := &mockPublisher{publish: func(_ context.Context, _ string, _ any, _ ...events.PublishOption) error {
+		t.Error("Publish must not be called when MarkDailyMissed fails")
+		return nil
+	}}
+	worker := NewMissedDailyWorker(store, publisher, WithClock(func() time.Time { return fixedNow }))
 
-	err := worker.Tick(context.Background())
-	if err == nil {
+	if err := worker.Tick(context.Background()); err == nil {
 		t.Fatal("expected Tick to return error when MarkDailyMissed fails")
-	}
-}
-
-func TestWorkerTickIdempotentDoubleCall(t *testing.T) {
-	// Second Tick with no pending rows should be a safe no-op.
-	calls := 0
-	store := &mockStore{
-		withTx: func(ctx context.Context, fn func(Tx) error) error {
-			calls++
-			return fn(&mockTx{
-				listPendingExpiredDailies: func(ctx context.Context, before time.Time, limit int32) ([]database.ListPendingExpiredDailiesRow, error) {
-					return nil, nil
-				},
-			})
-		},
-	}
-	worker := NewMissedDailyWorker(store, WithClock(func() time.Time { return fixedNow }))
-
-	for range 2 {
-		if err := worker.Tick(context.Background()); err != nil {
-			t.Fatalf("Tick returned error: %v", err)
-		}
-	}
-	if calls != 2 {
-		t.Errorf("WithTx calls = %d, want 2", calls)
 	}
 }

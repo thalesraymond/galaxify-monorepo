@@ -8,26 +8,40 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 	"github.com/thalesraymond/galaxify-monorepo/workers/daily-cron/internal/database"
 )
 
-// Worker scans for pending dailies whose due_date has passed and marks them MISSED.
+// Publisher publishes domain events to the event bus.
+type Publisher interface {
+	Publish(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error
+}
+
+// Worker scans for pending dailies whose due_date has passed, marks them
+// MISSED, and publishes a daily.missed event for each one.
 //
-// Event publication (daily.missed) is NOT performed here — it is deferred to
-// the outbox implementation in https://github.com/thalesraymond/galaxify-monorepo/issues/20.
-// Once that lands, the worker will write daily.missed rows to the outbox inside
-// the same transaction, ensuring atomicity between status change and event.
+// NOTE: publishing is best-effort here (naive publish, no outbox). The daily is
+// already committed as MISSED before the publish call, so a broker failure will
+// cause the event to be dropped without rolling back the status change. Full
+// at-least-once delivery via the transactional outbox is tracked in
+// https://github.com/thalesraymond/galaxify-monorepo/issues/20 — once that
+// lands the publisher field and post-commit publish loop will be replaced by
+// outbox inserts inside the transaction.
 type Worker struct {
 	store     Store
+	publisher Publisher
 	batchSize int32
 	logger    *slog.Logger
 	now       func() time.Time
 }
 
-// NewMissedDailyWorker creates a Worker that marks expired pending dailies as MISSED.
-func NewMissedDailyWorker(store Store, opts ...WorkerOption) *Worker {
+// NewMissedDailyWorker creates a Worker that marks expired pending dailies as MISSED
+// and publishes daily.missed events.
+func NewMissedDailyWorker(store Store, publisher Publisher, opts ...WorkerOption) *Worker {
 	w := &Worker{
 		store:     store,
+		publisher: publisher,
 		batchSize: 500,
 		logger:    slog.Default(),
 		now:       time.Now,
@@ -63,8 +77,8 @@ func WithClock(now func() time.Time) WorkerOption {
 	}
 }
 
-// Tick runs one full mark cycle: marks expired dailies MISSED in batches until
-// no more are found.
+// Tick runs one full mark cycle: marks expired dailies MISSED in batches, then
+// publishes a daily.missed event for each one outside the transaction.
 func (w *Worker) Tick(ctx context.Context) error {
 	now := w.now().UTC()
 	for {
@@ -72,22 +86,20 @@ func (w *Worker) Tick(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("mark missed batch: %w", err)
 		}
-		if marked == 0 {
+		if len(marked) == 0 {
 			break
 		}
-		w.logger.Info("marked dailies missed", "count", marked)
+		w.logger.Info("marked dailies missed", "count", len(marked))
+		w.publishBatch(ctx, marked)
 	}
 	return nil
 }
 
 // markBatch marks up to batchSize pending expired dailies as MISSED inside a
 // single transaction (SKIP LOCKED prevents contention with concurrent instances).
-// It returns the number of dailies processed.
-//
-// NOTE: daily.missed event publication is intentionally absent — it is blocked
-// on https://github.com/thalesraymond/galaxify-monorepo/issues/20 (outbox pattern).
-func (w *Worker) markBatch(ctx context.Context, now time.Time) (int, error) {
-	var processed int
+// It returns the rows that were marked so the caller can publish events for them.
+func (w *Worker) markBatch(ctx context.Context, now time.Time) ([]database.ListPendingExpiredDailiesRow, error) {
+	var marked []database.ListPendingExpiredDailiesRow
 	err := w.store.WithTx(ctx, func(tx Tx) error {
 		dailies, err := tx.ListPendingExpiredDailies(ctx, now, w.batchSize)
 		if err != nil {
@@ -103,23 +115,61 @@ func (w *Worker) markBatch(ctx context.Context, now time.Time) (int, error) {
 			}
 		}
 
-		processed = len(dailies)
+		marked = dailies
 		return nil
 	})
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return processed, nil
+	return marked, nil
 }
 
-// toTimestamptz converts a time.Time to pgtype.Timestamptz.
+// publishBatch publishes a daily.missed event for each row in marked.
+// Publishing is best-effort: a broker failure logs a warning but does not roll
+// back the MISSED status already committed to the database.
+// Full at-least-once delivery is tracked in issue #20 (outbox pattern).
+func (w *Worker) publishBatch(ctx context.Context, marked []database.ListPendingExpiredDailiesRow) {
+	for _, daily := range marked {
+		damage, err := w.getDamageAmount(ctx, daily.Difficulty)
+		if err != nil {
+			w.logger.Warn("could not look up damage amount for daily.missed publish; skipping",
+				"daily_id", sharedhttp.UUIDToString(daily.ID),
+				"difficulty", daily.Difficulty,
+				"error", err,
+			)
+			continue
+		}
+
+		if err := w.publisher.Publish(ctx, "daily.missed", events.DailyMissed{
+			Version:      1,
+			UserID:       sharedhttp.UUIDToString(daily.UserID),
+			DailyID:      sharedhttp.UUIDToString(daily.ID),
+			DamageAmount: int(damage),
+		}); err != nil {
+			w.logger.Warn("daily.missed publish failed; event dropped (no outbox yet, see #20)",
+				"daily_id", sharedhttp.UUIDToString(daily.ID),
+				"error", err,
+			)
+		}
+	}
+}
+
+// getDamageAmount fetches the damage amount for a given difficulty in a
+// read-only transaction.
+func (w *Worker) getDamageAmount(ctx context.Context, difficulty string) (int32, error) {
+	var damage int32
+	err := w.store.WithTx(ctx, func(tx Tx) error {
+		d, err := tx.GetDamageAmount(ctx, difficulty)
+		if err != nil {
+			return err
+		}
+		damage = d
+		return nil
+	})
+	return damage, err
+}
+
+// toTimestamptz converts a time.Time to pgtype.Timestamptz (used in store.go).
 func toTimestamptz(t time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: t, Valid: true}
 }
-
-// ensure toTimestamptz is referenced (used by pgTx; avoids dead-code lint if
-// the function is only called from store.go in the same package).
-var _ = toTimestamptz
-
-// DailyRow is the subset of a daily row the worker needs.
-type DailyRow = database.ListPendingExpiredDailiesRow
