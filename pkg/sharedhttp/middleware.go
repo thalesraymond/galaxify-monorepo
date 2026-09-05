@@ -118,3 +118,10 @@ func UserIDFromContext(ctx context.Context) string {
 	}
 	return ""
 }
+
+// WithUserID returns a copy of ctx with the given userID stored under the
+// same key used by RequireAuth. Exported for tests that need to simulate an
+// authenticated request without going through the JWT middleware.
+func WithUserID(ctx context.Context, userID string) context.Context {
+	return context.WithValue(ctx, userIDKey, userID)
+}
