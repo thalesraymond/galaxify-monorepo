@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
@@ -19,9 +20,15 @@ import (
 // sessionStore is the narrow database surface used by SessionHandler.
 type sessionStore interface {
 	GetUserByEmail(ctx context.Context, email string) (database.User, error)
+	// For POST /auth/refresh:
+	GetRefreshTokenByToken(ctx context.Context, token string) (database.RefreshToken, error)
+	MarkRefreshTokenUsed(ctx context.Context, id int64) error
+	DeleteRefreshTokensByFamilyID(ctx context.Context, familyID pgtype.UUID) error
+	InsertRefreshToken(ctx context.Context, arg database.InsertRefreshTokenParams) (database.RefreshToken, error)
+	GetUserByID(ctx context.Context, id pgtype.UUID) (database.User, error)
 }
 
-// SessionHandler handles authentication sessions (login and, later, refresh).
+// SessionHandler handles authentication sessions (login and refresh).
 type SessionHandler struct {
 	store       sessionStore
 	tokenIssuer *TokenIssuer
@@ -44,8 +51,8 @@ func NewSessionHandler(
 // RegisterRoutes wires the session routes into the given mux.
 func (h *SessionHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /auth/login", h.Login)
+	mux.HandleFunc("POST /auth/refresh", h.Refresh)
 }
-
 type loginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
@@ -125,4 +132,50 @@ func validateLoginRequest(req loginRequest) (loginInput, map[string]string) {
 	}
 
 	return input, fieldErrors
+}
+
+type refreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// Refresh implements POST /auth/refresh with family-based token rotation.
+// Spec §3.3.
+func (h *SessionHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	var req refreshRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sharedhttp.WriteValidationError(w, map[string]string{"body": "invalid JSON body"})
+		return
+	}
+
+	if req.RefreshToken == "" {
+		sharedhttp.WriteValidationError(w, map[string]string{"refresh_token": "refresh_token is required"})
+		return
+	}
+
+	newToken, userID, err := h.tokenIssuer.RotateSession(r.Context(), h.store, req.RefreshToken)
+	if err != nil {
+		if errors.Is(err, auth.ErrInvalidRefreshToken) {
+			sharedhttp.WriteError(w, http.StatusUnauthorized, "AUTH_INVALID_TOKEN", "Invalid or expired refresh token")
+			return
+		}
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+		return
+	}
+
+	user, err := h.store.GetUserByID(r.Context(), userID)
+	if err != nil {
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+		return
+	}
+
+	accessToken, err := auth.IssueAccessToken(h.tokenIssuer.privateKey, h.tokenIssuer.kid, pgUUIDToString(user.ID), user.Email)
+	if err != nil {
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+		return
+	}
+
+	sharedhttp.WriteJSON(w, http.StatusOK, refreshResponse{
+		AccessToken:  accessToken,
+		RefreshToken: newToken,
+	})
 }

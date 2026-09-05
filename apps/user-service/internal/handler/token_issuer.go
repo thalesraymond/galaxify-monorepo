@@ -64,6 +64,63 @@ func (ti *TokenIssuer) IssueSession(ctx context.Context, userID pgtype.UUID, ema
 	return accessToken, refreshToken, nil
 }
 
+// rotateStore is the narrow DB surface needed for family-based token rotation.
+// It is satisfied by *database.Queries in production.
+type rotateStore interface {
+	GetRefreshTokenByToken(ctx context.Context, token string) (database.RefreshToken, error)
+	MarkRefreshTokenUsed(ctx context.Context, id int64) error
+	DeleteRefreshTokensByFamilyID(ctx context.Context, familyID pgtype.UUID) error
+	InsertRefreshToken(ctx context.Context, arg database.InsertRefreshTokenParams) (database.RefreshToken, error)
+}
+
+// RotateSession implements pkg/auth.RefreshTokenStore.Rotate.
+// It validates presentedToken against the DB, enforces family-based
+// reuse detection, and — on success — marks the old token used, inserts a new
+// token in the same family, and returns the new token + userID.
+//
+// Callers (SessionHandler.Refresh) use userID to look up the user's email and
+// then call IssueAccessToken directly so they can build the full HTTP response.
+func (ti *TokenIssuer) RotateSession(ctx context.Context, rs rotateStore, presentedToken string) (newToken string, userID pgtype.UUID, err error) {
+	row, err := rs.GetRefreshTokenByToken(ctx, presentedToken)
+	if err != nil {
+		// Not found (pgx.ErrNoRows) or any DB error → invalid token.
+		return "", pgtype.UUID{}, auth.ErrInvalidRefreshToken
+	}
+
+	// Reuse detected: token already consumed → nuke the whole family.
+	if row.Used {
+		_ = rs.DeleteRefreshTokensByFamilyID(ctx, row.FamilyID)
+		return "", pgtype.UUID{}, auth.ErrInvalidRefreshToken
+	}
+
+	// Expired.
+	if row.ExpiresAt.Valid && time.Now().After(row.ExpiresAt.Time) {
+		return "", pgtype.UUID{}, auth.ErrInvalidRefreshToken
+	}
+
+	// Valid — rotate.
+	if err := rs.MarkRefreshTokenUsed(ctx, row.ID); err != nil {
+		return "", pgtype.UUID{}, err
+	}
+
+	newRawToken, _, err := generateNewRefreshToken()
+	if err != nil {
+		return "", pgtype.UUID{}, err
+	}
+
+	_, err = rs.InsertRefreshToken(ctx, database.InsertRefreshTokenParams{
+		UserID:    row.UserID,
+		Token:     newRawToken,
+		FamilyID:  row.FamilyID,
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(7 * 24 * time.Hour), Valid: true},
+	})
+	if err != nil {
+		return "", pgtype.UUID{}, err
+	}
+
+	return newRawToken, row.UserID, nil
+}
+
 // generateRefreshTokenAndFamily creates a new opaque refresh token and the
 // family UUID that binds rotation/revocation together.
 func generateRefreshTokenAndFamily() (token string, familyID uuid.UUID, err error) {
@@ -75,4 +132,14 @@ func generateRefreshTokenAndFamily() (token string, familyID uuid.UUID, err erro
 
 	familyID = uuid.New()
 	return token, familyID, nil
+}
+
+// generateNewRefreshToken creates a single opaque refresh token (no new
+// family; rotation reuses the existing family_id from the old token row).
+func generateNewRefreshToken() (token string, _ struct{}, err error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", struct{}{}, err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), struct{}{}, nil
 }

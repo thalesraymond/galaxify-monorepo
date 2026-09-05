@@ -32,6 +32,13 @@ type authSessionResponse struct {
 type signupResponse = authSessionResponse
 type loginResponse = authSessionResponse
 
+// refreshResponse is the slim envelope returned by POST /auth/refresh.
+// Per spec §3.3 it carries only the two tokens (no user object).
+type refreshResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+}
+
 // pgUUIDToString adapts a pgtype.UUID to the standard string representation
 // used in API responses and JWT claims.
 func pgUUIDToString(u pgtype.UUID) string {
