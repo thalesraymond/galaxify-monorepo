@@ -29,3 +29,13 @@ The repository structure is now:
   - Clear separation of concerns between handling HTTP requests and processing background workloads.
 - **Cons**: 
   - Slightly more overhead in managing separate Go modules and deployments for workers.
+
+## Current state
+
+`workers/daily-cron` is implemented and marks expired `PENDING` dailies as
+`MISSED` every 5 minutes using `FOR UPDATE SKIP LOCKED`. Event publication
+(`daily.missed`) is **intentionally absent** — it is blocked on the outbox
+implementation in
+[#20](https://github.com/thalesraymond/galaxify-monorepo/issues/20). Once #20
+lands the worker will write to the `outbox` table inside the same transaction,
+and the drain logic will handle RabbitMQ publishing independently.

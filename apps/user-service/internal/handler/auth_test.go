@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
@@ -22,7 +23,7 @@ type publishCall struct {
 	Payload   any
 }
 
-func (m *mockPublisher) Publish(ctx context.Context, eventType string, payload any) error {
+func (m *mockPublisher) Publish(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error {
 	m.published = append(m.published, publishCall{EventType: eventType, Payload: payload})
 	return m.err
 }

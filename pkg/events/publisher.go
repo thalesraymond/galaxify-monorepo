@@ -31,6 +31,30 @@ type Publisher struct {
 	logger  *slog.Logger
 }
 
+// PublishOption configures a single Publish call.
+type PublishOption func(*publishOptions)
+
+type publishOptions struct {
+	eventID string
+}
+
+// WithEventID uses the provided event ID in the envelope instead of generating
+// a new one. This is required when publishing from an outbox row so that
+// duplicate delivery attempts share the same idempotency key.
+func WithEventID(eventID string) PublishOption {
+	return func(o *publishOptions) {
+		o.eventID = eventID
+	}
+}
+
+func applyPublishOptions(opts []PublishOption) publishOptions {
+	var o publishOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+	return o
+}
+
 // NewPublisher declares the event topology and returns a Publisher for it:
 // the galaxify.events topic exchange, plus the alternate-exchange safety net
 // (galaxify.ae fanout exchange bound to the galaxify.unroutable queue) that
@@ -95,8 +119,12 @@ func NewPublisher(channel PublisherChannel, opts ...Option) (*Publisher, error) 
 	return &Publisher{channel: channel, logger: o.logger}, nil
 }
 
-func (p *Publisher) Publish(ctx context.Context, eventType string, payload any) error {
-	eventID := uuid.New().String()
+func (p *Publisher) Publish(ctx context.Context, eventType string, payload any, opts ...PublishOption) error {
+	o := applyPublishOptions(opts)
+	eventID := o.eventID
+	if eventID == "" {
+		eventID = uuid.New().String()
+	}
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {

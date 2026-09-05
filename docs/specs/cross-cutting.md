@@ -522,6 +522,14 @@ HTTP-triggered trade-off because:
 **If Phase 2 introduces real-time UX requirements (push notifications, live
 dashboards), upgrade to a dedicated scheduled worker.**
 
+### ⚠️ `workers/daily-cron` does not use the outbox yet
+
+The missed-daily cron worker (`workers/daily-cron`) only marks dailies as
+`MISSED`. It does **not** write to the `outbox` table and does **not** connect
+to RabbitMQ. Wiring the `daily.missed` event into the outbox (and adding the
+drain call) is part of
+[#20](https://github.com/thalesraymond/galaxify-monorepo/issues/20).
+
 ---
 
 ## 7. Implementation tickets

@@ -29,7 +29,7 @@ type dailyStore interface {
 
 // EventPublisher is the narrow surface used by handlers to emit domain events.
 type EventPublisher interface {
-	Publish(ctx context.Context, eventType string, payload any) error
+	Publish(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error
 }
 
 // DailyHandler handles auth-protected CRUD endpoints for /dailies.

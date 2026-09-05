@@ -460,6 +460,27 @@ func TestPublisherPublish(t *testing.T) {
 		}
 	})
 
+	t.Run("uses explicit event id when provided", func(t *testing.T) {
+		ch := &fakePublisherChannel{}
+		p, err := NewPublisher(ch)
+		if err != nil {
+			t.Fatalf("NewPublisher returned error: %v", err)
+		}
+
+		wantID := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+		if err := p.Publish(context.Background(), "daily.missed", map[string]string{"daily_id": "123"}, WithEventID(wantID)); err != nil {
+			t.Fatalf("Publish returned error: %v", err)
+		}
+
+		var env Envelope
+		if err := json.Unmarshal(ch.published[0].Body, &env); err != nil {
+			t.Fatalf("failed to unmarshal envelope: %v", err)
+		}
+		if env.EventId != wantID {
+			t.Errorf("event_id = %q, want %q", env.EventId, wantID)
+		}
+	})
+
 	t.Run("returns error when publish fails", func(t *testing.T) {
 		wantErr := errors.New("publish failed")
 		ch := &fakePublisherChannel{publishErr: wantErr}
