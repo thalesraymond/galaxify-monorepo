@@ -1,22 +1,32 @@
 SERVICES := user-service daily-service ship-service expedition-service
+WORKERS := daily-cron
 GOOSE := ./goose.sh
 
 .PHONY: test coverage goose-up goose-down sqlc build vet fmt tidy help
 
-test: ## Run go test for every service
+test: ## Run go test for every service, worker, and pkg
 	@for s in $(SERVICES); do \
 		echo "==> go test ./... ($$s)"; \
 		cd apps/$$s && go test ./...  || exit 1; \
 		cd ../..; \
 	done
-	echo "==> go test ./... (pkg)"; \
-	cd pkg && go test ./... || exit 1; \
-	cd ../..; \
+	@for w in $(WORKERS); do \
+		echo "==> go test ./... ($$w)"; \
+		cd workers/$$w && go test ./... || exit 1; \
+		cd ../..; \
+	done
+	@echo "==> go test ./... (pkg)"
+	@cd pkg && go test ./... || exit 1
 
-coverage: ## Run go test -cover for every service
+coverage: ## Run go test -cover for every service and worker
 	@for s in $(SERVICES); do \
 		echo "==> go test -cover ./... ($$s)"; \
 		cd apps/$$s && go test -cover ./... || exit 1; \
+		cd ../..; \
+	done
+	@for w in $(WORKERS); do \
+		echo "==> go test -cover ./... ($$w)"; \
+		cd workers/$$w && go test -cover ./... || exit 1; \
 		cd ../..; \
 	done
 
@@ -41,17 +51,27 @@ sqlc: ## Run sqlc generate for every service
 		cd ../..; \
 	done
 
-build: ## Build every service binary into ./bin
+build: ## Build every service and worker binary into ./bin
 	@for s in $(SERVICES); do \
 		echo "==> go build ($$s)"; \
 		cd apps/$$s && mkdir -p bin && go build -o bin/ . || exit 1; \
 		cd ../..; \
 	done
+	@for w in $(WORKERS); do \
+		echo "==> go build ($$w)"; \
+		cd workers/$$w && mkdir -p bin && go build -o bin/ . || exit 1; \
+		cd ../..; \
+	done
 
-vet: ## Run go vet for every service and pkg
+vet: ## Run go vet for every service, worker, and pkg
 	@for s in $(SERVICES); do \
 		echo "==> go vet ./... ($$s)"; \
 		cd apps/$$s && go vet ./... || exit 1; \
+		cd ../..; \
+	done
+	@for w in $(WORKERS); do \
+		echo "==> go vet ./... ($$w)"; \
+		cd workers/$$w && go vet ./... || exit 1; \
 		cd ../..; \
 	done
 	@echo "==> go vet ./... (pkg)"
@@ -65,6 +85,11 @@ tidy: ## Run go mod tidy for every Go module
 	@for s in $(SERVICES); do \
 		echo "==> go mod tidy ($$s)"; \
 		cd apps/$$s && go mod tidy || exit 1; \
+		cd ../..; \
+	done
+	@for w in $(WORKERS); do \
+		echo "==> go mod tidy ($$w)"; \
+		cd workers/$$w && go mod tidy || exit 1; \
 		cd ../..; \
 	done
 	@echo "==> go mod tidy (pkg)"

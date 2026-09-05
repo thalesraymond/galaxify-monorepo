@@ -25,12 +25,12 @@ import (
 )
 
 type mockDailyStore struct {
-	createDaily func(ctx context.Context, arg database.CreateDailyParams) (database.Daily, error)
-	listDailies func(ctx context.Context, userID pgtype.UUID) ([]database.Daily, error)
-	getDaily    func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error)
-	updateDaily func(ctx context.Context, arg database.UpdateDailyParams) (database.Daily, error)
-	deleteDaily func(ctx context.Context, arg database.DeleteDailyParams) (int64, error)
-	markDailyComplete func(ctx context.Context, arg database.MarkDailyCompleteParams) (database.Daily, error)
+	createDaily         func(ctx context.Context, arg database.CreateDailyParams) (database.Daily, error)
+	listDailies         func(ctx context.Context, userID pgtype.UUID) ([]database.Daily, error)
+	getDaily            func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error)
+	updateDaily         func(ctx context.Context, arg database.UpdateDailyParams) (database.Daily, error)
+	deleteDaily         func(ctx context.Context, arg database.DeleteDailyParams) (int64, error)
+	markDailyComplete   func(ctx context.Context, arg database.MarkDailyCompleteParams) (database.Daily, error)
 	getDifficultyReward func(ctx context.Context, difficulty string) (database.DifficultyReward, error)
 }
 
@@ -84,12 +84,12 @@ func (m *mockDailyStore) GetDifficultyReward(ctx context.Context, difficulty str
 }
 
 type mockEventPublisher struct {
-	publish func(ctx context.Context, eventType string, payload any) error
+	publish func(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error
 }
 
-func (m *mockEventPublisher) Publish(ctx context.Context, eventType string, payload any) error {
+func (m *mockEventPublisher) Publish(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error {
 	if m.publish != nil {
-		return m.publish(ctx, eventType, payload)
+		return m.publish(ctx, eventType, payload, opts...)
 	}
 	return errors.New("unexpected Publish call")
 }
@@ -851,13 +851,13 @@ func TestCompleteDaily(t *testing.T) {
 				}
 				m.markDailyComplete = func(ctx context.Context, arg database.MarkDailyCompleteParams) (database.Daily, error) {
 					return database.Daily{
-						ID:          pgDailyID,
-						UserID:      pgUserID,
-						Difficulty:  "HARD",
-						Status:      "COMPLETED",
-						DueDate:     pgtype.Timestamptz{Time: dueDate, Valid: true},
-						CreatedAt:   pgtype.Timestamptz{Time: createdAt, Valid: true},
-						UpdatedAt:   pgtype.Timestamptz{Time: createdAt, Valid: true},
+						ID:         pgDailyID,
+						UserID:     pgUserID,
+						Difficulty: "HARD",
+						Status:     "COMPLETED",
+						DueDate:    pgtype.Timestamptz{Time: dueDate, Valid: true},
+						CreatedAt:  pgtype.Timestamptz{Time: createdAt, Valid: true},
+						UpdatedAt:  pgtype.Timestamptz{Time: createdAt, Valid: true},
 					}, nil
 				}
 				m.getDifficultyReward = func(ctx context.Context, difficulty string) (database.DifficultyReward, error) {
@@ -869,7 +869,7 @@ func TestCompleteDaily(t *testing.T) {
 				}
 			},
 			setupPublisher: func(m *mockEventPublisher) {
-				m.publish = func(ctx context.Context, eventType string, payload any) error {
+				m.publish = func(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error {
 					if eventType != "daily.completed" {
 						t.Errorf("expected daily.completed, got %v", eventType)
 					}
@@ -897,7 +897,7 @@ func TestCompleteDaily(t *testing.T) {
 				}
 			},
 			setupPublisher: func(m *mockEventPublisher) {
-				m.publish = func(ctx context.Context, eventType string, payload any) error {
+				m.publish = func(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error {
 					return errors.New("should not be called")
 				}
 			},

@@ -6,4 +6,5 @@ use (
 	./apps/ship-service
 	./apps/user-service
 	./pkg
+	./workers/daily-cron
 )
