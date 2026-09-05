@@ -94,7 +94,7 @@ func (q *Queries) CreateUserCache(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
-const deleteDaily = `-- name: DeleteDaily :exec
+const deleteDaily = `-- name: DeleteDaily :execrows
 DELETE FROM dailies WHERE id = $1 AND user_id = $2 AND status = 'PENDING'
 `
 
@@ -103,9 +103,12 @@ type DeleteDailyParams struct {
 	UserID pgtype.UUID
 }
 
-func (q *Queries) DeleteDaily(ctx context.Context, arg DeleteDailyParams) error {
-	_, err := q.db.Exec(ctx, deleteDaily, arg.ID, arg.UserID)
-	return err
+func (q *Queries) DeleteDaily(ctx context.Context, arg DeleteDailyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDaily, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getDaily = `-- name: GetDaily :one

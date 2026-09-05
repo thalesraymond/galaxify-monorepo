@@ -2,9 +2,6 @@ package handler
 
 import (
 	"context"
-
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // EventPublisher is the narrow surface used by handlers to emit domain events.
@@ -37,10 +34,4 @@ type loginResponse = authSessionResponse
 type refreshResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
-}
-
-// pgUUIDToString adapts a pgtype.UUID to the standard string representation
-// used in API responses and JWT claims.
-func pgUUIDToString(u pgtype.UUID) string {
-	return uuid.UUID(u.Bytes).String()
 }

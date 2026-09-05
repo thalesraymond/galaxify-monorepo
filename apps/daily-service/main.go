@@ -14,7 +14,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/thalesraymond/galaxify-monorepo/apps/daily-service/internal/consumer"
+	"github.com/thalesraymond/galaxify-monorepo/apps/daily-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/apps/daily-service/internal/handler"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/rabbitmq"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
@@ -28,6 +30,7 @@ const (
 	defaultDatabaseURL = "postgres://postgres:password@localhost:5432/daily_db"
 	defaultRabbitMQURL = "amqp://guest:guest@localhost:5672/"
 	defaultHTTPAddr    = ":8082"
+	defaultJWKSURL     = "http://localhost:8081/.well-known/jwks.json"
 )
 
 func main() {
@@ -48,6 +51,7 @@ func run(logger *slog.Logger) error {
 	dbURL := envOr("DATABASE_URL", defaultDatabaseURL)
 	amqpURL := envOr("RABBITMQ_URL", defaultRabbitMQURL)
 	httpAddr := envOr("HTTP_ADDR", defaultHTTPAddr)
+	jwksURL := envOr("JWKS_URL", defaultJWKSURL)
 
 	timeoutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -67,6 +71,8 @@ func run(logger *slog.Logger) error {
 	if err := pool.Ping(timeoutCtx); err != nil {
 		return fmt.Errorf("ping postgres: %w", err)
 	}
+
+	db := database.New(pool)
 
 	conn, err := rabbitmq.Connect(amqpURL)
 	if err != nil {
@@ -94,6 +100,12 @@ func run(logger *slog.Logger) error {
 
 	mux := http.NewServeMux()
 	handler.NewHealthHandler(serviceName).RegisterHealthRoutes(mux)
+
+	jwksCache := auth.NewSimpleJWKSCache(jwksURL)
+	authHandshake := sharedhttp.NewAuthHandshake(jwksCache)
+
+	dailyHandler := handler.NewDailyHandler(db, authHandshake, logger)
+	dailyHandler.RegisterDailyRoutes(mux)
 
 	srv := &http.Server{
 		Addr:    httpAddr,
