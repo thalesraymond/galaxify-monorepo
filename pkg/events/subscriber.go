@@ -17,6 +17,7 @@ type HandlerFunc func(ctx context.Context, eventType string, payload []byte) err
 // SubscriberChannel is the subset of amqp091.Channel the Subscriber needs.
 // *amqp091.Channel satisfies it directly; tests can substitute a fake.
 type SubscriberChannel interface {
+	ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp091.Table) error
 	QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp091.Table) (amqp091.Queue, error)
 	QueueBind(name, key, exchange string, noWait bool, args amqp091.Table) error
 	Consume(queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp091.Table) (<-chan amqp091.Delivery, error)
@@ -37,14 +38,70 @@ type Subscriber struct {
 	wg sync.WaitGroup
 }
 
+// NewSubscriber creates a Subscriber for the given service and declares the
+// global dead-letter safety-net topology: the fanout exchange galaxify.dlx and
+// the queue galaxify.dead_letters bound to it. Messages that fail processing in
+// any service queue are routed there for later inspection and replay
+// (ADR-0009). All declarations are idempotent, so every service can run this at
+// boot without coordinating with the others.
 func NewSubscriber(channel SubscriberChannel, serviceName string, opts ...Option) (*Subscriber, error) {
 	o := applyOptions(opts)
-	return &Subscriber{
+	s := &Subscriber{
 		serviceName: serviceName,
 		channel:     channel,
 		handlers:    make(map[string]HandlerFunc),
 		logger:      o.logger,
-	}, nil
+	}
+
+	if err := s.declareDeadLetterTopology(); err != nil {
+		return nil, err
+	}
+
+	return s, nil
+}
+
+// declareDeadLetterTopology declares galaxify.dlx and galaxify.dead_letters and
+// binds the two together. The dead letters queue deliberately carries no
+// x-dead-letter-exchange argument of its own, so a dead letter can never loop
+// back into the DLX.
+func (s *Subscriber) declareDeadLetterTopology() error {
+	err := s.channel.ExchangeDeclare(
+		"galaxify.dlx", // name
+		"fanout",       // kind
+		true,           // durable
+		false,          // auto-delete
+		false,          // internal
+		false,          // no-wait
+		nil,            // arguments
+	)
+	if err != nil {
+		return fmt.Errorf("failed to declare dead letter exchange: %w", err)
+	}
+
+	_, err = s.channel.QueueDeclare(
+		"galaxify.dead_letters", // name
+		true,                    // durable
+		false,                   // delete when unused
+		false,                   // exclusive
+		false,                   // no-wait
+		nil,                     // arguments
+	)
+	if err != nil {
+		return fmt.Errorf("failed to declare dead letters queue: %w", err)
+	}
+
+	err = s.channel.QueueBind(
+		"galaxify.dead_letters", // queue name
+		"",                      // routing key (a fanout exchange ignores it)
+		"galaxify.dlx",          // exchange
+		false,                   // no-wait
+		nil,                     // arguments
+	)
+	if err != nil {
+		return fmt.Errorf("failed to bind dead letters queue: %w", err)
+	}
+
+	return nil
 }
 
 func (s *Subscriber) On(eventType string, handler HandlerFunc) {
@@ -120,7 +177,10 @@ func (s *Subscriber) Start(ctx context.Context) error {
 						"event_type", msg.RoutingKey,
 						"error", handlerErr,
 					)
-					_ = msg.Nack(false, true)
+					// requeue=false routes the message to galaxify.dlx and then
+					// galaxify.dead_letters for inspection and replay (ADR-0009).
+					// The previous requeue=true redelivered it forever.
+					_ = msg.Nack(false, false)
 
 				} else {
 					_ = msg.Ack(false)
@@ -136,13 +196,15 @@ func (s *Subscriber) Start(ctx context.Context) error {
 func (s *Subscriber) setupBrokerQueue(eventType string) (amqp091.Queue, error) {
 	queueName := fmt.Sprintf("%s.%s", s.serviceName, eventType)
 
+	// The x-dead-letter-exchange argument routes rejected messages to the
+	// global DLX instead of dropping them (ADR-0009).
 	queue, err := s.channel.QueueDeclare(
 		queueName, // name
 		true,      // durable
 		false,     // delete when unused
 		false,     // exclusive
 		false,     // no-wait
-		nil,       // arguments
+		amqp091.Table{"x-dead-letter-exchange": "galaxify.dlx"}, // arguments
 	)
 
 	if err != nil {
