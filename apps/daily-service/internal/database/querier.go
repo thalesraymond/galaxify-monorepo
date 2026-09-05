@@ -11,12 +11,22 @@ import (
 )
 
 type Querier interface {
+	CreateDaily(ctx context.Context, arg CreateDailyParams) (Daily, error)
+	CreateDailyHistory(ctx context.Context, arg CreateDailyHistoryParams) error
 	CreateTestTable(ctx context.Context, name string) (TestTable, error)
+	CreateUserCache(ctx context.Context, id pgtype.UUID) error
+	DeleteDaily(ctx context.Context, arg DeleteDailyParams) error
 	DeleteOldProcessedEvents(ctx context.Context) (int64, error)
 	DeleteTestTable(ctx context.Context, id int64) error
+	GetDaily(ctx context.Context, arg GetDailyParams) (Daily, error)
+	GetDifficultyReward(ctx context.Context, difficulty string) (DifficultyReward, error)
 	GetTestTable(ctx context.Context, id int64) (TestTable, error)
 	InsertProcessedEvent(ctx context.Context, eventID pgtype.UUID) (int64, error)
+	ListDailies(ctx context.Context, userID pgtype.UUID) ([]Daily, error)
 	ListTestTables(ctx context.Context) ([]TestTable, error)
+	MarkDailyComplete(ctx context.Context, arg MarkDailyCompleteParams) (Daily, error)
+	MarkDailyMissed(ctx context.Context, id pgtype.UUID) (Daily, error)
+	UpdateDaily(ctx context.Context, arg UpdateDailyParams) (Daily, error)
 	UpdateTestTable(ctx context.Context, arg UpdateTestTableParams) (TestTable, error)
 }
 

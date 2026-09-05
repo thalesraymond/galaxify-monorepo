@@ -8,6 +8,38 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Daily struct {
+	ID          pgtype.UUID
+	UserID      pgtype.UUID
+	Title       string
+	Description string
+	Difficulty  string
+	DueDate     pgtype.Timestamptz
+	Status      string
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
+type DailyHistory struct {
+	ID          pgtype.UUID
+	DailyID     pgtype.UUID
+	UserID      pgtype.UUID
+	Title       string
+	Description string
+	Difficulty  string
+	DueDate     pgtype.Timestamptz
+	Status      string
+	CompletedAt pgtype.Timestamptz
+	MissedAt    pgtype.Timestamptz
+	ArchivedAt  pgtype.Timestamptz
+}
+
+type DifficultyReward struct {
+	Difficulty      string
+	RewardMaterials int32
+	DamageAmount    int32
+}
+
 type ProcessedEvent struct {
 	EventID     pgtype.UUID
 	ProcessedAt pgtype.Timestamptz
@@ -16,4 +48,8 @@ type ProcessedEvent struct {
 type TestTable struct {
 	ID   int64
 	Name string
+}
+
+type UsersCache struct {
+	ID pgtype.UUID
 }
