@@ -393,7 +393,28 @@ duration, response status) is deferred to a future ticket — see the map's
 
 ---
 
-## 5. Outbox pattern (`pkg/events/outbox.go`)
+## 5. Health Check Endpoint
+
+Every Galaxify service provides a standard health check endpoint to indicate it is running and responsive.
+
+### `GET /health`
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "ok",
+  "service": "user-service"
+}
+```
+
+- `status` is always `"ok"` if the service is reachable.
+- `service` is the name of the service (e.g., `"user-service"`, `"daily-service"`).
+- This endpoint does not require authentication and is not protected by the `RequireAuth` middleware.
+
+---
+
+## 6. Outbox pattern (`pkg/events/outbox.go`)
 
 See ADR-0004 for the full rationale. This section records the schema and the
 Go helpers.
@@ -497,7 +518,7 @@ dashboards), upgrade to a dedicated scheduled worker.**
 
 ---
 
-## 6. Implementation tickets
+## 7. Implementation tickets
 
 This spec graduates into the following implementation tickets, all children of
 map #8:
