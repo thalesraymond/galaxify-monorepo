@@ -10,3 +10,8 @@ Repo layout, architecture decisions, and their rationale are recorded in
 
 > This file is intentionally minimal: domain vocabulary and glossary entries
 > are added lazily as terminology gets settled during implementation.
+
+## Glossary
+
+- **Dead Letter Exchange (DLX)**: A global fanout exchange (`galaxify.dlx`) and queue (`galaxify.dead_letters`) that collects messages that permanently failed processing in any service (e.g. max retries exceeded or hard handler error).
+- **Alternate Exchange (AE)**: A global fanout exchange (`galaxify.ae`) and queue (`galaxify.unroutable`) that catches messages published to `galaxify.events` which do not match *any* currently bound queues, preventing silent drops of unmapped routing keys.

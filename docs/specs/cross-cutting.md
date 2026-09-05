@@ -27,6 +27,12 @@ Single topic exchange `galaxify.events`, declared by every service on startup
 (idempotent). Each service creates its own queues and binds them with patterns
 it cares about. See ADR-0005 for the full rationale.
 
+To prevent message loss and handle processing failures, we use global safety nets:
+- **Alternate Exchange (AE)**: A global fanout exchange `galaxify.ae` and queue `galaxify.unroutable` catches messages published to `galaxify.events` that have no bound queues (e.g., unmapped routing keys). Configured via the `alternate-exchange` argument on the main exchange.
+- **Dead Letter Exchange (DLX)**: A global fanout exchange `galaxify.dlx` and queue `galaxify.dead_letters` collects messages that permanently fail processing. Configured via the `x-dead-letter-exchange` argument on service queues.
+
+Replaying messages from either queue is done manually via the RabbitMQ Shovel plugin, moving them back to `galaxify.events`. See [ADR-0009](../adr/0009-dead-letter-and-alternate-exchanges.md) for full details.
+
 ### Envelope
 
 Every message published has this shape:
