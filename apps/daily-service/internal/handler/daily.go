@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/thalesraymond/galaxify-monorepo/apps/daily-service/internal/database"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
@@ -22,19 +23,28 @@ type dailyStore interface {
 	GetDaily(ctx context.Context, arg database.GetDailyParams) (database.Daily, error)
 	UpdateDaily(ctx context.Context, arg database.UpdateDailyParams) (database.Daily, error)
 	DeleteDaily(ctx context.Context, arg database.DeleteDailyParams) (int64, error)
+	MarkDailyComplete(ctx context.Context, arg database.MarkDailyCompleteParams) (database.Daily, error)
+	GetDifficultyReward(ctx context.Context, difficulty string) (database.DifficultyReward, error)
+}
+
+// EventPublisher is the narrow surface used by handlers to emit domain events.
+type EventPublisher interface {
+	Publish(ctx context.Context, eventType string, payload any) error
 }
 
 // DailyHandler handles auth-protected CRUD endpoints for /dailies.
 type DailyHandler struct {
 	store         dailyStore
+	publisher     EventPublisher
 	authHandshake *sharedhttp.AuthHandshake
 	logger        *slog.Logger
 }
 
 // NewDailyHandler creates a DailyHandler.
-func NewDailyHandler(store dailyStore, authHandshake *sharedhttp.AuthHandshake, logger *slog.Logger) *DailyHandler {
+func NewDailyHandler(store dailyStore, publisher EventPublisher, authHandshake *sharedhttp.AuthHandshake, logger *slog.Logger) *DailyHandler {
 	return &DailyHandler{
 		store:         store,
+		publisher:     publisher,
 		authHandshake: authHandshake,
 		logger:        logger,
 	}
@@ -47,6 +57,7 @@ func (h *DailyHandler) RegisterDailyRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /dailies/{id}", h.authHandshake.RequireAuth(h.GetDaily))
 	mux.Handle("PATCH /dailies/{id}", h.authHandshake.RequireAuth(h.UpdateDaily))
 	mux.Handle("DELETE /dailies/{id}", h.authHandshake.RequireAuth(h.DeleteDaily))
+	mux.Handle("POST /dailies/{id}/complete", h.authHandshake.RequireAuth(h.CompleteDaily))
 }
 
 // dailyResponse is the on-the-wire shape for a daily resource.
@@ -293,6 +304,70 @@ func (h *DailyHandler) DeleteDaily(w http.ResponseWriter, r *http.Request, userI
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// CompleteDaily marks a pending daily as COMPLETED and publishes a daily.completed event.
+func (h *DailyHandler) CompleteDaily(w http.ResponseWriter, r *http.Request, userID string) {
+	pgUserID, ok := h.requireUserID(w, userID)
+	if !ok {
+		return
+	}
+
+	pgDailyID, err := sharedhttp.ParseUUID(r.PathValue("id"))
+	if err != nil {
+		sharedhttp.WriteValidationError(w, map[string]string{"id": "invalid UUID"})
+		return
+	}
+
+	existing, err := h.store.GetDaily(r.Context(), database.GetDailyParams{
+		ID:     pgDailyID,
+		UserID: pgUserID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			sharedhttp.WriteError(w, http.StatusNotFound, "DAILY_NOT_FOUND", "Daily not found")
+			return
+		}
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+		return
+	}
+
+	if existing.Status != "PENDING" {
+		sharedhttp.WriteError(w, http.StatusConflict, "DAILY_ALREADY_COMPLETED", "Daily is not pending")
+		return
+	}
+
+	daily, err := h.store.MarkDailyComplete(r.Context(), database.MarkDailyCompleteParams{
+		ID:     pgDailyID,
+		UserID: pgUserID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			sharedhttp.WriteError(w, http.StatusConflict, "DAILY_ALREADY_COMPLETED", "Daily can only be completed while pending")
+			return
+		}
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+		return
+	}
+
+	reward, err := h.store.GetDifficultyReward(r.Context(), daily.Difficulty)
+	if err != nil {
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+		return
+	}
+
+	if err := h.publisher.Publish(r.Context(), "daily.completed", events.DailyCompleted{
+		Version:         1,
+		UserID:          sharedhttp.UUIDToString(daily.UserID),
+		DailyID:         sharedhttp.UUIDToString(daily.ID),
+		Difficulty:      daily.Difficulty,
+		RewardMaterials: int(reward.RewardMaterials),
+	}); err != nil {
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+		return
+	}
+
+	sharedhttp.WriteJSON(w, http.StatusOK, dailyToResponse(daily))
 }
 
 func validateCreateDailyRequest(req createDailyRequest) (map[string]string, time.Time) {

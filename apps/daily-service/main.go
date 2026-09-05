@@ -112,7 +112,12 @@ func run(logger *slog.Logger) error {
 
 	authHandshake := sharedhttp.NewAuthHandshake(jwksCache)
 
-	dailyHandler := handler.NewDailyHandler(db, authHandshake, logger)
+	publisher, err := events.NewPublisher(ch, events.WithLogger(logger))
+	if err != nil {
+		return fmt.Errorf("create publisher: %w", err)
+	}
+
+	dailyHandler := handler.NewDailyHandler(db, publisher, authHandshake, logger)
 	dailyHandler.RegisterDailyRoutes(mux)
 
 	srv := &http.Server{
