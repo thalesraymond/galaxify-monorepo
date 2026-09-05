@@ -119,13 +119,13 @@ func run(logger *slog.Logger) error {
 	jwksHandler := handler.NewJWKSHandler(priv, jwtKey.Kid, logger)
 	jwksHandler.RegisterRoutes(mux)
 
-	// Auth middleware for protected routes. User-service owns the signing key,
+	// Auth handshake for protected routes. User-service owns the signing key,
 	// so we use a static cache pre-populated with the active public key
 	// instead of fetching from the JWKS endpoint (which isn't running yet).
 	staticCache := auth.NewStaticJWKSCache(jwtKey.Kid, priv.Public())
-	authMW := sharedhttp.RequireAuth(staticCache)
+	authHandshake := sharedhttp.NewAuthHandshake(staticCache)
 
-	meHandler := handler.NewMeHandler(db, publisher, authMW, logger)
+	meHandler := handler.NewMeHandler(db, publisher, authHandshake, logger)
 	meHandler.RegisterMeRoutes(mux)
 
 	srv := &http.Server{

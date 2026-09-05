@@ -28,53 +28,36 @@ type meStore interface {
 
 // MeHandler handles auth-protected /users/me endpoints (GET, PATCH, DELETE).
 type MeHandler struct {
-	store     meStore
-	publisher EventPublisher
-	authMW    func(http.Handler) http.Handler
-	logger    *slog.Logger
+	store       meStore
+	publisher   EventPublisher
+	authHandshake *sharedhttp.AuthHandshake
+	logger      *slog.Logger
 }
 
 // NewMeHandler creates a MeHandler.
 func NewMeHandler(
 	store meStore,
 	publisher EventPublisher,
-	authMW func(http.Handler) http.Handler,
+	authHandshake *sharedhttp.AuthHandshake,
 	logger *slog.Logger,
 ) *MeHandler {
 	return &MeHandler{
-		store:     store,
-		publisher: publisher,
-		authMW:    authMW,
-		logger:    logger,
+		store:       store,
+		publisher:   publisher,
+		authHandshake: authHandshake,
+		logger:      logger,
 	}
 }
 
 // RegisterMeRoutes wires the auth-protected /users/me routes into the given mux.
 func (h *MeHandler) RegisterMeRoutes(mux *http.ServeMux) {
-	mux.Handle("GET /users/me", h.authMW(http.HandlerFunc(h.GetMe)))
-	mux.Handle("PATCH /users/me", h.authMW(http.HandlerFunc(h.UpdateMe)))
-	mux.Handle("DELETE /users/me", h.authMW(http.HandlerFunc(h.DeleteMe)))
+	mux.Handle("GET /users/me", h.authHandshake.RequireAuth(h.GetMe))
+	mux.Handle("PATCH /users/me", h.authHandshake.RequireAuth(h.UpdateMe))
+	mux.Handle("DELETE /users/me", h.authHandshake.RequireAuth(h.DeleteMe))
 }
 
 // meResponse is the on-the-wire shape for GET and PATCH /users/me.
 type meResponse = userResponse
-
-// requireUserID extracts and parses the user ID from the request context.
-// Returns the pgtype.UUID and true on success; on failure it writes an HTTP
-// error response and returns (zero, false).
-func requireUserID(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	userIDStr := sharedhttp.UserIDFromContext(r.Context())
-	if userIDStr == "" {
-		sharedhttp.WriteError(w, http.StatusUnauthorized, "AUTH_INVALID_TOKEN", "missing user identity")
-		return pgtype.UUID{}, false
-	}
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		sharedhttp.WriteError(w, http.StatusUnauthorized, "AUTH_INVALID_TOKEN", "invalid user identity")
-		return pgtype.UUID{}, false
-	}
-	return pgtype.UUID{Bytes: userID, Valid: true}, true
-}
 
 // userToMeResponse maps a database.User to the on-the-wire meResponse shape.
 func userToMeResponse(user database.User) meResponse {
@@ -87,10 +70,20 @@ func userToMeResponse(user database.User) meResponse {
 	}
 }
 
+// parseUserID parses a userID string into a pgtype.UUID.
+func parseUserID(userID string) (pgtype.UUID, error) {
+	id, err := uuid.Parse(userID)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	return pgtype.UUID{Bytes: id, Valid: true}, nil
+}
+
 // GetMe returns the authenticated user's identity fields. Spec §3.4.
-func (h *MeHandler) GetMe(w http.ResponseWriter, r *http.Request) {
-	pgID, ok := requireUserID(w, r)
-	if !ok {
+func (h *MeHandler) GetMe(w http.ResponseWriter, r *http.Request, userID string) {
+	pgID, err := parseUserID(userID)
+	if err != nil {
+		sharedhttp.WriteError(w, http.StatusUnauthorized, "AUTH_INVALID_TOKEN", "invalid user identity")
 		return
 	}
 
@@ -112,9 +105,10 @@ type updateMeRequest struct {
 }
 
 // UpdateMe updates the authenticated user's username. Spec §3.5.
-func (h *MeHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
-	pgID, ok := requireUserID(w, r)
-	if !ok {
+func (h *MeHandler) UpdateMe(w http.ResponseWriter, r *http.Request, userID string) {
+	pgID, err := parseUserID(userID)
+	if err != nil {
+		sharedhttp.WriteError(w, http.StatusUnauthorized, "AUTH_INVALID_TOKEN", "invalid user identity")
 		return
 	}
 
@@ -147,9 +141,10 @@ type deleteMeRequest struct {
 }
 
 // DeleteMe permanently deletes the authenticated user's account. Spec §3.6.
-func (h *MeHandler) DeleteMe(w http.ResponseWriter, r *http.Request) {
-	pgID, ok := requireUserID(w, r)
-	if !ok {
+func (h *MeHandler) DeleteMe(w http.ResponseWriter, r *http.Request, userID string) {
+	pgID, err := parseUserID(userID)
+	if err != nil {
+		sharedhttp.WriteError(w, http.StatusUnauthorized, "AUTH_INVALID_TOKEN", "invalid user identity")
 		return
 	}
 
@@ -191,7 +186,7 @@ func (h *MeHandler) DeleteMe(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.publisher.Publish(r.Context(), "user.deleted", events.UserDeleted{
 		Version: 1,
-		UserID:  pgUUIDToString(pgID),
+		UserID:  userID,
 	}); err != nil {
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"crypto"
 	"errors"
 	"io"
 	"log/slog"
@@ -50,17 +51,19 @@ func (m *mockMeStore) DeleteUserByID(ctx context.Context, id pgtype.UUID) error 
 func newTestMeHandler(t *testing.T, store meStore, publisher EventPublisher) *MeHandler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	// No-op auth middleware for unit tests — auth is tested via the middleware
-	// itself, not through each handler.
-	noOpAuth := func(next http.Handler) http.Handler { return next }
-	return NewMeHandler(store, publisher, noOpAuth, logger)
+	// Use a static AuthHandshake with a no-op cache for unit tests —
+	// auth middleware is tested separately in pkg/sharedhttp.
+	cache := &noopJWKSCache{}
+	authHandshake := sharedhttp.NewAuthHandshake(cache)
+	return NewMeHandler(store, publisher, authHandshake, logger)
 }
 
-// withUserID returns a request with the userID injected into the context,
-// mimicking what sharedhttp.RequireAuth does after verifying a JWT.
-func withUserID(r *http.Request, userID string) *http.Request {
-	return r.WithContext(sharedhttp.WithUserID(r.Context(), userID))
-}
+// noopJWKSCache is a JWKSCache that always returns "not found".
+// Used in unit tests where auth middleware is bypassed by calling handlers directly.
+type noopJWKSCache struct{}
+
+func (c *noopJWKSCache) GetKey(kid string) (crypto.PublicKey, bool) { return nil, false }
+func (c *noopJWKSCache) ForceRefresh(ctx context.Context) error    { return nil }
 
 func TestGetMe(t *testing.T) {
 	userID := uuid.New()
@@ -70,15 +73,15 @@ func TestGetMe(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		userIDCtx      string
+		userID         string
 		setupStore     func(m *mockMeStore)
 		wantStatus     int
 		wantErrorCode  string
 		assertResponse func(t *testing.T, resp meResponse)
 	}{
 		{
-			name:      "returns user identity",
-			userIDCtx: userID.String(),
+			name:   "returns user identity",
+			userID: userID.String(),
 			setupStore: func(m *mockMeStore) {
 				m.getUserByID = func(ctx context.Context, id pgtype.UUID) (database.User, error) {
 					if id != pgID {
@@ -107,20 +110,14 @@ func TestGetMe(t *testing.T) {
 			},
 		},
 		{
-			name:          "missing user id in context",
-			userIDCtx:     "",
+			name:          "invalid uuid",
+			userID:        "not-a-uuid",
 			wantStatus:    http.StatusUnauthorized,
 			wantErrorCode: "AUTH_INVALID_TOKEN",
 		},
 		{
-			name:          "invalid uuid in context",
-			userIDCtx:     "not-a-uuid",
-			wantStatus:    http.StatusUnauthorized,
-			wantErrorCode: "AUTH_INVALID_TOKEN",
-		},
-		{
-			name:      "user not found",
-			userIDCtx: userID.String(),
+			name:   "user not found",
+			userID: userID.String(),
 			setupStore: func(m *mockMeStore) {
 				m.getUserByID = func(ctx context.Context, id pgtype.UUID) (database.User, error) {
 					return database.User{}, pgx.ErrNoRows
@@ -130,8 +127,8 @@ func TestGetMe(t *testing.T) {
 			wantErrorCode: "AUTH_INVALID_TOKEN",
 		},
 		{
-			name:      "store error",
-			userIDCtx: userID.String(),
+			name:   "store error",
+			userID: userID.String(),
 			setupStore: func(m *mockMeStore) {
 				m.getUserByID = func(ctx context.Context, id pgtype.UUID) (database.User, error) {
 					return database.User{}, errors.New("database down")
@@ -152,11 +149,8 @@ func TestGetMe(t *testing.T) {
 			handler := newTestMeHandler(t, store, &mockPublisher{})
 			rec := httptest.NewRecorder()
 			req := newTestRequest(t, http.MethodGet, "/users/me", "")
-			if tt.userIDCtx != "" {
-				req = withUserID(req, tt.userIDCtx)
-			}
 
-			handler.GetMe(rec, req)
+			handler.GetMe(rec, req, tt.userID)
 
 			wantStatus(t, rec, tt.wantStatus)
 
@@ -182,7 +176,7 @@ func TestUpdateMe(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		userIDCtx      string
+		userID         string
 		body           string
 		setupStore     func(m *mockMeStore)
 		wantStatus     int
@@ -191,9 +185,9 @@ func TestUpdateMe(t *testing.T) {
 		assertResponse func(t *testing.T, resp meResponse)
 	}{
 		{
-			name:      "updates username",
-			userIDCtx: userID.String(),
-			body:      `{"username":"new_name"}`,
+			name:   "updates username",
+			userID: userID.String(),
+			body:   `{"username":"new_name"}`,
 			setupStore: func(m *mockMeStore) {
 				m.updateUserUsername = func(ctx context.Context, arg database.UpdateUserUsernameParams) (database.User, error) {
 					if arg.Username != "new_name" {
@@ -219,37 +213,37 @@ func TestUpdateMe(t *testing.T) {
 			},
 		},
 		{
-			name:          "missing user id in context",
-			userIDCtx:     "",
+			name:          "invalid uuid",
+			userID:        "not-a-uuid",
 			body:          `{"username":"new_name"}`,
 			wantStatus:    http.StatusUnauthorized,
 			wantErrorCode: "AUTH_INVALID_TOKEN",
 		},
 		{
-			name:          "missing username",
-			userIDCtx:     userID.String(),
-			body:          `{"username":""}`,
-			wantStatus:    http.StatusUnprocessableEntity,
+			name:           "missing username",
+			userID:         userID.String(),
+			body:           `{"username":""}`,
+			wantStatus:     http.StatusUnprocessableEntity,
 			wantFieldError: map[string]string{"username": "username is required"},
 		},
 		{
-			name:          "invalid username too short",
-			userIDCtx:     userID.String(),
-			body:          `{"username":"ab"}`,
-			wantStatus:    http.StatusUnprocessableEntity,
+			name:           "invalid username too short",
+			userID:         userID.String(),
+			body:           `{"username":"ab"}`,
+			wantStatus:     http.StatusUnprocessableEntity,
 			wantFieldError: map[string]string{"username": "username must be 3-30 characters and contain only letters, numbers, underscores, and hyphens"},
 		},
 		{
-			name:          "invalid username bad chars",
-			userIDCtx:     userID.String(),
-			body:          `{"username":"bad name!"}`,
-			wantStatus:    http.StatusUnprocessableEntity,
+			name:           "invalid username bad chars",
+			userID:         userID.String(),
+			body:           `{"username":"bad name!"}`,
+			wantStatus:     http.StatusUnprocessableEntity,
 			wantFieldError: map[string]string{"username": "username must be 3-30 characters and contain only letters, numbers, underscores, and hyphens"},
 		},
 		{
-			name:      "username already taken",
-			userIDCtx: userID.String(),
-			body:      `{"username":"taken_name"}`,
+			name:   "username already taken",
+			userID: userID.String(),
+			body:   `{"username":"taken_name"}`,
 			setupStore: func(m *mockMeStore) {
 				m.updateUserUsername = func(ctx context.Context, arg database.UpdateUserUsernameParams) (database.User, error) {
 					return database.User{}, &pgconn.PgError{Code: "23505", ConstraintName: "users_username_lower_idx"}
@@ -259,9 +253,9 @@ func TestUpdateMe(t *testing.T) {
 			wantErrorCode: "USER_USERNAME_TAKEN",
 		},
 		{
-			name:      "store error",
-			userIDCtx: userID.String(),
-			body:      `{"username":"new_name"}`,
+			name:   "store error",
+			userID: userID.String(),
+			body:   `{"username":"new_name"}`,
 			setupStore: func(m *mockMeStore) {
 				m.updateUserUsername = func(ctx context.Context, arg database.UpdateUserUsernameParams) (database.User, error) {
 					return database.User{}, errors.New("database down")
@@ -282,11 +276,8 @@ func TestUpdateMe(t *testing.T) {
 			handler := newTestMeHandler(t, store, &mockPublisher{})
 			rec := httptest.NewRecorder()
 			req := newTestRequest(t, http.MethodPatch, "/users/me", tt.body)
-			if tt.userIDCtx != "" {
-				req = withUserID(req, tt.userIDCtx)
-			}
 
-			handler.UpdateMe(rec, req)
+			handler.UpdateMe(rec, req, tt.userID)
 
 			wantStatus(t, rec, tt.wantStatus)
 
@@ -318,7 +309,7 @@ func TestDeleteMe(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		userIDCtx       string
+		userID          string
 		body            string
 		setupStore      func(m *mockMeStore)
 		setupPublisher  func(m *mockPublisher)
@@ -328,9 +319,9 @@ func TestDeleteMe(t *testing.T) {
 		assertPublished func(t *testing.T, calls []publishCall)
 	}{
 		{
-			name:      "deletes user and publishes event",
-			userIDCtx: userID.String(),
-			body:      `{"password":"secret123"}`,
+			name:   "deletes user and publishes event",
+			userID: userID.String(),
+			body:   `{"password":"secret123"}`,
 			setupStore: func(m *mockMeStore) {
 				m.getUserByID = func(ctx context.Context, id pgtype.UUID) (database.User, error) {
 					if id != pgID {
@@ -361,23 +352,23 @@ func TestDeleteMe(t *testing.T) {
 			},
 		},
 		{
-			name:          "missing user id in context",
-			userIDCtx:     "",
+			name:          "invalid uuid",
+			userID:        "not-a-uuid",
 			body:          `{"password":"secret123"}`,
 			wantStatus:    http.StatusUnauthorized,
 			wantErrorCode: "AUTH_INVALID_TOKEN",
 		},
 		{
-			name:          "missing password",
-			userIDCtx:     userID.String(),
-			body:          `{"password":""}`,
-			wantStatus:    http.StatusUnprocessableEntity,
+			name:           "missing password",
+			userID:         userID.String(),
+			body:           `{"password":""}`,
+			wantStatus:     http.StatusUnprocessableEntity,
 			wantFieldError: map[string]string{"password": "password is required"},
 		},
 		{
-			name:      "wrong password",
-			userIDCtx: userID.String(),
-			body:      `{"password":"wrongpassword"}`,
+			name:   "wrong password",
+			userID: userID.String(),
+			body:   `{"password":"wrongpassword"}`,
 			setupStore: func(m *mockMeStore) {
 				m.getUserByID = func(ctx context.Context, id pgtype.UUID) (database.User, error) {
 					return database.User{
@@ -391,9 +382,9 @@ func TestDeleteMe(t *testing.T) {
 			wantErrorCode: "USER_INVALID_CREDENTIALS",
 		},
 		{
-			name:      "user not found",
-			userIDCtx: userID.String(),
-			body:      `{"password":"secret123"}`,
+			name:   "user not found",
+			userID: userID.String(),
+			body:   `{"password":"secret123"}`,
 			setupStore: func(m *mockMeStore) {
 				m.getUserByID = func(ctx context.Context, id pgtype.UUID) (database.User, error) {
 					return database.User{}, pgx.ErrNoRows
@@ -403,9 +394,9 @@ func TestDeleteMe(t *testing.T) {
 			wantErrorCode: "USER_INVALID_CREDENTIALS",
 		},
 		{
-			name:      "get user store error",
-			userIDCtx: userID.String(),
-			body:      `{"password":"secret123"}`,
+			name:   "get user store error",
+			userID: userID.String(),
+			body:   `{"password":"secret123"}`,
 			setupStore: func(m *mockMeStore) {
 				m.getUserByID = func(ctx context.Context, id pgtype.UUID) (database.User, error) {
 					return database.User{}, errors.New("database down")
@@ -415,9 +406,9 @@ func TestDeleteMe(t *testing.T) {
 			wantErrorCode: "INTERNAL_ERROR",
 		},
 		{
-			name:      "delete store error",
-			userIDCtx: userID.String(),
-			body:      `{"password":"secret123"}`,
+			name:   "delete store error",
+			userID: userID.String(),
+			body:   `{"password":"secret123"}`,
 			setupStore: func(m *mockMeStore) {
 				m.getUserByID = func(ctx context.Context, id pgtype.UUID) (database.User, error) {
 					return database.User{
@@ -433,9 +424,9 @@ func TestDeleteMe(t *testing.T) {
 			wantErrorCode: "INTERNAL_ERROR",
 		},
 		{
-			name:      "publisher failure returns 500",
-			userIDCtx: userID.String(),
-			body:      `{"password":"secret123"}`,
+			name:   "publisher failure returns 500",
+			userID: userID.String(),
+			body:   `{"password":"secret123"}`,
 			setupStore: func(m *mockMeStore) {
 				m.getUserByID = func(ctx context.Context, id pgtype.UUID) (database.User, error) {
 					return database.User{
@@ -469,11 +460,8 @@ func TestDeleteMe(t *testing.T) {
 			handler := newTestMeHandler(t, store, publisher)
 			rec := httptest.NewRecorder()
 			req := newTestRequest(t, http.MethodDelete, "/users/me", tt.body)
-			if tt.userIDCtx != "" {
-				req = withUserID(req, tt.userIDCtx)
-			}
 
-			handler.DeleteMe(rec, req)
+			handler.DeleteMe(rec, req, tt.userID)
 
 			wantStatus(t, rec, tt.wantStatus)
 
