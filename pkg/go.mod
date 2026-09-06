@@ -9,6 +9,8 @@ require (
 	github.com/rabbitmq/amqp091-go v1.14.0
 )
 
+require golang.org/x/sync v0.22.0
+
 require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	golang.org/x/crypto v0.14.0 // indirect

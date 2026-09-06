@@ -20,14 +20,11 @@ func NewStaticJWKSCache(kid string, pubKey crypto.PublicKey) *StaticJWKSCache {
 
 // GetKey returns the public key if the requested kid matches the one this
 // cache was created with.
-func (c *StaticJWKSCache) GetKey(kid string) (crypto.PublicKey, bool) {
+func (c *StaticJWKSCache) GetKey(ctx context.Context, kid string) (crypto.PublicKey, error) {
 	if kid == c.kid {
-		return c.pubKey, true
+		return c.pubKey, nil
 	}
-	return nil, false
+	return nil, ErrUnknownKeyID
 }
 
-// ForceRefresh is a no-op for the static cache — the key is already in memory.
-func (c *StaticJWKSCache) ForceRefresh(ctx context.Context) error {
-	return nil
-}
+

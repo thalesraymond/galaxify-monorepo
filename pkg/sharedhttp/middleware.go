@@ -2,6 +2,7 @@ package sharedhttp
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -61,17 +62,14 @@ func (hs *AuthHandshake) RequireAuth(next AuthedHandler) http.Handler {
 			return
 		}
 
-		pubKey, found := hs.cache.GetKey(kid)
-		if !found {
-			if err := hs.cache.ForceRefresh(r.Context()); err != nil {
-				WriteError(w, http.StatusInternalServerError, "AUTH_KEY_FETCH_FAILED", "failed to fetch JWKS")
-				return
-			}
-			pubKey, found = hs.cache.GetKey(kid)
-			if !found {
+		pubKey, err := hs.cache.GetKey(r.Context(), kid)
+		if err != nil {
+			if errors.Is(err, auth.ErrUnknownKeyID) {
 				WriteError(w, http.StatusUnauthorized, "AUTH_UNKNOWN_KID", "unknown kid in token header")
-				return
+			} else {
+				WriteError(w, http.StatusInternalServerError, "AUTH_KEY_FETCH_FAILED", "failed to fetch JWKS")
 			}
+			return
 		}
 
 		claims, err := auth.VerifyAccessToken(pubKey, tokenString)

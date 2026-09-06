@@ -89,14 +89,13 @@ func newMockJWKSCache() *mockJWKSCache {
 	}
 }
 
-func (m *mockJWKSCache) GetKey(kid string) (crypto.PublicKey, bool) {
+func (m *mockJWKSCache) GetKey(ctx context.Context, kid string) (crypto.PublicKey, error) {
 	key, ok := m.keys[kid]
-	return key, ok
-}
-
-func (m *mockJWKSCache) ForceRefresh(ctx context.Context) error {
-	m.forceRefreshCalled = true
-	return nil
+	if !ok {
+		m.forceRefreshCalled = true
+		return nil, auth.ErrUnknownKeyID
+	}
+	return key, nil
 }
 
 func (m *mockJWKSCache) AddKey(kid string, key ed25519.PublicKey) {
