@@ -133,7 +133,7 @@ func run(logger *slog.Logger) error {
 		func(tx pgx.Tx) daily.Store { return database.New(tx) },
 		db,
 		publisher,
-		daily.WithLogger(logger),
+		daily.WithDailyManagerLogger(logger),
 	)
 
 	dailyHandler := handler.NewDailyHandler(dailyManager, authHandshake, logger)

@@ -57,11 +57,11 @@ type DailyManager struct {
 	logger       *slog.Logger
 }
 
-// Option configures DailyManager.
-type Option func(*DailyManager)
+// DailyManagerOption configures DailyManager.
+type DailyManagerOption func(*DailyManager)
 
-// WithLogger sets the logger for DailyManager.
-func WithLogger(logger *slog.Logger) Option {
+// WithDailyManagerLogger sets the logger for DailyManager.
+func WithDailyManagerLogger(logger *slog.Logger) DailyManagerOption {
 	return func(m *DailyManager) {
 		if logger != nil {
 			m.logger = logger
@@ -75,7 +75,7 @@ func NewDailyManager(
 	storeFactory func(tx pgx.Tx) Store,
 	baseStore Store,
 	publisher EventPublisher,
-	opts ...Option,
+	opts ...DailyManagerOption,
 ) *DailyManager {
 	m := &DailyManager{
 		pool:         pool,
@@ -184,18 +184,8 @@ func (m *DailyManager) Update(ctx context.Context, userID, id uuid.UUID, input U
 	updatedRow, err := s.UpdateDaily(ctx, params)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			existing, getErr := s.GetDaily(ctx, database.GetDailyParams{
-				ID:     pgDailyID,
-				UserID: pgUserID,
-			})
-			if getErr != nil {
-				if errors.Is(getErr, pgx.ErrNoRows) {
-					return Daily{}, ErrDailyNotFound
-				}
-				return Daily{}, fmt.Errorf("get daily: %w", getErr)
-			}
-			if existing.Status != "PENDING" {
-				return Daily{}, ErrDailyNotPending
+			if inspectErr := m.inspectStatusMismatch(ctx, s, userID, id, false); inspectErr != nil {
+				return Daily{}, inspectErr
 			}
 		}
 		return Daily{}, fmt.Errorf("update daily: %w", err)
@@ -228,18 +218,8 @@ func (m *DailyManager) Delete(ctx context.Context, userID, id uuid.UUID) error {
 		return fmt.Errorf("delete daily: %w", err)
 	}
 	if rowsAffected == 0 {
-		existing, getErr := s.GetDaily(ctx, database.GetDailyParams{
-			ID:     pgDailyID,
-			UserID: pgUserID,
-		})
-		if getErr != nil {
-			if errors.Is(getErr, pgx.ErrNoRows) {
-				return ErrDailyNotFound
-			}
-			return fmt.Errorf("get daily: %w", getErr)
-		}
-		if existing.Status != string(StatusPending) {
-			return ErrDailyNotPending
+		if inspectErr := m.inspectStatusMismatch(ctx, s, userID, id, false); inspectErr != nil {
+			return inspectErr
 		}
 		return fmt.Errorf("delete daily: 0 rows affected")
 	}
@@ -270,21 +250,8 @@ func (m *DailyManager) Complete(ctx context.Context, userID, id uuid.UUID) (Dail
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			existing, getErr := s.GetDaily(ctx, database.GetDailyParams{
-				ID:     pgDailyID,
-				UserID: pgUserID,
-			})
-			if getErr != nil {
-				if errors.Is(getErr, pgx.ErrNoRows) {
-					return Daily{}, ErrDailyNotFound
-				}
-				return Daily{}, fmt.Errorf("get daily: %w", getErr)
-			}
-			if existing.Status == string(StatusCompleted) {
-				return Daily{}, ErrDailyAlreadyCompleted
-			}
-			if existing.Status != string(StatusPending) {
-				return Daily{}, ErrDailyNotPending
+			if inspectErr := m.inspectStatusMismatch(ctx, s, userID, id, true); inspectErr != nil {
+				return Daily{}, inspectErr
 			}
 		}
 		return Daily{}, fmt.Errorf("mark daily complete: %w", err)
@@ -307,11 +274,36 @@ func (m *DailyManager) Complete(ctx context.Context, userID, id uuid.UUID) (Dail
 			Difficulty:      completedRow.Difficulty,
 			RewardMaterials: int(reward.RewardMaterials),
 		}); err != nil {
+			m.logger.ErrorContext(ctx, "failed to publish daily.completed event",
+				"error", err,
+				"user_id", userID,
+				"daily_id", id,
+			)
 			return toDomainDaily(completedRow), fmt.Errorf("publish daily.completed: %w", err)
 		}
 	}
 
 	return toDomainDaily(completedRow), nil
+}
+
+func (m *DailyManager) inspectStatusMismatch(ctx context.Context, s Store, userID, id uuid.UUID, isComplete bool) error {
+	existing, err := s.GetDaily(ctx, database.GetDailyParams{
+		ID:     pgtype.UUID{Bytes: id, Valid: true},
+		UserID: pgtype.UUID{Bytes: userID, Valid: true},
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrDailyNotFound
+		}
+		return fmt.Errorf("get daily: %w", err)
+	}
+	if isComplete && existing.Status == string(StatusCompleted) {
+		return ErrDailyAlreadyCompleted
+	}
+	if existing.Status != string(StatusPending) {
+		return ErrDailyNotPending
+	}
+	return nil
 }
 
 func toDomainDaily(row database.Daily) Daily {

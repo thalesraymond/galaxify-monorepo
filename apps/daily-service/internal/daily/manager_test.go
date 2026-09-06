@@ -3,6 +3,8 @@ package daily
 import (
 	"context"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -54,6 +56,12 @@ func (f *fakeTxStarter) Begin(ctx context.Context) (pgx.Tx, error) {
 		f.tx = &fakeTx{}
 	}
 	return f.tx, nil
+}
+
+type threadSafeTxStarter struct{}
+
+func (s *threadSafeTxStarter) Begin(ctx context.Context) (pgx.Tx, error) {
+	return &fakeTx{}, nil
 }
 
 type mockStore struct {
@@ -116,11 +124,14 @@ func (m *mockStore) GetDifficultyReward(ctx context.Context, difficulty string) 
 }
 
 type mockPublisher struct {
+	mu        sync.Mutex
 	published []events.DailyCompleted
 	err       error
 }
 
 func (p *mockPublisher) Publish(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if p.err != nil {
 		return p.err
 	}
@@ -539,6 +550,77 @@ func TestDailyManager_Complete(t *testing.T) {
 		}
 		if len(pub.published) != 0 {
 			t.Errorf("published events = %d, want 0", len(pub.published))
+		}
+	})
+
+	t.Run("concurrent Complete requests allow only one winner and return ErrDailyAlreadyCompleted for losers", func(t *testing.T) {
+		txStarter := &threadSafeTxStarter{}
+		pub := &mockPublisher{}
+
+		var mu sync.Mutex
+		taskStatus := string(StatusPending)
+
+		store := &mockStore{
+			markDailyComplete: func(ctx context.Context, arg database.MarkDailyCompleteParams) (database.Daily, error) {
+				mu.Lock()
+				defer mu.Unlock()
+				if taskStatus != string(StatusPending) {
+					return database.Daily{}, pgx.ErrNoRows
+				}
+				taskStatus = string(StatusCompleted)
+				return database.Daily{
+					ID:         arg.ID,
+					UserID:     arg.UserID,
+					Difficulty: "HARD",
+					Status:     string(StatusCompleted),
+				}, nil
+			},
+			getDaily: func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error) {
+				mu.Lock()
+				defer mu.Unlock()
+				return database.Daily{
+					ID:     arg.ID,
+					UserID: arg.UserID,
+					Status: taskStatus,
+				}, nil
+			},
+			getDifficultyReward: func(ctx context.Context, difficulty string) (database.DifficultyReward, error) {
+				return database.DifficultyReward{Difficulty: difficulty, RewardMaterials: 25}, nil
+			},
+		}
+
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, pub)
+
+		const concurrency = 10
+		var wg sync.WaitGroup
+		var successCount int64
+		var alreadyCompletedCount int64
+
+		for i := 0; i < concurrency; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, err := mgr.Complete(context.Background(), userID, dailyID)
+				if err == nil {
+					atomic.AddInt64(&successCount, 1)
+				} else if errors.Is(err, ErrDailyAlreadyCompleted) {
+					atomic.AddInt64(&alreadyCompletedCount, 1)
+				}
+			}()
+		}
+
+		wg.Wait()
+
+		if successCount != 1 {
+			t.Errorf("successCount = %d, want 1", successCount)
+		}
+		if alreadyCompletedCount != concurrency-1 {
+			t.Errorf("alreadyCompletedCount = %d, want %d", alreadyCompletedCount, concurrency-1)
+		}
+		pub.mu.Lock()
+		defer pub.mu.Unlock()
+		if len(pub.published) != 1 {
+			t.Errorf("published events = %d, want 1", len(pub.published))
 		}
 	})
 }
