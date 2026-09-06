@@ -23,7 +23,7 @@ type Querier interface {
 	GetDifficultyReward(ctx context.Context, difficulty string) (DifficultyReward, error)
 	GetTestTable(ctx context.Context, id int64) (TestTable, error)
 	InsertProcessedEvent(ctx context.Context, eventID pgtype.UUID) (int64, error)
-	ListDailies(ctx context.Context, userID pgtype.UUID) ([]Daily, error)
+	ListDailies(ctx context.Context, arg ListDailiesParams) ([]Daily, error)
 	ListTestTables(ctx context.Context) ([]TestTable, error)
 	MarkDailyComplete(ctx context.Context, arg MarkDailyCompleteParams) (Daily, error)
 	MarkDailyMissed(ctx context.Context, id pgtype.UUID) (Daily, error)

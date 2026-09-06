@@ -30,7 +30,7 @@ type EventPublisher interface {
 // *database.Queries satisfies this interface directly.
 type Store interface {
 	CreateDaily(ctx context.Context, arg database.CreateDailyParams) (database.Daily, error)
-	ListDailies(ctx context.Context, userID pgtype.UUID) ([]database.Daily, error)
+	ListDailies(ctx context.Context, arg database.ListDailiesParams) ([]database.Daily, error)
 	GetDaily(ctx context.Context, arg database.GetDailyParams) (database.Daily, error)
 	UpdateDaily(ctx context.Context, arg database.UpdateDailyParams) (database.Daily, error)
 	DeleteDaily(ctx context.Context, arg database.DeleteDailyParams) (int64, error)
@@ -42,7 +42,7 @@ type Store interface {
 type Manager interface {
 	Create(ctx context.Context, input CreateInput) (Daily, error)
 	Get(ctx context.Context, userID, id uuid.UUID) (Daily, error)
-	List(ctx context.Context, userID uuid.UUID) ([]Daily, error)
+	List(ctx context.Context, userID uuid.UUID, filter ListFilter) ([]Daily, error)
 	Update(ctx context.Context, userID, id uuid.UUID, input UpdateInput) (Daily, error)
 	Delete(ctx context.Context, userID, id uuid.UUID) error
 	Complete(ctx context.Context, userID, id uuid.UUID) (Daily, error)
@@ -69,8 +69,8 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
-// NewManager creates a DailyManager.
-func NewManager(
+// NewDailyManager creates a DailyManager.
+func NewDailyManager(
 	pool TxStarter,
 	storeFactory func(tx pgx.Tx) Store,
 	baseStore Store,
@@ -92,6 +92,10 @@ func NewManager(
 
 // Create stores a new daily task for the user.
 func (m *DailyManager) Create(ctx context.Context, input CreateInput) (Daily, error) {
+	if !IsValidDifficulty(input.Difficulty) {
+		return Daily{}, ErrInvalidDifficulty
+	}
+
 	pgUserID := pgtype.UUID{Bytes: input.UserID, Valid: true}
 	row, err := m.baseStore.CreateDaily(ctx, database.CreateDailyParams{
 		UserID:      pgUserID,
@@ -121,9 +125,19 @@ func (m *DailyManager) Get(ctx context.Context, userID, id uuid.UUID) (Daily, er
 	return toDomainDaily(row), nil
 }
 
-// List returns all dailies for the user ordered by due_date and created_at.
-func (m *DailyManager) List(ctx context.Context, userID uuid.UUID) ([]Daily, error) {
-	rows, err := m.baseStore.ListDailies(ctx, pgtype.UUID{Bytes: userID, Valid: true})
+// List returns all dailies for the user, optionally filtered by status and date, ordered by due_date and created_at.
+func (m *DailyManager) List(ctx context.Context, userID uuid.UUID, filter ListFilter) ([]Daily, error) {
+	params := database.ListDailiesParams{
+		UserID: pgtype.UUID{Bytes: userID, Valid: true},
+	}
+	if filter.Status != nil {
+		params.Status = pgtype.Text{String: *filter.Status, Valid: true}
+	}
+	if filter.Date != nil {
+		params.DueDate = pgtype.Date{Time: *filter.Date, Valid: true}
+	}
+
+	rows, err := m.baseStore.ListDailies(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("list dailies: %w", err)
 	}
@@ -136,6 +150,10 @@ func (m *DailyManager) List(ctx context.Context, userID uuid.UUID) ([]Daily, err
 
 // Update mutates fields of a pending daily task atomically.
 func (m *DailyManager) Update(ctx context.Context, userID, id uuid.UUID, input UpdateInput) (Daily, error) {
+	if input.Difficulty != nil && !IsValidDifficulty(*input.Difficulty) {
+		return Daily{}, ErrInvalidDifficulty
+	}
+
 	tx, err := m.pool.Begin(ctx)
 	if err != nil {
 		return Daily{}, fmt.Errorf("begin tx: %w", err)
@@ -223,6 +241,7 @@ func (m *DailyManager) Delete(ctx context.Context, userID, id uuid.UUID) error {
 		if existing.Status != "PENDING" {
 			return ErrDailyNotPending
 		}
+		return fmt.Errorf("delete daily: 0 rows affected")
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -261,8 +280,11 @@ func (m *DailyManager) Complete(ctx context.Context, userID, id uuid.UUID) (Dail
 				}
 				return Daily{}, fmt.Errorf("get daily: %w", getErr)
 			}
-			if existing.Status != "PENDING" {
+			if existing.Status == "COMPLETED" {
 				return Daily{}, ErrDailyAlreadyCompleted
+			}
+			if existing.Status != "PENDING" {
+				return Daily{}, ErrDailyNotPending
 			}
 		}
 		return Daily{}, fmt.Errorf("mark daily complete: %w", err)
@@ -273,18 +295,20 @@ func (m *DailyManager) Complete(ctx context.Context, userID, id uuid.UUID) (Dail
 		return Daily{}, fmt.Errorf("get difficulty reward: %w", err)
 	}
 
-	if err := m.publisher.Publish(ctx, "daily.completed", events.DailyCompleted{
-		Version:         1,
-		UserID:          userID.String(),
-		DailyID:         id.String(),
-		Difficulty:      completedRow.Difficulty,
-		RewardMaterials: int(reward.RewardMaterials),
-	}); err != nil {
-		return Daily{}, fmt.Errorf("publish daily.completed: %w", err)
-	}
-
 	if err := tx.Commit(ctx); err != nil {
 		return Daily{}, fmt.Errorf("commit tx: %w", err)
+	}
+
+	if m.publisher != nil {
+		if err := m.publisher.Publish(ctx, "daily.completed", events.DailyCompleted{
+			Version:         1,
+			UserID:          userID.String(),
+			DailyID:         id.String(),
+			Difficulty:      completedRow.Difficulty,
+			RewardMaterials: int(reward.RewardMaterials),
+		}); err != nil {
+			return toDomainDaily(completedRow), fmt.Errorf("publish daily.completed: %w", err)
+		}
 	}
 
 	return toDomainDaily(completedRow), nil

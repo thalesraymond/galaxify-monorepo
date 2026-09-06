@@ -28,6 +28,31 @@ type CreateInput struct {
 	DueDate     time.Time
 }
 
+// Valid difficulty levels
+const (
+	DifficultyEasy   = "EASY"
+	DifficultyMedium = "MEDIUM"
+	DifficultyHard   = "HARD"
+)
+
+var validDifficulties = map[string]struct{}{
+	DifficultyEasy:   {},
+	DifficultyMedium: {},
+	DifficultyHard:   {},
+}
+
+// IsValidDifficulty checks if the given difficulty tier is supported.
+func IsValidDifficulty(d string) bool {
+	_, ok := validDifficulties[d]
+	return ok
+}
+
+// ListFilter defines optional filtering criteria when querying dailies.
+type ListFilter struct {
+	Status *string
+	Date   *time.Time
+}
+
 // UpdateInput defines optional fields when editing a pending daily task.
 type UpdateInput struct {
 	Title       *string

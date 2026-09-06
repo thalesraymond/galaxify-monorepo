@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -24,7 +23,7 @@ import (
 type mockDailyManager struct {
 	create   func(ctx context.Context, input daily.CreateInput) (daily.Daily, error)
 	get      func(ctx context.Context, userID, id uuid.UUID) (daily.Daily, error)
-	list     func(ctx context.Context, userID uuid.UUID) ([]daily.Daily, error)
+	list     func(ctx context.Context, userID uuid.UUID, filter daily.ListFilter) ([]daily.Daily, error)
 	update   func(ctx context.Context, userID, id uuid.UUID, input daily.UpdateInput) (daily.Daily, error)
 	delete   func(ctx context.Context, userID, id uuid.UUID) error
 	complete func(ctx context.Context, userID, id uuid.UUID) (daily.Daily, error)
@@ -44,9 +43,9 @@ func (m *mockDailyManager) Get(ctx context.Context, userID, id uuid.UUID) (daily
 	return daily.Daily{}, errors.New("unexpected Get call")
 }
 
-func (m *mockDailyManager) List(ctx context.Context, userID uuid.UUID) ([]daily.Daily, error) {
+func (m *mockDailyManager) List(ctx context.Context, userID uuid.UUID, filter daily.ListFilter) ([]daily.Daily, error) {
 	if m.list != nil {
-		return m.list(ctx, userID)
+		return m.list(ctx, userID, filter)
 	}
 	return nil, errors.New("unexpected List call")
 }
@@ -197,6 +196,17 @@ func TestCreateDaily(t *testing.T) {
 			wantFieldError: map[string]string{"body": "invalid JSON body"},
 		},
 		{
+			name: "manager invalid difficulty error",
+			body: `{"title":"Explore Mars","difficulty":"MEDIUM","due_date":"2026-09-15T10:00:00Z"}`,
+			setupManager: func(m *mockDailyManager) {
+				m.create = func(ctx context.Context, input daily.CreateInput) (daily.Daily, error) {
+					return daily.Daily{}, daily.ErrInvalidDifficulty
+				}
+			},
+			wantStatus:     http.StatusUnprocessableEntity,
+			wantFieldError: map[string]string{"difficulty": "must be one of: EASY, MEDIUM, HARD"},
+		},
+		{
 			name: "manager error",
 			body: `{"title":"Explore Mars","difficulty":"MEDIUM","due_date":"2026-09-15T10:00:00Z"}`,
 			setupManager: func(m *mockDailyManager) {
@@ -254,17 +264,26 @@ func TestListDailies(t *testing.T) {
 
 	tests := []struct {
 		name           string
+		path           string
 		setupManager   func(m *mockDailyManager)
 		wantStatus     int
 		wantErrorCode  string
+		wantFieldError map[string]string
 		assertResponse func(t *testing.T, resp []dailyResponse)
 	}{
 		{
-			name: "returns dailies for user",
+			name: "returns dailies for user without filter",
+			path: "/dailies",
 			setupManager: func(m *mockDailyManager) {
-				m.list = func(ctx context.Context, id uuid.UUID) ([]daily.Daily, error) {
+				m.list = func(ctx context.Context, id uuid.UUID, filter daily.ListFilter) ([]daily.Daily, error) {
 					if id != userID {
 						t.Errorf("user_id = %v, want %v", id, userID)
+					}
+					if filter.Status != nil {
+						t.Errorf("status filter = %v, want nil", *filter.Status)
+					}
+					if filter.Date != nil {
+						t.Errorf("date filter = %v, want nil", *filter.Date)
 					}
 					return []daily.Daily{
 						{
@@ -294,9 +313,55 @@ func TestListDailies(t *testing.T) {
 			},
 		},
 		{
-			name: "returns empty list",
+			name: "filters by status and date",
+			path: "/dailies?status=PENDING&date=2026-09-15",
 			setupManager: func(m *mockDailyManager) {
-				m.list = func(ctx context.Context, id uuid.UUID) ([]daily.Daily, error) {
+				m.list = func(ctx context.Context, id uuid.UUID, filter daily.ListFilter) ([]daily.Daily, error) {
+					if id != userID {
+						t.Errorf("user_id = %v, want %v", id, userID)
+					}
+					if filter.Status == nil || *filter.Status != "PENDING" {
+						t.Errorf("status filter = %v, want PENDING", filter.Status)
+					}
+					wantDate := time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC)
+					if filter.Date == nil || !filter.Date.Equal(wantDate) {
+						t.Errorf("date filter = %v, want %v", filter.Date, wantDate)
+					}
+					return []daily.Daily{
+						{
+							ID:         dailyID,
+							UserID:     userID,
+							Title:      "Explore Mars",
+							Difficulty: "EASY",
+							DueDate:    dueDate,
+							Status:     "PENDING",
+							CreatedAt:  createdAt,
+							UpdatedAt:  createdAt,
+						},
+					}, nil
+				}
+			},
+			wantStatus: http.StatusOK,
+			assertResponse: func(t *testing.T, resp []dailyResponse) {
+				if len(resp) != 1 {
+					t.Fatalf("len(dailies) = %d, want 1", len(resp))
+				}
+			},
+		},
+		{
+			name:           "invalid date filter returns 422",
+			path:           "/dailies?date=not-a-date",
+			wantStatus:     http.StatusUnprocessableEntity,
+			wantFieldError: map[string]string{"date": "date must be YYYY-MM-DD or RFC3339"},
+		},
+		{
+			name: "returns empty list",
+			path: "/dailies",
+			setupManager: func(m *mockDailyManager) {
+				m.list = func(ctx context.Context, id uuid.UUID, filter daily.ListFilter) ([]daily.Daily, error) {
+					if id != userID {
+						t.Errorf("user_id = %v, want %v", id, userID)
+					}
 					return []daily.Daily{}, nil
 				}
 			},
@@ -309,8 +374,9 @@ func TestListDailies(t *testing.T) {
 		},
 		{
 			name: "manager error",
+			path: "/dailies",
 			setupManager: func(m *mockDailyManager) {
-				m.list = func(ctx context.Context, id uuid.UUID) ([]daily.Daily, error) {
+				m.list = func(ctx context.Context, id uuid.UUID, filter daily.ListFilter) ([]daily.Daily, error) {
 					return nil, errors.New("database down")
 				}
 			},
@@ -328,12 +394,23 @@ func TestListDailies(t *testing.T) {
 
 			router, signer := newTestDailyRouter(t, mgr)
 			rec := httptest.NewRecorder()
-			req := sharedhttptest.NewRequest(t, http.MethodGet, "/dailies", "")
+			path := tt.path
+			if path == "" {
+				path = "/dailies"
+			}
+			req := sharedhttptest.NewRequest(t, http.MethodGet, path, "")
 			req.Header.Set("Authorization", "Bearer "+signer.Token(userID.String()))
 
 			router.ServeHTTP(rec, req)
 
 			sharedhttptest.WantStatus(t, rec, tt.wantStatus)
+
+			if tt.wantFieldError != nil {
+				for field, wantMessage := range tt.wantFieldError {
+					sharedhttptest.WantFieldError(t, rec, field, wantMessage)
+				}
+				return
+			}
 
 			if tt.wantErrorCode != "" {
 				sharedhttptest.WantErrorCode(t, rec, tt.wantErrorCode)
@@ -522,6 +599,12 @@ func TestUpdateDaily(t *testing.T) {
 			body:    `{"due_date":"2026-09-20T10:00:00Z"}`,
 			setupManager: func(m *mockDailyManager) {
 				m.update = func(ctx context.Context, uID, dID uuid.UUID, input daily.UpdateInput) (daily.Daily, error) {
+					if dID != dailyID {
+						t.Errorf("daily_id = %v, want %v", dID, dailyID)
+					}
+					if uID != userID {
+						t.Errorf("user_id = %v, want %v", uID, userID)
+					}
 					if input.DueDate == nil || !input.DueDate.Equal(newDueDate) {
 						t.Errorf("due_date = %v, want %v", input.DueDate, newDueDate)
 					}
@@ -574,6 +657,18 @@ func TestUpdateDaily(t *testing.T) {
 			},
 			wantStatus:    http.StatusConflict,
 			wantErrorCode: "DAILY_NOT_EDITABLE",
+		},
+		{
+			name:    "manager invalid difficulty error",
+			dailyID: dailyID.String(),
+			body:    `{"title":"Colonize Mars"}`,
+			setupManager: func(m *mockDailyManager) {
+				m.update = func(ctx context.Context, uID, dID uuid.UUID, input daily.UpdateInput) (daily.Daily, error) {
+					return daily.Daily{}, daily.ErrInvalidDifficulty
+				}
+			},
+			wantStatus:     http.StatusUnprocessableEntity,
+			wantFieldError: map[string]string{"difficulty": "must be one of: EASY, MEDIUM, HARD"},
 		},
 	}
 
@@ -710,11 +805,12 @@ func TestCompleteDaily(t *testing.T) {
 	createdAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 
 	tests := []struct {
-		name          string
-		dailyID       string
-		setupManager  func(m *mockDailyManager)
-		wantStatus    int
-		wantErrorCode string
+		name           string
+		dailyID        string
+		setupManager   func(m *mockDailyManager)
+		wantStatus     int
+		wantErrorCode  string
+		assertResponse func(t *testing.T, resp dailyResponse)
 	}{
 		{
 			name:    "completes daily",
@@ -730,6 +826,7 @@ func TestCompleteDaily(t *testing.T) {
 					return daily.Daily{
 						ID:         dailyID,
 						UserID:     userID,
+						Title:      "Explore Mars",
 						Difficulty: "HARD",
 						Status:     "COMPLETED",
 						DueDate:    dueDate,
@@ -739,6 +836,23 @@ func TestCompleteDaily(t *testing.T) {
 				}
 			},
 			wantStatus: http.StatusOK,
+			assertResponse: func(t *testing.T, resp dailyResponse) {
+				if resp.ID != dailyID.String() {
+					t.Errorf("id = %q, want %q", resp.ID, dailyID.String())
+				}
+				if resp.UserID != userID.String() {
+					t.Errorf("user_id = %q, want %q", resp.UserID, userID.String())
+				}
+				if resp.Title != "Explore Mars" {
+					t.Errorf("title = %q, want Explore Mars", resp.Title)
+				}
+				if resp.Difficulty != "HARD" {
+					t.Errorf("difficulty = %q, want HARD", resp.Difficulty)
+				}
+				if resp.Status != "COMPLETED" {
+					t.Errorf("status = %q, want COMPLETED", resp.Status)
+				}
+			},
 		},
 		{
 			name:    "returns 404 if daily not found",
@@ -762,6 +876,17 @@ func TestCompleteDaily(t *testing.T) {
 			wantStatus:    http.StatusConflict,
 			wantErrorCode: "DAILY_ALREADY_COMPLETED",
 		},
+		{
+			name:    "returns 409 if not pending (missed)",
+			dailyID: dailyID.String(),
+			setupManager: func(m *mockDailyManager) {
+				m.complete = func(ctx context.Context, uID, dID uuid.UUID) (daily.Daily, error) {
+					return daily.Daily{}, daily.ErrDailyNotPending
+				}
+			},
+			wantStatus:    http.StatusConflict,
+			wantErrorCode: "DAILY_ALREADY_COMPLETED",
+		},
 	}
 
 	for _, tc := range tests {
@@ -772,28 +897,23 @@ func TestCompleteDaily(t *testing.T) {
 			}
 
 			router, signer := newTestDailyRouter(t, mgr)
-			req := httptest.NewRequest(http.MethodPost, "/dailies/"+tc.dailyID+"/complete", nil)
-			req.Header.Set("Authorization", "Bearer "+signer.Token(userID.String()))
 			rec := httptest.NewRecorder()
+			req := sharedhttptest.NewRequest(t, http.MethodPost, "/dailies/"+tc.dailyID+"/complete", "")
+			req.Header.Set("Authorization", "Bearer "+signer.Token(userID.String()))
 
 			router.ServeHTTP(rec, req)
 
-			if rec.Code != tc.wantStatus {
-				t.Fatalf("status = %d, want %d\nbody: %s", rec.Code, tc.wantStatus, rec.Body.String())
-			}
+			sharedhttptest.WantStatus(t, rec, tc.wantStatus)
 
 			if tc.wantErrorCode != "" {
-				var errResp struct {
-					Error struct {
-						Code string `json:"code"`
-					} `json:"error"`
-				}
-				if err := json.Unmarshal(rec.Body.Bytes(), &errResp); err != nil {
-					t.Fatalf("failed to decode error response: %v", err)
-				}
-				if errResp.Error.Code != tc.wantErrorCode {
-					t.Errorf("error code = %q, want %q", errResp.Error.Code, tc.wantErrorCode)
-				}
+				sharedhttptest.WantErrorCode(t, rec, tc.wantErrorCode)
+				return
+			}
+
+			if tc.assertResponse != nil {
+				var resp dailyResponse
+				sharedhttptest.DecodeBody(t, rec, &resp)
+				tc.assertResponse(t, resp)
 			}
 		})
 	}

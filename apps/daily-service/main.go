@@ -128,7 +128,7 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("create publisher: %w", err)
 	}
 
-	dailyManager := daily.NewManager(
+	dailyManager := daily.NewDailyManager(
 		pool,
 		func(tx pgx.Tx) daily.Store { return database.New(tx) },
 		db,

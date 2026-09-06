@@ -18,7 +18,7 @@ import (
 type dailyManager interface {
 	Create(ctx context.Context, input daily.CreateInput) (daily.Daily, error)
 	Get(ctx context.Context, userID, id uuid.UUID) (daily.Daily, error)
-	List(ctx context.Context, userID uuid.UUID) ([]daily.Daily, error)
+	List(ctx context.Context, userID uuid.UUID, filter daily.ListFilter) ([]daily.Daily, error)
 	Update(ctx context.Context, userID, id uuid.UUID, input daily.UpdateInput) (daily.Daily, error)
 	Delete(ctx context.Context, userID, id uuid.UUID) error
 	Complete(ctx context.Context, userID, id uuid.UUID) (daily.Daily, error)
@@ -77,12 +77,6 @@ type updateDailyRequest struct {
 	DueDate     string `json:"due_date"`
 }
 
-var validDifficulties = map[string]struct{}{
-	"EASY":   {},
-	"MEDIUM": {},
-	"HARD":   {},
-}
-
 func (h *DailyHandler) parseUserID(w http.ResponseWriter, userID string) (uuid.UUID, bool) {
 	id, err := uuid.Parse(userID)
 	if err != nil {
@@ -128,6 +122,10 @@ func (h *DailyHandler) CreateDaily(w http.ResponseWriter, r *http.Request, userI
 		DueDate:     dueDate,
 	})
 	if err != nil {
+		if errors.Is(err, daily.ErrInvalidDifficulty) {
+			sharedhttp.WriteValidationError(w, map[string]string{"difficulty": "must be one of: EASY, MEDIUM, HARD"})
+			return
+		}
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return
 	}
@@ -135,14 +133,37 @@ func (h *DailyHandler) CreateDaily(w http.ResponseWriter, r *http.Request, userI
 	sharedhttp.WriteJSON(w, http.StatusCreated, dailyToResponse(item))
 }
 
-// ListDailies returns all dailies for the authenticated user.
+// ListDailies returns all dailies for the authenticated user, optionally filtered by status and date.
 func (h *DailyHandler) ListDailies(w http.ResponseWriter, r *http.Request, userID string) {
 	userUUID, ok := h.parseUserID(w, userID)
 	if !ok {
 		return
 	}
 
-	items, err := h.manager.List(r.Context(), userUUID)
+	filter := daily.ListFilter{}
+	q := r.URL.Query()
+
+	if status := q.Get("status"); status != "" {
+		filter.Status = &status
+	}
+
+	dateParam := q.Get("date")
+	if dateParam == "" {
+		dateParam = q.Get("due_date")
+	}
+	if dateParam != "" {
+		t, err := time.Parse("2006-01-02", dateParam)
+		if err != nil {
+			t, err = time.Parse(time.RFC3339, dateParam)
+			if err != nil {
+				sharedhttp.WriteValidationError(w, map[string]string{"date": "date must be YYYY-MM-DD or RFC3339"})
+				return
+			}
+		}
+		filter.Date = &t
+	}
+
+	items, err := h.manager.List(r.Context(), userUUID, filter)
 	if err != nil {
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return
@@ -229,6 +250,10 @@ func (h *DailyHandler) UpdateDaily(w http.ResponseWriter, r *http.Request, userI
 			sharedhttp.WriteError(w, http.StatusConflict, "DAILY_NOT_EDITABLE", "Daily can only be edited while pending")
 			return
 		}
+		if errors.Is(err, daily.ErrInvalidDifficulty) {
+			sharedhttp.WriteValidationError(w, map[string]string{"difficulty": "must be one of: EASY, MEDIUM, HARD"})
+			return
+		}
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return
 	}
@@ -299,7 +324,7 @@ func validateCreateDailyRequest(req createDailyRequest) (map[string]string, time
 	if req.Title == "" {
 		fieldErrors["title"] = "title is required"
 	}
-	if _, ok := validDifficulties[req.Difficulty]; !ok {
+	if !daily.IsValidDifficulty(req.Difficulty) {
 		fieldErrors["difficulty"] = "must be one of: EASY, MEDIUM, HARD"
 	}
 	dueDate, err := time.Parse(time.RFC3339, req.DueDate)
@@ -312,7 +337,7 @@ func validateCreateDailyRequest(req createDailyRequest) (map[string]string, time
 func validateUpdateDailyRequest(req updateDailyRequest) (map[string]string, *time.Time) {
 	fieldErrors := make(map[string]string)
 	if req.Difficulty != "" {
-		if _, ok := validDifficulties[req.Difficulty]; !ok {
+		if !daily.IsValidDifficulty(req.Difficulty) {
 			fieldErrors["difficulty"] = "must be one of: EASY, MEDIUM, HARD"
 		}
 	}

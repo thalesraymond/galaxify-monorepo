@@ -30,8 +30,23 @@ func (f *fakeTx) Rollback(ctx context.Context) error {
 	return nil
 }
 
+type fakeTxWithCommitError struct {
+	pgx.Tx
+	err        error
+	rolledBack bool
+}
+
+func (f *fakeTxWithCommitError) Commit(ctx context.Context) error {
+	return f.err
+}
+
+func (f *fakeTxWithCommitError) Rollback(ctx context.Context) error {
+	f.rolledBack = true
+	return nil
+}
+
 type fakeTxStarter struct {
-	tx *fakeTx
+	tx pgx.Tx
 }
 
 func (f *fakeTxStarter) Begin(ctx context.Context) (pgx.Tx, error) {
@@ -43,7 +58,7 @@ func (f *fakeTxStarter) Begin(ctx context.Context) (pgx.Tx, error) {
 
 type mockStore struct {
 	createDaily         func(ctx context.Context, arg database.CreateDailyParams) (database.Daily, error)
-	listDailies         func(ctx context.Context, userID pgtype.UUID) ([]database.Daily, error)
+	listDailies         func(ctx context.Context, arg database.ListDailiesParams) ([]database.Daily, error)
 	getDaily            func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error)
 	updateDaily         func(ctx context.Context, arg database.UpdateDailyParams) (database.Daily, error)
 	deleteDaily         func(ctx context.Context, arg database.DeleteDailyParams) (int64, error)
@@ -58,9 +73,9 @@ func (m *mockStore) CreateDaily(ctx context.Context, arg database.CreateDailyPar
 	return database.Daily{}, errors.New("unexpected CreateDaily")
 }
 
-func (m *mockStore) ListDailies(ctx context.Context, userID pgtype.UUID) ([]database.Daily, error) {
+func (m *mockStore) ListDailies(ctx context.Context, arg database.ListDailiesParams) ([]database.Daily, error) {
 	if m.listDailies != nil {
-		return m.listDailies(ctx, userID)
+		return m.listDailies(ctx, arg)
 	}
 	return nil, errors.New("unexpected ListDailies")
 }
@@ -136,23 +151,39 @@ func TestDailyManager_Create(t *testing.T) {
 		},
 	}
 
-	mgr := NewManager(nil, nil, store, nil)
-	item, err := mgr.Create(context.Background(), CreateInput{
-		UserID:      userID,
-		Title:       "Test task",
-		Description: "Do something",
-		Difficulty:  "MEDIUM",
-		DueDate:     now.Add(24 * time.Hour),
+	mgr := NewDailyManager(nil, nil, store, nil)
+
+	t.Run("happy path creates pending daily", func(t *testing.T) {
+		item, err := mgr.Create(context.Background(), CreateInput{
+			UserID:      userID,
+			Title:       "Test task",
+			Description: "Do something",
+			Difficulty:  "MEDIUM",
+			DueDate:     now.Add(24 * time.Hour),
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if item.ID != dailyID {
+			t.Errorf("ID = %v, want %v", item.ID, dailyID)
+		}
+		if item.Status != "PENDING" {
+			t.Errorf("Status = %v, want PENDING", item.Status)
+		}
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if item.ID != dailyID {
-		t.Errorf("ID = %v, want %v", item.ID, dailyID)
-	}
-	if item.Status != "PENDING" {
-		t.Errorf("Status = %v, want PENDING", item.Status)
-	}
+
+	t.Run("returns ErrInvalidDifficulty when difficulty is invalid", func(t *testing.T) {
+		_, err := mgr.Create(context.Background(), CreateInput{
+			UserID:      userID,
+			Title:       "Test task",
+			Description: "Do something",
+			Difficulty:  "EXTREME",
+			DueDate:     now.Add(24 * time.Hour),
+		})
+		if !errors.Is(err, ErrInvalidDifficulty) {
+			t.Errorf("error = %v, want ErrInvalidDifficulty", err)
+		}
+	})
 }
 
 func TestDailyManager_Get(t *testing.T) {
@@ -170,7 +201,7 @@ func TestDailyManager_Get(t *testing.T) {
 				}, nil
 			},
 		}
-		mgr := NewManager(nil, nil, store, nil)
+		mgr := NewDailyManager(nil, nil, store, nil)
 		item, err := mgr.Get(context.Background(), userID, dailyID)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -186,7 +217,7 @@ func TestDailyManager_Get(t *testing.T) {
 				return database.Daily{}, pgx.ErrNoRows
 			},
 		}
-		mgr := NewManager(nil, nil, store, nil)
+		mgr := NewDailyManager(nil, nil, store, nil)
 		_, err := mgr.Get(context.Background(), userID, dailyID)
 		if !errors.Is(err, ErrDailyNotFound) {
 			t.Errorf("error = %v, want ErrDailyNotFound", err)
@@ -196,22 +227,64 @@ func TestDailyManager_Get(t *testing.T) {
 
 func TestDailyManager_List(t *testing.T) {
 	userID := uuid.New()
-	store := &mockStore{
-		listDailies: func(ctx context.Context, u pgtype.UUID) ([]database.Daily, error) {
-			return []database.Daily{
-				{ID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, Title: "One"},
-				{ID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, Title: "Two"},
-			}, nil
-		},
-	}
-	mgr := NewManager(nil, nil, store, nil)
-	items, err := mgr.List(context.Background(), userID)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(items) != 2 {
-		t.Errorf("len(items) = %d, want 2", len(items))
-	}
+
+	t.Run("returns all dailies without filter", func(t *testing.T) {
+		store := &mockStore{
+			listDailies: func(ctx context.Context, arg database.ListDailiesParams) ([]database.Daily, error) {
+				if arg.UserID.Bytes != userID {
+					t.Errorf("user_id = %v, want %v", arg.UserID.Bytes, userID)
+				}
+				if arg.Status.Valid {
+					t.Errorf("status should not be valid")
+				}
+				if arg.DueDate.Valid {
+					t.Errorf("due_date should not be valid")
+				}
+				return []database.Daily{
+					{ID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, Title: "One"},
+					{ID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, Title: "Two"},
+				}, nil
+			},
+		}
+		mgr := NewDailyManager(nil, nil, store, nil)
+		items, err := mgr.List(context.Background(), userID, ListFilter{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(items) != 2 {
+			t.Errorf("len(items) = %d, want 2", len(items))
+		}
+	})
+
+	t.Run("filters by status and date", func(t *testing.T) {
+		statusFilter := "PENDING"
+		dateFilter := time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC)
+
+		store := &mockStore{
+			listDailies: func(ctx context.Context, arg database.ListDailiesParams) ([]database.Daily, error) {
+				if !arg.Status.Valid || arg.Status.String != statusFilter {
+					t.Errorf("status = %v, want %v", arg.Status.String, statusFilter)
+				}
+				if !arg.DueDate.Valid || !arg.DueDate.Time.Equal(dateFilter) {
+					t.Errorf("due_date = %v, want %v", arg.DueDate.Time, dateFilter)
+				}
+				return []database.Daily{
+					{ID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, Title: "Filtered", Status: "PENDING"},
+				}, nil
+			},
+		}
+		mgr := NewDailyManager(nil, nil, store, nil)
+		items, err := mgr.List(context.Background(), userID, ListFilter{
+			Status: &statusFilter,
+			Date:   &dateFilter,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(items) != 1 {
+			t.Errorf("len(items) = %d, want 1", len(items))
+		}
+	})
 }
 
 func TestDailyManager_Update(t *testing.T) {
@@ -232,7 +305,7 @@ func TestDailyManager_Update(t *testing.T) {
 				}, nil
 			},
 		}
-		mgr := NewManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
 		item, err := mgr.Update(context.Background(), userID, dailyID, UpdateInput{Title: &newTitle})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -255,7 +328,7 @@ func TestDailyManager_Update(t *testing.T) {
 				return database.Daily{}, pgx.ErrNoRows
 			},
 		}
-		mgr := NewManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
 		_, err := mgr.Update(context.Background(), userID, dailyID, UpdateInput{Title: &newTitle})
 		if !errors.Is(err, ErrDailyNotFound) {
 			t.Errorf("error = %v, want ErrDailyNotFound", err)
@@ -272,10 +345,19 @@ func TestDailyManager_Update(t *testing.T) {
 				return database.Daily{Status: "COMPLETED"}, nil
 			},
 		}
-		mgr := NewManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
 		_, err := mgr.Update(context.Background(), userID, dailyID, UpdateInput{Title: &newTitle})
 		if !errors.Is(err, ErrDailyNotPending) {
 			t.Errorf("error = %v, want ErrDailyNotPending", err)
+		}
+	})
+
+	t.Run("returns ErrInvalidDifficulty when difficulty is invalid", func(t *testing.T) {
+		invalidDiff := "SUPER_HARD"
+		mgr := NewDailyManager(nil, nil, nil, nil)
+		_, err := mgr.Update(context.Background(), userID, dailyID, UpdateInput{Difficulty: &invalidDiff})
+		if !errors.Is(err, ErrInvalidDifficulty) {
+			t.Errorf("error = %v, want ErrInvalidDifficulty", err)
 		}
 	})
 }
@@ -292,7 +374,7 @@ func TestDailyManager_Delete(t *testing.T) {
 				return 1, nil
 			},
 		}
-		mgr := NewManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
 		err := mgr.Delete(context.Background(), userID, dailyID)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -312,7 +394,7 @@ func TestDailyManager_Delete(t *testing.T) {
 				return database.Daily{}, pgx.ErrNoRows
 			},
 		}
-		mgr := NewManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
 		err := mgr.Delete(context.Background(), userID, dailyID)
 		if !errors.Is(err, ErrDailyNotFound) {
 			t.Errorf("error = %v, want ErrDailyNotFound", err)
@@ -329,7 +411,7 @@ func TestDailyManager_Delete(t *testing.T) {
 				return database.Daily{Status: "COMPLETED"}, nil
 			},
 		}
-		mgr := NewManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
 		err := mgr.Delete(context.Background(), userID, dailyID)
 		if !errors.Is(err, ErrDailyNotPending) {
 			t.Errorf("error = %v, want ErrDailyNotPending", err)
@@ -359,7 +441,7 @@ func TestDailyManager_Complete(t *testing.T) {
 			},
 		}
 
-		mgr := NewManager(txStarter, func(t pgx.Tx) Store { return store }, nil, pub)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, pub)
 		item, err := mgr.Complete(context.Background(), userID, dailyID)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -389,7 +471,7 @@ func TestDailyManager_Complete(t *testing.T) {
 			},
 		}
 
-		mgr := NewManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
 		_, err := mgr.Complete(context.Background(), userID, dailyID)
 		if !errors.Is(err, ErrDailyNotFound) {
 			t.Errorf("error = %v, want ErrDailyNotFound", err)
@@ -407,10 +489,56 @@ func TestDailyManager_Complete(t *testing.T) {
 			},
 		}
 
-		mgr := NewManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
 		_, err := mgr.Complete(context.Background(), userID, dailyID)
 		if !errors.Is(err, ErrDailyAlreadyCompleted) {
 			t.Errorf("error = %v, want ErrDailyAlreadyCompleted", err)
+		}
+	})
+
+	t.Run("returns ErrDailyNotPending when daily is missed", func(t *testing.T) {
+		txStarter := &fakeTxStarter{}
+		store := &mockStore{
+			markDailyComplete: func(ctx context.Context, arg database.MarkDailyCompleteParams) (database.Daily, error) {
+				return database.Daily{}, pgx.ErrNoRows
+			},
+			getDaily: func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error) {
+				return database.Daily{Status: "MISSED"}, nil
+			},
+		}
+
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
+		_, err := mgr.Complete(context.Background(), userID, dailyID)
+		if !errors.Is(err, ErrDailyNotPending) {
+			t.Errorf("error = %v, want ErrDailyNotPending", err)
+		}
+	})
+
+	t.Run("does not publish event if commit fails", func(t *testing.T) {
+		failTx := &fakeTxWithCommitError{err: errors.New("commit failed")}
+		txStarter := &fakeTxStarter{tx: failTx}
+		pub := &mockPublisher{}
+		store := &mockStore{
+			markDailyComplete: func(ctx context.Context, arg database.MarkDailyCompleteParams) (database.Daily, error) {
+				return database.Daily{
+					ID:         arg.ID,
+					UserID:     arg.UserID,
+					Difficulty: "HARD",
+					Status:     "COMPLETED",
+				}, nil
+			},
+			getDifficultyReward: func(ctx context.Context, difficulty string) (database.DifficultyReward, error) {
+				return database.DifficultyReward{Difficulty: difficulty, RewardMaterials: 25}, nil
+			},
+		}
+
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, pub)
+		_, err := mgr.Complete(context.Background(), userID, dailyID)
+		if err == nil {
+			t.Fatalf("expected commit error")
+		}
+		if len(pub.published) != 0 {
+			t.Errorf("published events = %d, want 0", len(pub.published))
 		}
 	})
 }

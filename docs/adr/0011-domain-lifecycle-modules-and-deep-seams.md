@@ -27,7 +27,7 @@ The domain module presents a small, cohesive interface operating purely on stand
 type Manager interface {
 	Create(ctx context.Context, input CreateInput) (Daily, error)
 	Get(ctx context.Context, userID, id uuid.UUID) (Daily, error)
-	List(ctx context.Context, userID uuid.UUID) ([]Daily, error)
+	List(ctx context.Context, userID uuid.UUID, filter ListFilter) ([]Daily, error)
 	Update(ctx context.Context, userID, id uuid.UUID, input UpdateInput) (Daily, error)
 	Delete(ctx context.Context, userID, id uuid.UUID) error
 	Complete(ctx context.Context, userID, id uuid.UUID) (Daily, error)
