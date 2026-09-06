@@ -51,29 +51,27 @@ import (
 	"crypto"
 	"crypto/ed25519"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // JWKSCache is the interface for caching JWKS public keys.
 //
 // Implementations must be safe for concurrent use by multiple goroutines.
+var ErrUnknownKeyID = errors.New("auth: unknown key ID")
+
 type JWKSCache interface {
 	// GetKey returns the public key for the given key ID (kid).
 	//
 	// The kid comes from the JWT header and identifies which key was used to
-	// sign the token. Returns (nil, false) if the kid is not in the cache.
-	// The bool return (not error) is idiomatic for "found or not" lookups.
-	GetKey(kid string) (crypto.PublicKey, bool)
-
-	// ForceRefresh fetches a fresh JWKS document from the configured endpoint
-	// and updates the cache.
-	//
-	// Call this when GetKey returns false for a JWT's kid - the key may have
-	// been rotated and the new key needs to be fetched.
-	ForceRefresh(ctx context.Context) error
+	// sign the token. If the key is not in the cache, the implementation will
+	// attempt to fetch it. If the key is still not found, returns ErrUnknownKeyID.
+	GetKey(ctx context.Context, kid string) (crypto.PublicKey, error)
 }
 
 // SimpleJWKSCache is an in-memory JWKS cache implementation.
@@ -104,6 +102,8 @@ type SimpleJWKSCache struct {
 	// minRefreshInterval specifies the minimum cooldown between consecutive JWKS refreshes
 	// to prevent JWKS amplification and denial-of-service attacks.
 	minRefreshInterval time.Duration
+
+	group singleflight.Group
 }
 
 // NewSimpleJWKSCache creates a new cache that will fetch keys from jwksURL.
@@ -128,37 +128,55 @@ func (c *SimpleJWKSCache) SetMinRefreshInterval(interval time.Duration) {
 
 // GetKey retrieves a cached public key by its key ID.
 //
-// Uses RLock (read lock) so multiple goroutines can read simultaneously.
-// Returns (nil, false) if the kid is not in the cache.
-func (c *SimpleJWKSCache) GetKey(kid string) (crypto.PublicKey, bool) {
-	c.mu.RLock()         // acquire read lock (shared)
-	defer c.mu.RUnlock() // release when done
-	key, ok := c.keys[kid]
-	return key, ok
-}
-
-// ForceRefresh fetches the JWKS document and replaces the cache contents.
-//
-// Flow:
-//  1. Check refresh cooldown to protect against DoS/amplification attacks.
-//  2. Fetch JWKS from the configured URL (HTTP GET outside lock).
-//  3. Parse each JWK and convert to ed25519.PublicKey outside write lock.
-//  4. Replace the entire cache atomically (under write lock).
-//
-// Invalid keys (wrong format, wrong curve, etc.) are skipped and logged with slog.Warn.
-// This ensures a single malformed key doesn't break the entire cache.
-func (c *SimpleJWKSCache) ForceRefresh(ctx context.Context) error {
+// It handles cache misses by using singleflight to deduplicate concurrent HTTP fetches.
+func (c *SimpleJWKSCache) GetKey(ctx context.Context, kid string) (crypto.PublicKey, error) {
 	c.mu.RLock()
-	if c.minRefreshInterval > 0 && !c.lastRefresh.IsZero() && time.Since(c.lastRefresh) < c.minRefreshInterval {
-		c.mu.RUnlock()
-		return nil
+	key, ok := c.keys[kid]
+	c.mu.RUnlock()
+	if ok {
+		return key, nil
 	}
+
+	// Cache miss: coordinate fetch
+	_, err, _ := c.group.Do("jwks_refresh", func() (interface{}, error) {
+		// Re-check after acquiring singleflight
+		c.mu.RLock()
+		_, ok := c.keys[kid]
+		cooldownActive := c.minRefreshInterval > 0 && !c.lastRefresh.IsZero() && time.Since(c.lastRefresh) < c.minRefreshInterval
+		c.mu.RUnlock()
+
+		if ok {
+			return nil, nil // We have it now
+		}
+		if cooldownActive {
+			return nil, nil // Do not fetch, hit cooldown
+		}
+
+		// Execute actual HTTP fetch and cache update
+		return nil, c.ForceRefresh(ctx)
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch JWKS: %w", err)
+	}
+
+	// Fetch or cooldown finished, check cache one final time
+	c.mu.RLock()
+	key, ok = c.keys[kid]
 	c.mu.RUnlock()
 
+	if !ok {
+		return nil, ErrUnknownKeyID
+	}
+	return key, nil
+}
+
+// forceRefresh fetches the JWKS document and replaces the cache contents.
+func (c *SimpleJWKSCache) ForceRefresh(ctx context.Context) error {
 	// Step 1: Fetch the JWKS document from the user-service (outside lock)
 	jwks, err := c.fetchFn(ctx, c.jwksURL)
 	if err != nil {
-		return fmt.Errorf("failed to fetch JWKS: %w", err)
+		return err
 	}
 
 	// Step 2: Convert each JWK to a public key (outside lock)
@@ -181,22 +199,6 @@ func (c *SimpleJWKSCache) ForceRefresh(ctx context.Context) error {
 	return nil
 }
 
-// jwkToPublicKey converts a JWK (JSON Web Key) to an Ed25519 public key.
-//
-// JWK format (RFC 7517):
-//   - kty: Key Type (must be "OKP" for Octet Key Pair)
-//   - crv: Curve (must be "Ed25519" for our use case)
-//   - x:   Public key bytes, base64url-encoded (no padding)
-//   - kid: Key ID (used to match JWT header's "kid")
-//
-// The "x" field contains the raw 32-byte Ed25519 public key, encoded as
-// base64url (RFC 4648 §5) without padding. This is the standard encoding
-// for JWKs.
-//
-// Validation:
-//   - kty must be "OKP" (Octet Key Pair)
-//   - crv must be "Ed25519" (we only support Ed25519)
-//   - x must decode to exactly 32 bytes (ed25519.PublicKeySize)
 func jwkToPublicKey(jwk JWK) (crypto.PublicKey, error) {
 	// Validate key type: OKP = Octet Key Pair (used for Ed25519, X25519, etc.)
 	if jwk.Kty != "OKP" {
