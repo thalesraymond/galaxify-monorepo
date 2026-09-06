@@ -14,84 +14,62 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/thalesraymond/galaxify-monorepo/apps/daily-service/internal/database"
+	"github.com/thalesraymond/galaxify-monorepo/apps/daily-service/internal/daily"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
-	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 	sharedhttptest "github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp/test"
 )
 
-type mockDailyStore struct {
-	createDaily         func(ctx context.Context, arg database.CreateDailyParams) (database.Daily, error)
-	listDailies         func(ctx context.Context, userID pgtype.UUID) ([]database.Daily, error)
-	getDaily            func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error)
-	updateDaily         func(ctx context.Context, arg database.UpdateDailyParams) (database.Daily, error)
-	deleteDaily         func(ctx context.Context, arg database.DeleteDailyParams) (int64, error)
-	markDailyComplete   func(ctx context.Context, arg database.MarkDailyCompleteParams) (database.Daily, error)
-	getDifficultyReward func(ctx context.Context, difficulty string) (database.DifficultyReward, error)
+type mockDailyManager struct {
+	create   func(ctx context.Context, input daily.CreateInput) (daily.Daily, error)
+	get      func(ctx context.Context, userID, id uuid.UUID) (daily.Daily, error)
+	list     func(ctx context.Context, userID uuid.UUID) ([]daily.Daily, error)
+	update   func(ctx context.Context, userID, id uuid.UUID, input daily.UpdateInput) (daily.Daily, error)
+	delete   func(ctx context.Context, userID, id uuid.UUID) error
+	complete func(ctx context.Context, userID, id uuid.UUID) (daily.Daily, error)
 }
 
-func (m *mockDailyStore) CreateDaily(ctx context.Context, arg database.CreateDailyParams) (database.Daily, error) {
-	if m.createDaily != nil {
-		return m.createDaily(ctx, arg)
+func (m *mockDailyManager) Create(ctx context.Context, input daily.CreateInput) (daily.Daily, error) {
+	if m.create != nil {
+		return m.create(ctx, input)
 	}
-	return database.Daily{}, errors.New("unexpected CreateDaily call")
+	return daily.Daily{}, errors.New("unexpected Create call")
 }
 
-func (m *mockDailyStore) ListDailies(ctx context.Context, userID pgtype.UUID) ([]database.Daily, error) {
-	if m.listDailies != nil {
-		return m.listDailies(ctx, userID)
+func (m *mockDailyManager) Get(ctx context.Context, userID, id uuid.UUID) (daily.Daily, error) {
+	if m.get != nil {
+		return m.get(ctx, userID, id)
 	}
-	return nil, errors.New("unexpected ListDailies call")
+	return daily.Daily{}, errors.New("unexpected Get call")
 }
 
-func (m *mockDailyStore) GetDaily(ctx context.Context, arg database.GetDailyParams) (database.Daily, error) {
-	if m.getDaily != nil {
-		return m.getDaily(ctx, arg)
+func (m *mockDailyManager) List(ctx context.Context, userID uuid.UUID) ([]daily.Daily, error) {
+	if m.list != nil {
+		return m.list(ctx, userID)
 	}
-	return database.Daily{}, errors.New("unexpected GetDaily call")
+	return nil, errors.New("unexpected List call")
 }
 
-func (m *mockDailyStore) UpdateDaily(ctx context.Context, arg database.UpdateDailyParams) (database.Daily, error) {
-	if m.updateDaily != nil {
-		return m.updateDaily(ctx, arg)
+func (m *mockDailyManager) Update(ctx context.Context, userID, id uuid.UUID, input daily.UpdateInput) (daily.Daily, error) {
+	if m.update != nil {
+		return m.update(ctx, userID, id, input)
 	}
-	return database.Daily{}, errors.New("unexpected UpdateDaily call")
+	return daily.Daily{}, errors.New("unexpected Update call")
 }
 
-func (m *mockDailyStore) DeleteDaily(ctx context.Context, arg database.DeleteDailyParams) (int64, error) {
-	if m.deleteDaily != nil {
-		return m.deleteDaily(ctx, arg)
+func (m *mockDailyManager) Delete(ctx context.Context, userID, id uuid.UUID) error {
+	if m.delete != nil {
+		return m.delete(ctx, userID, id)
 	}
-	return 0, errors.New("unexpected DeleteDaily call")
+	return errors.New("unexpected Delete call")
 }
 
-func (m *mockDailyStore) MarkDailyComplete(ctx context.Context, arg database.MarkDailyCompleteParams) (database.Daily, error) {
-	if m.markDailyComplete != nil {
-		return m.markDailyComplete(ctx, arg)
+func (m *mockDailyManager) Complete(ctx context.Context, userID, id uuid.UUID) (daily.Daily, error) {
+	if m.complete != nil {
+		return m.complete(ctx, userID, id)
 	}
-	return database.Daily{}, errors.New("unexpected MarkDailyComplete call")
-}
-
-func (m *mockDailyStore) GetDifficultyReward(ctx context.Context, difficulty string) (database.DifficultyReward, error) {
-	if m.getDifficultyReward != nil {
-		return m.getDifficultyReward(ctx, difficulty)
-	}
-	return database.DifficultyReward{}, errors.New("unexpected GetDifficultyReward call")
-}
-
-type mockEventPublisher struct {
-	publish func(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error
-}
-
-func (m *mockEventPublisher) Publish(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error {
-	if m.publish != nil {
-		return m.publish(ctx, eventType, payload, opts...)
-	}
-	return errors.New("unexpected Publish call")
+	return daily.Daily{}, errors.New("unexpected Complete call")
 }
 
 type testTokenSigner struct {
@@ -115,13 +93,13 @@ func (s *testTokenSigner) Token(userID string) string {
 	return token
 }
 
-func newTestDailyRouter(t *testing.T, store dailyStore, publisher EventPublisher) (http.Handler, *testTokenSigner) {
+func newTestDailyRouter(t *testing.T, manager dailyManager) (http.Handler, *testTokenSigner) {
 	t.Helper()
 	signer := newTestTokenSigner()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cache := auth.NewStaticJWKSCache(signer.kid, signer.priv.Public())
 	authHandshake := sharedhttp.NewAuthHandshake(cache)
-	h := NewDailyHandler(store, publisher, authHandshake, logger)
+	h := NewDailyHandler(manager, authHandshake, logger)
 	mux := http.NewServeMux()
 	h.RegisterDailyRoutes(mux)
 	return mux, signer
@@ -129,7 +107,6 @@ func newTestDailyRouter(t *testing.T, store dailyStore, publisher EventPublisher
 
 func TestCreateDaily(t *testing.T) {
 	userID := uuid.New()
-	pgUserID := pgtype.UUID{Bytes: userID, Valid: true}
 	dailyID := uuid.New()
 	dueDate := time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
 	createdAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
@@ -137,7 +114,7 @@ func TestCreateDaily(t *testing.T) {
 	tests := []struct {
 		name           string
 		body           string
-		setupStore     func(m *mockDailyStore)
+		setupManager   func(m *mockDailyManager)
 		wantStatus     int
 		wantFieldError map[string]string
 		wantErrorCode  string
@@ -146,33 +123,33 @@ func TestCreateDaily(t *testing.T) {
 		{
 			name: "creates daily",
 			body: `{"title":"Explore Mars","description":"scan surface","difficulty":"MEDIUM","due_date":"2026-09-15T10:00:00Z"}`,
-			setupStore: func(m *mockDailyStore) {
-				m.createDaily = func(ctx context.Context, arg database.CreateDailyParams) (database.Daily, error) {
-					if arg.UserID != pgUserID {
-						t.Errorf("user_id = %v, want %v", arg.UserID, pgUserID)
+			setupManager: func(m *mockDailyManager) {
+				m.create = func(ctx context.Context, input daily.CreateInput) (daily.Daily, error) {
+					if input.UserID != userID {
+						t.Errorf("user_id = %v, want %v", input.UserID, userID)
 					}
-					if arg.Title != "Explore Mars" {
-						t.Errorf("title = %q, want Explore Mars", arg.Title)
+					if input.Title != "Explore Mars" {
+						t.Errorf("title = %q, want Explore Mars", input.Title)
 					}
-					if arg.Description != "scan surface" {
-						t.Errorf("description = %q, want scan surface", arg.Description)
+					if input.Description != "scan surface" {
+						t.Errorf("description = %q, want scan surface", input.Description)
 					}
-					if arg.Difficulty != "MEDIUM" {
-						t.Errorf("difficulty = %q, want MEDIUM", arg.Difficulty)
+					if input.Difficulty != "MEDIUM" {
+						t.Errorf("difficulty = %q, want MEDIUM", input.Difficulty)
 					}
-					if !arg.DueDate.Valid || !arg.DueDate.Time.Equal(dueDate) {
-						t.Errorf("due_date = %v, want %v", arg.DueDate, dueDate)
+					if !input.DueDate.Equal(dueDate) {
+						t.Errorf("due_date = %v, want %v", input.DueDate, dueDate)
 					}
-					return database.Daily{
-						ID:          pgtype.UUID{Bytes: dailyID, Valid: true},
-						UserID:      pgUserID,
+					return daily.Daily{
+						ID:          dailyID,
+						UserID:      userID,
 						Title:       "Explore Mars",
 						Description: "scan surface",
 						Difficulty:  "MEDIUM",
-						DueDate:     pgtype.Timestamptz{Time: dueDate, Valid: true},
+						DueDate:     dueDate,
 						Status:      "PENDING",
-						CreatedAt:   pgtype.Timestamptz{Time: createdAt, Valid: true},
-						UpdatedAt:   pgtype.Timestamptz{Time: createdAt, Valid: true},
+						CreatedAt:   createdAt,
+						UpdatedAt:   createdAt,
 					}, nil
 				}
 			},
@@ -208,17 +185,23 @@ func TestCreateDaily(t *testing.T) {
 			wantFieldError: map[string]string{"difficulty": "must be one of: EASY, MEDIUM, HARD"},
 		},
 		{
-			name:           "invalid due_date",
-			body:           `{"title":"Explore Mars","difficulty":"MEDIUM","due_date":"tomorrow"}`,
+			name:           "invalid due_date format",
+			body:           `{"title":"Explore Mars","difficulty":"MEDIUM","due_date":"not-a-date"}`,
 			wantStatus:     http.StatusUnprocessableEntity,
 			wantFieldError: map[string]string{"due_date": "due_date must be a valid RFC3339 timestamp"},
 		},
 		{
-			name: "store error",
+			name:           "malformed JSON body",
+			body:           `not valid json`,
+			wantStatus:     http.StatusUnprocessableEntity,
+			wantFieldError: map[string]string{"body": "invalid JSON body"},
+		},
+		{
+			name: "manager error",
 			body: `{"title":"Explore Mars","difficulty":"MEDIUM","due_date":"2026-09-15T10:00:00Z"}`,
-			setupStore: func(m *mockDailyStore) {
-				m.createDaily = func(ctx context.Context, arg database.CreateDailyParams) (database.Daily, error) {
-					return database.Daily{}, errors.New("database down")
+			setupManager: func(m *mockDailyManager) {
+				m.create = func(ctx context.Context, input daily.CreateInput) (daily.Daily, error) {
+					return daily.Daily{}, errors.New("database down")
 				}
 			},
 			wantStatus:    http.StatusInternalServerError,
@@ -228,12 +211,12 @@ func TestCreateDaily(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := &mockDailyStore{}
-			if tt.setupStore != nil {
-				tt.setupStore(store)
+			mgr := &mockDailyManager{}
+			if tt.setupManager != nil {
+				tt.setupManager(mgr)
 			}
 
-			router, signer := newTestDailyRouter(t, store, &mockEventPublisher{})
+			router, signer := newTestDailyRouter(t, mgr)
 			rec := httptest.NewRecorder()
 			req := sharedhttptest.NewRequest(t, http.MethodPost, "/dailies", tt.body)
 			req.Header.Set("Authorization", "Bearer "+signer.Token(userID.String()))
@@ -265,35 +248,34 @@ func TestCreateDaily(t *testing.T) {
 
 func TestListDailies(t *testing.T) {
 	userID := uuid.New()
-	pgUserID := pgtype.UUID{Bytes: userID, Valid: true}
 	dailyID := uuid.New()
 	dueDate := time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
 	createdAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 
 	tests := []struct {
 		name           string
-		setupStore     func(m *mockDailyStore)
+		setupManager   func(m *mockDailyManager)
 		wantStatus     int
 		wantErrorCode  string
 		assertResponse func(t *testing.T, resp []dailyResponse)
 	}{
 		{
 			name: "returns dailies for user",
-			setupStore: func(m *mockDailyStore) {
-				m.listDailies = func(ctx context.Context, id pgtype.UUID) ([]database.Daily, error) {
-					if id != pgUserID {
-						t.Errorf("user_id = %v, want %v", id, pgUserID)
+			setupManager: func(m *mockDailyManager) {
+				m.list = func(ctx context.Context, id uuid.UUID) ([]daily.Daily, error) {
+					if id != userID {
+						t.Errorf("user_id = %v, want %v", id, userID)
 					}
-					return []database.Daily{
+					return []daily.Daily{
 						{
-							ID:         pgtype.UUID{Bytes: dailyID, Valid: true},
-							UserID:     pgUserID,
+							ID:         dailyID,
+							UserID:     userID,
 							Title:      "Explore Mars",
 							Difficulty: "EASY",
-							DueDate:    pgtype.Timestamptz{Time: dueDate, Valid: true},
+							DueDate:    dueDate,
 							Status:     "PENDING",
-							CreatedAt:  pgtype.Timestamptz{Time: createdAt, Valid: true},
-							UpdatedAt:  pgtype.Timestamptz{Time: createdAt, Valid: true},
+							CreatedAt:  createdAt,
+							UpdatedAt:  createdAt,
 						},
 					}, nil
 				}
@@ -313,9 +295,9 @@ func TestListDailies(t *testing.T) {
 		},
 		{
 			name: "returns empty list",
-			setupStore: func(m *mockDailyStore) {
-				m.listDailies = func(ctx context.Context, id pgtype.UUID) ([]database.Daily, error) {
-					return []database.Daily{}, nil
+			setupManager: func(m *mockDailyManager) {
+				m.list = func(ctx context.Context, id uuid.UUID) ([]daily.Daily, error) {
+					return []daily.Daily{}, nil
 				}
 			},
 			wantStatus: http.StatusOK,
@@ -326,9 +308,9 @@ func TestListDailies(t *testing.T) {
 			},
 		},
 		{
-			name: "store error",
-			setupStore: func(m *mockDailyStore) {
-				m.listDailies = func(ctx context.Context, id pgtype.UUID) ([]database.Daily, error) {
+			name: "manager error",
+			setupManager: func(m *mockDailyManager) {
+				m.list = func(ctx context.Context, id uuid.UUID) ([]daily.Daily, error) {
 					return nil, errors.New("database down")
 				}
 			},
@@ -339,12 +321,12 @@ func TestListDailies(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := &mockDailyStore{}
-			if tt.setupStore != nil {
-				tt.setupStore(store)
+			mgr := &mockDailyManager{}
+			if tt.setupManager != nil {
+				tt.setupManager(mgr)
 			}
 
-			router, signer := newTestDailyRouter(t, store, &mockEventPublisher{})
+			router, signer := newTestDailyRouter(t, mgr)
 			rec := httptest.NewRecorder()
 			req := sharedhttptest.NewRequest(t, http.MethodGet, "/dailies", "")
 			req.Header.Set("Authorization", "Bearer "+signer.Token(userID.String()))
@@ -369,16 +351,14 @@ func TestListDailies(t *testing.T) {
 
 func TestGetDaily(t *testing.T) {
 	userID := uuid.New()
-	pgUserID := pgtype.UUID{Bytes: userID, Valid: true}
 	dailyID := uuid.New()
-	pgDailyID := pgtype.UUID{Bytes: dailyID, Valid: true}
 	dueDate := time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
 	createdAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 
 	tests := []struct {
 		name           string
 		dailyID        string
-		setupStore     func(m *mockDailyStore)
+		setupManager   func(m *mockDailyManager)
 		wantStatus     int
 		wantFieldError map[string]string
 		wantErrorCode  string
@@ -387,23 +367,23 @@ func TestGetDaily(t *testing.T) {
 		{
 			name:    "returns daily",
 			dailyID: dailyID.String(),
-			setupStore: func(m *mockDailyStore) {
-				m.getDaily = func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error) {
-					if arg.ID != pgDailyID {
-						t.Errorf("daily_id = %v, want %v", arg.ID, pgDailyID)
+			setupManager: func(m *mockDailyManager) {
+				m.get = func(ctx context.Context, uID, dID uuid.UUID) (daily.Daily, error) {
+					if dID != dailyID {
+						t.Errorf("daily_id = %v, want %v", dID, dailyID)
 					}
-					if arg.UserID != pgUserID {
-						t.Errorf("user_id = %v, want %v", arg.UserID, pgUserID)
+					if uID != userID {
+						t.Errorf("user_id = %v, want %v", uID, userID)
 					}
-					return database.Daily{
-						ID:         pgDailyID,
-						UserID:     pgUserID,
+					return daily.Daily{
+						ID:         dailyID,
+						UserID:     userID,
 						Title:      "Explore Mars",
 						Difficulty: "HARD",
-						DueDate:    pgtype.Timestamptz{Time: dueDate, Valid: true},
+						DueDate:    dueDate,
 						Status:     "PENDING",
-						CreatedAt:  pgtype.Timestamptz{Time: createdAt, Valid: true},
-						UpdatedAt:  pgtype.Timestamptz{Time: createdAt, Valid: true},
+						CreatedAt:  createdAt,
+						UpdatedAt:  createdAt,
 					}, nil
 				}
 			},
@@ -426,20 +406,20 @@ func TestGetDaily(t *testing.T) {
 		{
 			name:    "not found",
 			dailyID: dailyID.String(),
-			setupStore: func(m *mockDailyStore) {
-				m.getDaily = func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error) {
-					return database.Daily{}, pgx.ErrNoRows
+			setupManager: func(m *mockDailyManager) {
+				m.get = func(ctx context.Context, uID, dID uuid.UUID) (daily.Daily, error) {
+					return daily.Daily{}, daily.ErrDailyNotFound
 				}
 			},
 			wantStatus:    http.StatusNotFound,
 			wantErrorCode: "DAILY_NOT_FOUND",
 		},
 		{
-			name:    "store error",
+			name:    "manager error",
 			dailyID: dailyID.String(),
-			setupStore: func(m *mockDailyStore) {
-				m.getDaily = func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error) {
-					return database.Daily{}, errors.New("database down")
+			setupManager: func(m *mockDailyManager) {
+				m.get = func(ctx context.Context, uID, dID uuid.UUID) (daily.Daily, error) {
+					return daily.Daily{}, errors.New("database down")
 				}
 			},
 			wantStatus:    http.StatusInternalServerError,
@@ -449,12 +429,12 @@ func TestGetDaily(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := &mockDailyStore{}
-			if tt.setupStore != nil {
-				tt.setupStore(store)
+			mgr := &mockDailyManager{}
+			if tt.setupManager != nil {
+				tt.setupManager(mgr)
 			}
 
-			router, signer := newTestDailyRouter(t, store, &mockEventPublisher{})
+			router, signer := newTestDailyRouter(t, mgr)
 			rec := httptest.NewRecorder()
 			req := sharedhttptest.NewRequest(t, http.MethodGet, "/dailies/"+tt.dailyID, "")
 			req.Header.Set("Authorization", "Bearer "+signer.Token(userID.String()))
@@ -486,30 +466,17 @@ func TestGetDaily(t *testing.T) {
 
 func TestUpdateDaily(t *testing.T) {
 	userID := uuid.New()
-	pgUserID := pgtype.UUID{Bytes: userID, Valid: true}
 	dailyID := uuid.New()
-	pgDailyID := pgtype.UUID{Bytes: dailyID, Valid: true}
 	dueDate := time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
 	newDueDate := time.Date(2026, 9, 20, 10, 0, 0, 0, time.UTC)
 	createdAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	updatedAt := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
 
-	pendingDaily := database.Daily{
-		ID:         pgDailyID,
-		UserID:     pgUserID,
-		Title:      "Explore Mars",
-		Difficulty: "MEDIUM",
-		DueDate:    pgtype.Timestamptz{Time: dueDate, Valid: true},
-		Status:     "PENDING",
-		CreatedAt:  pgtype.Timestamptz{Time: createdAt, Valid: true},
-		UpdatedAt:  pgtype.Timestamptz{Time: createdAt, Valid: true},
-	}
-
 	tests := []struct {
 		name           string
 		dailyID        string
 		body           string
-		setupStore     func(m *mockDailyStore)
+		setupManager   func(m *mockDailyManager)
 		wantStatus     int
 		wantFieldError map[string]string
 		wantErrorCode  string
@@ -519,32 +486,26 @@ func TestUpdateDaily(t *testing.T) {
 			name:    "updates title",
 			dailyID: dailyID.String(),
 			body:    `{"title":"Colonize Mars"}`,
-			setupStore: func(m *mockDailyStore) {
-				m.getDaily = func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error) {
-					return pendingDaily, nil
-				}
-				m.updateDaily = func(ctx context.Context, arg database.UpdateDailyParams) (database.Daily, error) {
-					if arg.ID != pgDailyID {
-						t.Errorf("daily_id = %v, want %v", arg.ID, pgDailyID)
+			setupManager: func(m *mockDailyManager) {
+				m.update = func(ctx context.Context, uID, dID uuid.UUID, input daily.UpdateInput) (daily.Daily, error) {
+					if dID != dailyID {
+						t.Errorf("daily_id = %v, want %v", dID, dailyID)
 					}
-					if arg.UserID != pgUserID {
-						t.Errorf("user_id = %v, want %v", arg.UserID, pgUserID)
+					if uID != userID {
+						t.Errorf("user_id = %v, want %v", uID, userID)
 					}
-					if !arg.Title.Valid || arg.Title.String != "Colonize Mars" {
-						t.Errorf("title = %v, want Colonize Mars", arg.Title)
+					if input.Title == nil || *input.Title != "Colonize Mars" {
+						t.Errorf("title = %v, want Colonize Mars", input.Title)
 					}
-					if arg.Description.Valid {
-						t.Error("description should not be set")
-					}
-					return database.Daily{
-						ID:         pgDailyID,
-						UserID:     pgUserID,
-						Title:      "Colonize Mars",
-						Difficulty: "MEDIUM",
-						DueDate:    pgtype.Timestamptz{Time: dueDate, Valid: true},
-						Status:     "PENDING",
-						CreatedAt:  pgtype.Timestamptz{Time: createdAt, Valid: true},
-						UpdatedAt:  pgtype.Timestamptz{Time: updatedAt, Valid: true},
+					return daily.Daily{
+						ID:          dailyID,
+						UserID:      userID,
+						Title:       "Colonize Mars",
+						Difficulty:  "MEDIUM",
+						DueDate:     dueDate,
+						Status:      "PENDING",
+						CreatedAt:   createdAt,
+						UpdatedAt:   updatedAt,
 					}, nil
 				}
 			},
@@ -559,23 +520,20 @@ func TestUpdateDaily(t *testing.T) {
 			name:    "updates due_date",
 			dailyID: dailyID.String(),
 			body:    `{"due_date":"2026-09-20T10:00:00Z"}`,
-			setupStore: func(m *mockDailyStore) {
-				m.getDaily = func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error) {
-					return pendingDaily, nil
-				}
-				m.updateDaily = func(ctx context.Context, arg database.UpdateDailyParams) (database.Daily, error) {
-					if !arg.DueDate.Valid || !arg.DueDate.Time.Equal(newDueDate) {
-						t.Errorf("due_date = %v, want %v", arg.DueDate, newDueDate)
+			setupManager: func(m *mockDailyManager) {
+				m.update = func(ctx context.Context, uID, dID uuid.UUID, input daily.UpdateInput) (daily.Daily, error) {
+					if input.DueDate == nil || !input.DueDate.Equal(newDueDate) {
+						t.Errorf("due_date = %v, want %v", input.DueDate, newDueDate)
 					}
-					return database.Daily{
-						ID:         pgDailyID,
-						UserID:     pgUserID,
-						Title:      "Explore Mars",
-						Difficulty: "MEDIUM",
-						DueDate:    pgtype.Timestamptz{Time: newDueDate, Valid: true},
-						Status:     "PENDING",
-						CreatedAt:  pgtype.Timestamptz{Time: createdAt, Valid: true},
-						UpdatedAt:  pgtype.Timestamptz{Time: updatedAt, Valid: true},
+					return daily.Daily{
+						ID:          dailyID,
+						UserID:      userID,
+						Title:       "Explore Mars",
+						Difficulty:  "MEDIUM",
+						DueDate:     newDueDate,
+						Status:      "PENDING",
+						CreatedAt:   createdAt,
+						UpdatedAt:   updatedAt,
 					}, nil
 				}
 			},
@@ -597,74 +555,36 @@ func TestUpdateDaily(t *testing.T) {
 			name:    "not found",
 			dailyID: dailyID.String(),
 			body:    `{"title":"Colonize Mars"}`,
-			setupStore: func(m *mockDailyStore) {
-				m.getDaily = func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error) {
-					return database.Daily{}, pgx.ErrNoRows
+			setupManager: func(m *mockDailyManager) {
+				m.update = func(ctx context.Context, uID, dID uuid.UUID, input daily.UpdateInput) (daily.Daily, error) {
+					return daily.Daily{}, daily.ErrDailyNotFound
 				}
 			},
 			wantStatus:    http.StatusNotFound,
 			wantErrorCode: "DAILY_NOT_FOUND",
 		},
 		{
-			name:    "not editable",
+			name:    "daily not pending",
 			dailyID: dailyID.String(),
 			body:    `{"title":"Colonize Mars"}`,
-			setupStore: func(m *mockDailyStore) {
-				m.getDaily = func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error) {
-					return database.Daily{
-						ID:         pgDailyID,
-						UserID:     pgUserID,
-						Title:      "Explore Mars",
-						Difficulty: "MEDIUM",
-						DueDate:    pgtype.Timestamptz{Time: dueDate, Valid: true},
-						Status:     "COMPLETED",
-						CreatedAt:  pgtype.Timestamptz{Time: createdAt, Valid: true},
-						UpdatedAt:  pgtype.Timestamptz{Time: createdAt, Valid: true},
-					}, nil
+			setupManager: func(m *mockDailyManager) {
+				m.update = func(ctx context.Context, uID, dID uuid.UUID, input daily.UpdateInput) (daily.Daily, error) {
+					return daily.Daily{}, daily.ErrDailyNotPending
 				}
 			},
 			wantStatus:    http.StatusConflict,
 			wantErrorCode: "DAILY_NOT_EDITABLE",
 		},
-		{
-			name:           "invalid difficulty",
-			dailyID:        dailyID.String(),
-			body:           `{"difficulty":"HARDER"}`,
-			wantStatus:     http.StatusUnprocessableEntity,
-			wantFieldError: map[string]string{"difficulty": "must be one of: EASY, MEDIUM, HARD"},
-		},
-		{
-			name:           "invalid due_date",
-			dailyID:        dailyID.String(),
-			body:           `{"due_date":"bad"}`,
-			wantStatus:     http.StatusUnprocessableEntity,
-			wantFieldError: map[string]string{"due_date": "due_date must be a valid RFC3339 timestamp"},
-		},
-		{
-			name:    "store error on update",
-			dailyID: dailyID.String(),
-			body:    `{"title":"Colonize Mars"}`,
-			setupStore: func(m *mockDailyStore) {
-				m.getDaily = func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error) {
-					return pendingDaily, nil
-				}
-				m.updateDaily = func(ctx context.Context, arg database.UpdateDailyParams) (database.Daily, error) {
-					return database.Daily{}, errors.New("database down")
-				}
-			},
-			wantStatus:    http.StatusInternalServerError,
-			wantErrorCode: "INTERNAL_ERROR",
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := &mockDailyStore{}
-			if tt.setupStore != nil {
-				tt.setupStore(store)
+			mgr := &mockDailyManager{}
+			if tt.setupManager != nil {
+				tt.setupManager(mgr)
 			}
 
-			router, signer := newTestDailyRouter(t, store, &mockEventPublisher{})
+			router, signer := newTestDailyRouter(t, mgr)
 			rec := httptest.NewRecorder()
 			req := sharedhttptest.NewRequest(t, http.MethodPatch, "/dailies/"+tt.dailyID, tt.body)
 			req.Header.Set("Authorization", "Bearer "+signer.Token(userID.String()))
@@ -696,27 +616,12 @@ func TestUpdateDaily(t *testing.T) {
 
 func TestDeleteDaily(t *testing.T) {
 	userID := uuid.New()
-	pgUserID := pgtype.UUID{Bytes: userID, Valid: true}
 	dailyID := uuid.New()
-	pgDailyID := pgtype.UUID{Bytes: dailyID, Valid: true}
-	dueDate := time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
-	createdAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-
-	pendingDaily := database.Daily{
-		ID:         pgDailyID,
-		UserID:     pgUserID,
-		Title:      "Explore Mars",
-		Difficulty: "MEDIUM",
-		DueDate:    pgtype.Timestamptz{Time: dueDate, Valid: true},
-		Status:     "PENDING",
-		CreatedAt:  pgtype.Timestamptz{Time: createdAt, Valid: true},
-		UpdatedAt:  pgtype.Timestamptz{Time: createdAt, Valid: true},
-	}
 
 	tests := []struct {
 		name           string
 		dailyID        string
-		setupStore     func(m *mockDailyStore)
+		setupManager   func(m *mockDailyManager)
 		wantStatus     int
 		wantFieldError map[string]string
 		wantErrorCode  string
@@ -724,18 +629,15 @@ func TestDeleteDaily(t *testing.T) {
 		{
 			name:    "deletes daily",
 			dailyID: dailyID.String(),
-			setupStore: func(m *mockDailyStore) {
-				m.getDaily = func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error) {
-					return pendingDaily, nil
-				}
-				m.deleteDaily = func(ctx context.Context, arg database.DeleteDailyParams) (int64, error) {
-					if arg.ID != pgDailyID {
-						t.Errorf("daily_id = %v, want %v", arg.ID, pgDailyID)
+			setupManager: func(m *mockDailyManager) {
+				m.delete = func(ctx context.Context, uID, dID uuid.UUID) error {
+					if dID != dailyID {
+						t.Errorf("daily_id = %v, want %v", dID, dailyID)
 					}
-					if arg.UserID != pgUserID {
-						t.Errorf("user_id = %v, want %v", arg.UserID, pgUserID)
+					if uID != userID {
+						t.Errorf("user_id = %v, want %v", uID, userID)
 					}
-					return 1, nil
+					return nil
 				}
 			},
 			wantStatus: http.StatusNoContent,
@@ -749,58 +651,35 @@ func TestDeleteDaily(t *testing.T) {
 		{
 			name:    "not found",
 			dailyID: dailyID.String(),
-			setupStore: func(m *mockDailyStore) {
-				m.getDaily = func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error) {
-					return database.Daily{}, pgx.ErrNoRows
+			setupManager: func(m *mockDailyManager) {
+				m.delete = func(ctx context.Context, uID, dID uuid.UUID) error {
+					return daily.ErrDailyNotFound
 				}
 			},
 			wantStatus:    http.StatusNotFound,
 			wantErrorCode: "DAILY_NOT_FOUND",
 		},
 		{
-			name:    "not editable",
+			name:    "daily not pending",
 			dailyID: dailyID.String(),
-			setupStore: func(m *mockDailyStore) {
-				m.getDaily = func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error) {
-					return database.Daily{
-						ID:         pgDailyID,
-						UserID:     pgUserID,
-						Title:      "Explore Mars",
-						Difficulty: "MEDIUM",
-						DueDate:    pgtype.Timestamptz{Time: dueDate, Valid: true},
-						Status:     "MISSED",
-						CreatedAt:  pgtype.Timestamptz{Time: createdAt, Valid: true},
-						UpdatedAt:  pgtype.Timestamptz{Time: createdAt, Valid: true},
-					}, nil
+			setupManager: func(m *mockDailyManager) {
+				m.delete = func(ctx context.Context, uID, dID uuid.UUID) error {
+					return daily.ErrDailyNotPending
 				}
 			},
 			wantStatus:    http.StatusConflict,
 			wantErrorCode: "DAILY_NOT_EDITABLE",
 		},
-		{
-			name:    "store error",
-			dailyID: dailyID.String(),
-			setupStore: func(m *mockDailyStore) {
-				m.getDaily = func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error) {
-					return pendingDaily, nil
-				}
-				m.deleteDaily = func(ctx context.Context, arg database.DeleteDailyParams) (int64, error) {
-					return 0, errors.New("database down")
-				}
-			},
-			wantStatus:    http.StatusInternalServerError,
-			wantErrorCode: "INTERNAL_ERROR",
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := &mockDailyStore{}
-			if tt.setupStore != nil {
-				tt.setupStore(store)
+			mgr := &mockDailyManager{}
+			if tt.setupManager != nil {
+				tt.setupManager(mgr)
 			}
 
-			router, signer := newTestDailyRouter(t, store, &mockEventPublisher{})
+			router, signer := newTestDailyRouter(t, mgr)
 			rec := httptest.NewRecorder()
 			req := sharedhttptest.NewRequest(t, http.MethodDelete, "/dailies/"+tt.dailyID, "")
 			req.Header.Set("Authorization", "Bearer "+signer.Token(userID.String()))
@@ -823,82 +702,61 @@ func TestDeleteDaily(t *testing.T) {
 		})
 	}
 }
+
 func TestCompleteDaily(t *testing.T) {
 	userID := uuid.New()
-	pgUserID := pgtype.UUID{Bytes: userID, Valid: true}
 	dailyID := uuid.New()
-	pgDailyID := pgtype.UUID{Bytes: dailyID, Valid: true}
 	dueDate := time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
 	createdAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 
 	tests := []struct {
-		name           string
-		setupStore     func(m *mockDailyStore)
-		setupPublisher func(m *mockEventPublisher)
-		wantStatus     int
-		wantErrorCode  string
+		name          string
+		dailyID       string
+		setupManager  func(m *mockDailyManager)
+		wantStatus    int
+		wantErrorCode string
 	}{
 		{
-			name: "completes daily",
-			setupStore: func(m *mockDailyStore) {
-				m.getDaily = func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error) {
-					return database.Daily{
-						ID:         pgDailyID,
-						UserID:     pgUserID,
-						Status:     "PENDING",
-						Difficulty: "HARD",
-					}, nil
-				}
-				m.markDailyComplete = func(ctx context.Context, arg database.MarkDailyCompleteParams) (database.Daily, error) {
-					return database.Daily{
-						ID:         pgDailyID,
-						UserID:     pgUserID,
+			name:    "completes daily",
+			dailyID: dailyID.String(),
+			setupManager: func(m *mockDailyManager) {
+				m.complete = func(ctx context.Context, uID, dID uuid.UUID) (daily.Daily, error) {
+					if dID != dailyID {
+						t.Errorf("daily_id = %v, want %v", dID, dailyID)
+					}
+					if uID != userID {
+						t.Errorf("user_id = %v, want %v", uID, userID)
+					}
+					return daily.Daily{
+						ID:         dailyID,
+						UserID:     userID,
 						Difficulty: "HARD",
 						Status:     "COMPLETED",
-						DueDate:    pgtype.Timestamptz{Time: dueDate, Valid: true},
-						CreatedAt:  pgtype.Timestamptz{Time: createdAt, Valid: true},
-						UpdatedAt:  pgtype.Timestamptz{Time: createdAt, Valid: true},
+						DueDate:    dueDate,
+						CreatedAt:  createdAt,
+						UpdatedAt:  createdAt,
 					}, nil
-				}
-				m.getDifficultyReward = func(ctx context.Context, difficulty string) (database.DifficultyReward, error) {
-					return database.DifficultyReward{
-						Difficulty:      "HARD",
-						RewardMaterials: 30,
-						DamageAmount:    20,
-					}, nil
-				}
-			},
-			setupPublisher: func(m *mockEventPublisher) {
-				m.publish = func(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error {
-					if eventType != "daily.completed" {
-						t.Errorf("expected daily.completed, got %v", eventType)
-					}
-					ev := payload.(events.DailyCompleted)
-					if ev.UserID != sharedhttp.UUIDToString(pgUserID) {
-						t.Errorf("expected userID %v, got %v", sharedhttp.UUIDToString(pgUserID), ev.UserID)
-					}
-					if ev.RewardMaterials != 30 {
-						t.Errorf("expected reward 30, got %v", ev.RewardMaterials)
-					}
-					return nil
 				}
 			},
 			wantStatus: http.StatusOK,
 		},
 		{
-			name: "returns 409 if already completed",
-			setupStore: func(m *mockDailyStore) {
-				m.getDaily = func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error) {
-					return database.Daily{
-						ID:     pgDailyID,
-						UserID: pgUserID,
-						Status: "COMPLETED",
-					}, nil
+			name:    "returns 404 if daily not found",
+			dailyID: dailyID.String(),
+			setupManager: func(m *mockDailyManager) {
+				m.complete = func(ctx context.Context, uID, dID uuid.UUID) (daily.Daily, error) {
+					return daily.Daily{}, daily.ErrDailyNotFound
 				}
 			},
-			setupPublisher: func(m *mockEventPublisher) {
-				m.publish = func(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error {
-					return errors.New("should not be called")
+			wantStatus:    http.StatusNotFound,
+			wantErrorCode: "DAILY_NOT_FOUND",
+		},
+		{
+			name:    "returns 409 if already completed",
+			dailyID: dailyID.String(),
+			setupManager: func(m *mockDailyManager) {
+				m.complete = func(ctx context.Context, uID, dID uuid.UUID) (daily.Daily, error) {
+					return daily.Daily{}, daily.ErrDailyAlreadyCompleted
 				}
 			},
 			wantStatus:    http.StatusConflict,
@@ -908,25 +766,20 @@ func TestCompleteDaily(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			store := &mockDailyStore{}
-			if tc.setupStore != nil {
-				tc.setupStore(store)
-			}
-			publisher := &mockEventPublisher{}
-			if tc.setupPublisher != nil {
-				tc.setupPublisher(publisher)
+			mgr := &mockDailyManager{}
+			if tc.setupManager != nil {
+				tc.setupManager(mgr)
 			}
 
-			mux, signer := newTestDailyRouter(t, store, publisher)
-
-			req := httptest.NewRequest(http.MethodPost, "/dailies/"+dailyID.String()+"/complete", nil)
+			router, signer := newTestDailyRouter(t, mgr)
+			req := httptest.NewRequest(http.MethodPost, "/dailies/"+tc.dailyID+"/complete", nil)
 			req.Header.Set("Authorization", "Bearer "+signer.Token(userID.String()))
-			w := httptest.NewRecorder()
+			rec := httptest.NewRecorder()
 
-			mux.ServeHTTP(w, req)
+			router.ServeHTTP(rec, req)
 
-			if w.Code != tc.wantStatus {
-				t.Fatalf("status = %d, want %d\nbody: %s", w.Code, tc.wantStatus, w.Body.String())
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d\nbody: %s", rec.Code, tc.wantStatus, rec.Body.String())
 			}
 
 			if tc.wantErrorCode != "" {
@@ -935,7 +788,7 @@ func TestCompleteDaily(t *testing.T) {
 						Code string `json:"code"`
 					} `json:"error"`
 				}
-				if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
+				if err := json.Unmarshal(rec.Body.Bytes(), &errResp); err != nil {
 					t.Fatalf("failed to decode error response: %v", err)
 				}
 				if errResp.Error.Code != tc.wantErrorCode {
