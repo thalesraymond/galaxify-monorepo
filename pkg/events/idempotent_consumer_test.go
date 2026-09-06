@@ -432,7 +432,7 @@ func TestIdempotentHandler_ExecutionLifecycle(t *testing.T) {
 			func(ctx context.Context, tx pgx.Tx, env Envelope, data testPayload) error {
 				return nil
 			},
-			WithConsumerLogger(customLogger),
+			WithLogger(customLogger),
 		)
 
 		eventID := uuid.New().String()

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -25,19 +24,7 @@ type IdempotencyStore interface {
 }
 
 // ConsumerOption configures pipeline options (e.g. custom logger).
-type ConsumerOption func(*consumerConfig)
-
-type consumerConfig struct {
-	logger *slog.Logger
-}
-
-// WithConsumerLogger sets the logger used by the idempotent consumer pipeline.
-// Defaults to slog.Default() when not provided.
-func WithConsumerLogger(logger *slog.Logger) ConsumerOption {
-	return func(c *consumerConfig) {
-		c.logger = logger
-	}
-}
+type ConsumerOption = Option
 
 // NewIdempotentHandler constructs an events.HandlerFunc that decodes payload T,
 // ensures idempotency against processed_events, and executes handler inside an atomic tx.
@@ -47,35 +34,30 @@ func NewIdempotentHandler[T any](
 	handler func(ctx context.Context, tx pgx.Tx, env Envelope, data T) error,
 	opts ...ConsumerOption,
 ) HandlerFunc {
-	cfg := &consumerConfig{
-		logger: slog.Default(),
-	}
-	for _, opt := range opts {
-		opt(cfg)
-	}
+	o := applyOptions(opts)
 
 	return func(ctx context.Context, eventType string, payload []byte) error {
 		var env Envelope
 		if err := json.Unmarshal(payload, &env); err != nil {
-			cfg.logger.Error("failed to unmarshal envelope", "event_type", eventType, "error", err)
+			o.logger.Error("failed to unmarshal envelope", "event_type", eventType, "error", err)
 			return fmt.Errorf("unmarshal envelope: %w", err)
 		}
 
 		eventUUID, err := sharedhttp.ParseUUID(env.EventId)
 		if err != nil {
-			cfg.logger.Error("invalid event_id in envelope", "event_id", env.EventId, "event_type", eventType, "error", err)
+			o.logger.Error("invalid event_id in envelope", "event_id", env.EventId, "event_type", eventType, "error", err)
 			return fmt.Errorf("invalid event_id %q: %w", env.EventId, err)
 		}
 
 		var data T
 		if err := json.Unmarshal(env.Payload, &data); err != nil {
-			cfg.logger.Error("failed to unmarshal payload", "event_id", env.EventId, "event_type", eventType, "error", err)
+			o.logger.Error("failed to unmarshal payload", "event_id", env.EventId, "event_type", eventType, "error", err)
 			return fmt.Errorf("unmarshal payload: %w", err)
 		}
 
 		tx, err := pool.Begin(ctx)
 		if err != nil {
-			cfg.logger.Error("failed to begin transaction", "event_id", env.EventId, "event_type", eventType, "error", err)
+			o.logger.Error("failed to begin transaction", "event_id", env.EventId, "event_type", eventType, "error", err)
 			return fmt.Errorf("begin tx: %w", err)
 		}
 		defer tx.Rollback(ctx)
@@ -83,27 +65,27 @@ func NewIdempotentHandler[T any](
 		store := storeFactory(tx)
 		rows, err := store.InsertProcessedEvent(ctx, eventUUID)
 		if err != nil {
-			cfg.logger.Error("failed to insert processed event", "event_id", env.EventId, "event_type", eventType, "error", err)
+			o.logger.Error("failed to insert processed event", "event_id", env.EventId, "event_type", eventType, "error", err)
 			return fmt.Errorf("insert processed event: %w", err)
 		}
 
 		if rows == 0 {
-			cfg.logger.Info("event already processed, skipping", "event_id", env.EventId, "event_type", eventType)
+			o.logger.Info("event already processed, skipping", "event_id", env.EventId, "event_type", eventType)
 			_ = tx.Rollback(ctx)
 			return nil
 		}
 
 		if err := handler(ctx, tx, env, data); err != nil {
-			cfg.logger.Error("handler failed", "event_id", env.EventId, "event_type", eventType, "error", err)
+			o.logger.Error("handler failed", "event_id", env.EventId, "event_type", eventType, "error", err)
 			return fmt.Errorf("handler: %w", err)
 		}
 
 		if err := tx.Commit(ctx); err != nil {
-			cfg.logger.Error("failed to commit transaction", "event_id", env.EventId, "event_type", eventType, "error", err)
+			o.logger.Error("failed to commit transaction", "event_id", env.EventId, "event_type", eventType, "error", err)
 			return fmt.Errorf("commit tx: %w", err)
 		}
 
-		cfg.logger.Info("successfully processed event", "event_id", env.EventId, "event_type", eventType)
+		o.logger.Info("successfully processed event", "event_id", env.EventId, "event_type", eventType)
 		return nil
 	}
 }

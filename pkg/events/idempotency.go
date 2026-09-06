@@ -18,11 +18,15 @@ type ProcessedEventStore interface {
 
 // ProcessedEvents centralizes the idempotency bookkeeping for the
 // processed_events table that every consumer service owns.
+//
+// Deprecated: use NewIdempotentHandler instead.
 type ProcessedEvents struct {
 	store ProcessedEventStore
 }
 
 // NewProcessedEvents wraps a consumer's local sqlc query executor.
+//
+// Deprecated: use NewIdempotentHandler instead.
 func NewProcessedEvents(store ProcessedEventStore) *ProcessedEvents {
 	return &ProcessedEvents{store: store}
 }

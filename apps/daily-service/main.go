@@ -95,13 +95,13 @@ func run(logger *slog.Logger) error {
 		pool,
 		func(tx pgx.Tx) events.IdempotencyStore { return database.New(tx) },
 		consumer.HandleUserCreated,
-		events.WithConsumerLogger(logger),
+		events.WithLogger(logger),
 	))
 	subscriber.On("user.deleted", events.NewIdempotentHandler(
 		pool,
 		func(tx pgx.Tx) events.IdempotencyStore { return database.New(tx) },
 		consumer.HandleUserDeleted,
-		events.WithConsumerLogger(logger),
+		events.WithLogger(logger),
 	))
 
 	if err := subscriber.Start(subCtx); err != nil {
