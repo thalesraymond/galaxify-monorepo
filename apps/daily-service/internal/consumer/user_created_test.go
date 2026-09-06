@@ -2,85 +2,130 @@ package consumer
 
 import (
 	"context"
-	"encoding/json"
-	"io"
-	"log/slog"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
+type fakeTx struct {
+	pgx.Tx
+	execCalls []execCall
+	execErr   error
+}
+
+type execCall struct {
+	sql  string
+	args []any
+}
+
+func (f *fakeTx) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	f.execCalls = append(f.execCalls, execCall{sql: sql, args: args})
+	if f.execErr != nil {
+		return pgconn.CommandTag{}, f.execErr
+	}
+	return pgconn.NewCommandTag("INSERT 0 1"), nil
+}
+
 func TestHandleUserCreated(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
-	pool, err := pgxpool.New(ctx, "postgres://postgres:password@localhost:5432/daily_db")
-	if err != nil {
-		t.Skipf("skipping test, db not available: %v", err)
-	}
-	defer pool.Close()
-
-	if err := pool.Ping(ctx); err != nil {
-		t.Skipf("skipping test, db ping failed: %v", err)
-	}
-
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	c := NewUserConsumer(pool, logger)
-
-	// Clean up before test (optional)
-	// But we'll just generate fresh UUIDs
-	userID := uuid.New().String()
-	eventID := uuid.New().String()
-
-	payloadData := events.UserCreated{
-		Version:  1,
-		UserID:   userID,
-		Email:    "test@example.com",
-		Username: "testuser",
-	}
-
-	payloadBytes, _ := json.Marshal(payloadData)
-
-	env := events.Envelope{
-		EventId:    eventID,
-		Payload:    payloadBytes,
-	}
-
-	envBytes, _ := json.Marshal(env)
-
-	checkCache := func() {
-		t.Helper()
-		var count int
-		err = pool.QueryRow(ctx, "SELECT count(*) FROM users_cache WHERE id = $1", userID).Scan(&count)
+	t.Run("successfully upserts user cache on valid user.created event", func(t *testing.T) {
+		tx := &fakeTx{}
+		userID := uuid.New().String()
+		expectedUUID, err := sharedhttp.ParseUUID(userID)
 		if err != nil {
-			t.Fatalf("failed to query users_cache: %v", err)
+			t.Fatalf("failed to parse test uuid: %v", err)
 		}
-		if count != 1 {
-			t.Errorf("expected 1 user in cache, got %d", count)
+
+		env := events.Envelope{
+			EventId:    uuid.New().String(),
+			EventType:  "user.created",
+			OccurredAt: time.Now().UTC(),
+			Version:    1,
 		}
-	}
+		data := events.UserCreated{
+			Version:  1,
+			UserID:   userID,
+			Email:    "pilot@galaxify.io",
+			Username: "pilot",
+		}
 
-	// 1. Process event first time
-	if err := c.HandleUserCreated(ctx, "user.created", envBytes); err != nil {
-		t.Fatalf("first HandleUserCreated failed: %v", err)
-	}
-	checkCache()
+		err = HandleUserCreated(ctx, tx, env, data)
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
 
-	// 2. Process same event again (idempotency)
-	if err := c.HandleUserCreated(ctx, "user.created", envBytes); err != nil {
-		t.Fatalf("second HandleUserCreated failed: %v", err)
-	}
-	checkCache()
+		if len(tx.execCalls) != 1 {
+			t.Fatalf("expected 1 exec call, got %d", len(tx.execCalls))
+		}
+		if len(tx.execCalls[0].args) != 1 {
+			t.Fatalf("expected 1 arg to exec call, got %d", len(tx.execCalls[0].args))
+		}
+		gotUUID, ok := tx.execCalls[0].args[0].(pgtype.UUID)
+		if !ok {
+			t.Fatalf("expected arg to be pgtype.UUID, got %T", tx.execCalls[0].args[0])
+		}
+		if gotUUID != expectedUUID {
+			t.Fatalf("expected UUID %v, got %v", expectedUUID, gotUUID)
+		}
+	})
 
-	// 3. Process new event with same user_id (should upsert safely)
-	env.EventId = uuid.New().String()
-	envBytes2, _ := json.Marshal(env)
+	t.Run("returns error when user_id is not a valid UUID", func(t *testing.T) {
+		tx := &fakeTx{}
+		env := events.Envelope{
+			EventId:    uuid.New().String(),
+			EventType:  "user.created",
+			OccurredAt: time.Now().UTC(),
+			Version:    1,
+		}
+		data := events.UserCreated{
+			Version:  1,
+			UserID:   "invalid-uuid",
+			Email:    "pilot@galaxify.io",
+			Username: "pilot",
+		}
 
-	if err := c.HandleUserCreated(ctx, "user.created", envBytes2); err != nil {
-		t.Fatalf("third HandleUserCreated failed: %v", err)
-	}
-	checkCache()
+		err := HandleUserCreated(ctx, tx, env, data)
+		if err == nil {
+			t.Fatal("expected error on invalid user_id, got nil")
+		}
+		if len(tx.execCalls) != 0 {
+			t.Fatalf("expected 0 exec calls on invalid UUID, got %d", len(tx.execCalls))
+		}
+	})
+
+	t.Run("propagates database error", func(t *testing.T) {
+		dbErr := errors.New("db error")
+		tx := &fakeTx{execErr: dbErr}
+		userID := uuid.New().String()
+
+		env := events.Envelope{
+			EventId:    uuid.New().String(),
+			EventType:  "user.created",
+			OccurredAt: time.Now().UTC(),
+			Version:    1,
+		}
+		data := events.UserCreated{
+			Version:  1,
+			UserID:   userID,
+			Email:    "pilot@galaxify.io",
+			Username: "pilot",
+		}
+
+		err := HandleUserCreated(ctx, tx, env, data)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !errors.Is(err, dbErr) {
+			t.Fatalf("expected dbErr, got %v", err)
+		}
+	})
 }
