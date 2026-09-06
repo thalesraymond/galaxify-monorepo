@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/thalesraymond/galaxify-monorepo/apps/daily-service/internal/consumer"
@@ -90,9 +91,18 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("create subscriber: %w", err)
 	}
 
-	userConsumer := consumer.NewUserConsumer(pool, logger)
-	subscriber.On("user.created", events.HandlerFunc(userConsumer.HandleUserCreated))
-	subscriber.On("user.deleted", events.HandlerFunc(userConsumer.HandleUserDeleted))
+	subscriber.On("user.created", events.NewIdempotentHandler(
+		pool,
+		func(tx pgx.Tx) events.IdempotencyStore { return database.New(tx) },
+		consumer.HandleUserCreated,
+		events.WithLogger(logger),
+	))
+	subscriber.On("user.deleted", events.NewIdempotentHandler(
+		pool,
+		func(tx pgx.Tx) events.IdempotencyStore { return database.New(tx) },
+		consumer.HandleUserDeleted,
+		events.WithLogger(logger),
+	))
 
 	if err := subscriber.Start(subCtx); err != nil {
 		return fmt.Errorf("start subscriber: %w", err)
