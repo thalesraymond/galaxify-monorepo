@@ -24,6 +24,7 @@ type Querier interface {
 	GetTestTable(ctx context.Context, id int64) (TestTable, error)
 	InsertProcessedEvent(ctx context.Context, eventID pgtype.UUID) (int64, error)
 	ListDailies(ctx context.Context, arg ListDailiesParams) ([]Daily, error)
+	ListDailyHistory(ctx context.Context, userID pgtype.UUID) ([]DailyHistory, error)
 	ListTestTables(ctx context.Context) ([]TestTable, error)
 	MarkDailyComplete(ctx context.Context, arg MarkDailyCompleteParams) (Daily, error)
 	MarkDailyMissed(ctx context.Context, id pgtype.UUID) (Daily, error)

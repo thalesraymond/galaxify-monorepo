@@ -25,11 +25,11 @@ UPDATE dailies SET
     difficulty = COALESCE(sqlc.narg('difficulty'), difficulty),
     due_date = COALESCE(sqlc.narg('due_date'), due_date),
     updated_at = now()
-WHERE id = $1 AND user_id = $2 AND status = 'PENDING'
+WHERE id = $1 AND user_id = $2
 RETURNING *;
 
 -- name: DeleteDaily :execrows
-DELETE FROM dailies WHERE id = $1 AND user_id = $2 AND status = 'PENDING';
+DELETE FROM dailies WHERE id = $1 AND user_id = $2;
 
 -- name: MarkDailyComplete :one
 UPDATE dailies SET
@@ -54,3 +54,9 @@ INSERT INTO daily_history (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9
 );
+
+-- name: ListDailyHistory :many
+SELECT * FROM daily_history
+WHERE user_id = $1
+ORDER BY due_date DESC, archived_at DESC;
+

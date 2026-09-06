@@ -21,12 +21,13 @@ import (
 )
 
 type mockDailyManager struct {
-	create   func(ctx context.Context, input daily.CreateInput) (daily.Daily, error)
-	get      func(ctx context.Context, userID, id uuid.UUID) (daily.Daily, error)
-	list     func(ctx context.Context, userID uuid.UUID, filter daily.ListFilter) ([]daily.Daily, error)
-	update   func(ctx context.Context, userID, id uuid.UUID, input daily.UpdateInput) (daily.Daily, error)
-	delete   func(ctx context.Context, userID, id uuid.UUID) error
-	complete func(ctx context.Context, userID, id uuid.UUID) (daily.Daily, error)
+	create      func(ctx context.Context, input daily.CreateInput) (daily.Daily, error)
+	get         func(ctx context.Context, userID, id uuid.UUID) (daily.Daily, error)
+	list        func(ctx context.Context, userID uuid.UUID, filter daily.ListFilter) ([]daily.Daily, error)
+	update      func(ctx context.Context, userID, id uuid.UUID, input daily.UpdateInput) (daily.Daily, error)
+	delete      func(ctx context.Context, userID, id uuid.UUID) error
+	complete    func(ctx context.Context, userID, id uuid.UUID) (daily.Daily, error)
+	listHistory func(ctx context.Context, userID uuid.UUID) ([]daily.DailyHistory, error)
 }
 
 func (m *mockDailyManager) Create(ctx context.Context, input daily.CreateInput) (daily.Daily, error) {
@@ -48,6 +49,13 @@ func (m *mockDailyManager) List(ctx context.Context, userID uuid.UUID, filter da
 		return m.list(ctx, userID, filter)
 	}
 	return nil, errors.New("unexpected List call")
+}
+
+func (m *mockDailyManager) ListHistory(ctx context.Context, userID uuid.UUID) ([]daily.DailyHistory, error) {
+	if m.listHistory != nil {
+		return m.listHistory(ctx, userID)
+	}
+	return nil, errors.New("unexpected ListHistory call")
 }
 
 func (m *mockDailyManager) Update(ctx context.Context, userID, id uuid.UUID, input daily.UpdateInput) (daily.Daily, error) {
@@ -581,14 +589,14 @@ func TestUpdateDaily(t *testing.T) {
 						t.Errorf("title = %v, want Colonize Mars", input.Title)
 					}
 					return daily.Daily{
-						ID:          dailyID,
-						UserID:      userID,
-						Title:       "Colonize Mars",
-						Difficulty:  daily.DifficultyMedium,
-						DueDate:     dueDate,
-						Status:      daily.StatusPending,
-						CreatedAt:   createdAt,
-						UpdatedAt:   updatedAt,
+						ID:         dailyID,
+						UserID:     userID,
+						Title:      "Colonize Mars",
+						Difficulty: daily.DifficultyMedium,
+						DueDate:    dueDate,
+						Status:     daily.StatusPending,
+						CreatedAt:  createdAt,
+						UpdatedAt:  updatedAt,
 					}, nil
 				}
 			},
@@ -615,14 +623,14 @@ func TestUpdateDaily(t *testing.T) {
 						t.Errorf("due_date = %v, want %v", input.DueDate, newDueDate)
 					}
 					return daily.Daily{
-						ID:          dailyID,
-						UserID:      userID,
-						Title:       "Explore Mars",
-						Difficulty:  daily.DifficultyMedium,
-						DueDate:     newDueDate,
-						Status:      daily.StatusPending,
-						CreatedAt:   createdAt,
-						UpdatedAt:   updatedAt,
+						ID:         dailyID,
+						UserID:     userID,
+						Title:      "Explore Mars",
+						Difficulty: daily.DifficultyMedium,
+						DueDate:    newDueDate,
+						Status:     daily.StatusPending,
+						CreatedAt:  createdAt,
+						UpdatedAt:  updatedAt,
 					}, nil
 				}
 			},
@@ -920,6 +928,158 @@ func TestCompleteDaily(t *testing.T) {
 				var resp dailyResponse
 				sharedhttptest.DecodeBody(t, rec, &resp)
 				tc.assertResponse(t, resp)
+			}
+		})
+	}
+}
+
+func TestListDailyHistory(t *testing.T) {
+	userID := uuid.New()
+	dailyID := uuid.New()
+	historyID := uuid.New()
+	dueDate := time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	completedAt := time.Date(2026, 9, 15, 11, 0, 0, 0, time.UTC)
+	archivedAt := time.Date(2026, 9, 15, 11, 0, 1, 0, time.UTC)
+
+	type testDailyHistoryResponse struct {
+		ID          string  `json:"id"`
+		DailyID     string  `json:"daily_id"`
+		UserID      string  `json:"user_id"`
+		Title       string  `json:"title"`
+		Description string  `json:"description"`
+		Difficulty  string  `json:"difficulty"`
+		DueDate     string  `json:"due_date"`
+		Status      string  `json:"status"`
+		CompletedAt *string `json:"completed_at"`
+		MissedAt    *string `json:"missed_at"`
+		ArchivedAt  string  `json:"archived_at"`
+	}
+
+	tests := []struct {
+		name           string
+		setupManager   func(m *mockDailyManager)
+		wantStatus     int
+		wantErrorCode  string
+		assertResponse func(t *testing.T, resp []testDailyHistoryResponse)
+	}{
+		{
+			name: "returns history for user",
+			setupManager: func(m *mockDailyManager) {
+				m.listHistory = func(ctx context.Context, uID uuid.UUID) ([]daily.DailyHistory, error) {
+					if uID != userID {
+						t.Errorf("user_id = %v, want %v", uID, userID)
+					}
+					return []daily.DailyHistory{
+						{
+							ID:          historyID,
+							DailyID:     dailyID,
+							UserID:      userID,
+							Title:       "Meditate",
+							Description: "15 min",
+							Difficulty:  daily.DifficultyMedium,
+							DueDate:     dueDate,
+							Status:      daily.StatusCompleted,
+							CompletedAt: &completedAt,
+							MissedAt:    nil,
+							ArchivedAt:  archivedAt,
+						},
+					}, nil
+				}
+			},
+			wantStatus: http.StatusOK,
+			assertResponse: func(t *testing.T, resp []testDailyHistoryResponse) {
+				if len(resp) != 1 {
+					t.Fatalf("len(resp) = %d, want 1", len(resp))
+				}
+				item := resp[0]
+				if item.ID != historyID.String() {
+					t.Errorf("id = %q, want %q", item.ID, historyID.String())
+				}
+				if item.DailyID != dailyID.String() {
+					t.Errorf("daily_id = %q, want %q", item.DailyID, dailyID.String())
+				}
+				if item.UserID != userID.String() {
+					t.Errorf("user_id = %q, want %q", item.UserID, userID.String())
+				}
+				if item.Title != "Meditate" {
+					t.Errorf("title = %q, want Meditate", item.Title)
+				}
+				if item.Difficulty != "MEDIUM" {
+					t.Errorf("difficulty = %q, want MEDIUM", item.Difficulty)
+				}
+				if item.Status != "COMPLETED" {
+					t.Errorf("status = %q, want COMPLETED", item.Status)
+				}
+				wantCompleted := completedAt.Format(time.RFC3339)
+				if item.CompletedAt == nil || *item.CompletedAt != wantCompleted {
+					t.Errorf("completed_at = %v, want %q", item.CompletedAt, wantCompleted)
+				}
+				if item.MissedAt != nil {
+					t.Errorf("missed_at = %v, want nil", item.MissedAt)
+				}
+				wantArchived := archivedAt.Format(time.RFC3339)
+				if item.ArchivedAt != wantArchived {
+					t.Errorf("archived_at = %q, want %q", item.ArchivedAt, wantArchived)
+				}
+			},
+		},
+		{
+			name: "returns empty list when user has no history",
+			setupManager: func(m *mockDailyManager) {
+				m.listHistory = func(ctx context.Context, uID uuid.UUID) ([]daily.DailyHistory, error) {
+					if uID != userID {
+						t.Errorf("user_id = %v, want %v", uID, userID)
+					}
+					return []daily.DailyHistory{}, nil
+				}
+			},
+			wantStatus: http.StatusOK,
+			assertResponse: func(t *testing.T, resp []testDailyHistoryResponse) {
+				if len(resp) != 0 {
+					t.Errorf("len(resp) = %d, want 0", len(resp))
+				}
+			},
+		},
+		{
+			name: "manager error returns 500",
+			setupManager: func(m *mockDailyManager) {
+				m.listHistory = func(ctx context.Context, uID uuid.UUID) ([]daily.DailyHistory, error) {
+					if uID != userID {
+						t.Errorf("user_id = %v, want %v", uID, userID)
+					}
+					return nil, errors.New("database down")
+				}
+			},
+			wantStatus:    http.StatusInternalServerError,
+			wantErrorCode: "INTERNAL_ERROR",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mgr := &mockDailyManager{}
+			if tt.setupManager != nil {
+				tt.setupManager(mgr)
+			}
+
+			router, signer := newTestDailyRouter(t, mgr)
+			rec := httptest.NewRecorder()
+			req := sharedhttptest.NewRequest(t, http.MethodGet, "/dailies/history", "")
+			req.Header.Set("Authorization", "Bearer "+signer.Token(userID.String()))
+
+			router.ServeHTTP(rec, req)
+
+			sharedhttptest.WantStatus(t, rec, tt.wantStatus)
+
+			if tt.wantErrorCode != "" {
+				sharedhttptest.WantErrorCode(t, rec, tt.wantErrorCode)
+				return
+			}
+
+			if tt.assertResponse != nil {
+				var resp []testDailyHistoryResponse
+				sharedhttptest.DecodeBody(t, rec, &resp)
+				tt.assertResponse(t, resp)
 			}
 		})
 	}

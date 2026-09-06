@@ -63,7 +63,23 @@ type Daily struct {
 	UpdatedAt   time.Time
 }
 
+// DailyHistory represents an archival log entry of a completed or missed daily task cycle.
+type DailyHistory struct {
+	ID          uuid.UUID
+	DailyID     uuid.UUID
+	UserID      uuid.UUID
+	Title       string
+	Description string
+	Difficulty  Difficulty
+	DueDate     time.Time
+	Status      Status
+	CompletedAt *time.Time
+	MissedAt    *time.Time
+	ArchivedAt  time.Time
+}
+
 // CreateInput defines parameters required to create a new daily task.
+
 type CreateInput struct {
 	UserID      uuid.UUID
 	Title       string

@@ -15,7 +15,9 @@ import (
 type Tx interface {
 	ListPendingExpiredDailies(ctx context.Context, before time.Time, limit int32) ([]database.ListPendingExpiredDailiesRow, error)
 	GetDamageAmount(ctx context.Context, difficulty string) (int32, error)
-	MarkDailyMissed(ctx context.Context, dailyID pgtype.UUID) error
+	RollOverPendingDaily(ctx context.Context, daily database.ListPendingExpiredDailiesRow, now time.Time) error
+	ListCompletedExpiredDailies(ctx context.Context, before time.Time, limit int32) ([]pgtype.UUID, error)
+	ResetCompletedDaily(ctx context.Context, id pgtype.UUID, now time.Time) error
 }
 
 // Store abstracts transaction management for the worker.
@@ -79,9 +81,45 @@ func (t *pgTx) GetDamageAmount(ctx context.Context, difficulty string) (int32, e
 	return damage, nil
 }
 
-func (t *pgTx) MarkDailyMissed(ctx context.Context, dailyID pgtype.UUID) error {
-	if err := t.q.MarkDailyMissed(ctx, dailyID); err != nil {
-		return fmt.Errorf("mark daily missed: %w", err)
+func (t *pgTx) RollOverPendingDaily(ctx context.Context, daily database.ListPendingExpiredDailiesRow, now time.Time) error {
+	nowTz := toTimestamptz(now)
+	if err := t.q.CreateDailyHistory(ctx, database.CreateDailyHistoryParams{
+		DailyID:     daily.ID,
+		UserID:      daily.UserID,
+		Title:       daily.Title,
+		Description: daily.Description,
+		Difficulty:  daily.Difficulty,
+		DueDate:     daily.DueDate,
+		MissedAt:    nowTz,
+	}); err != nil {
+		return fmt.Errorf("create daily history for %v: %w", daily.ID, err)
+	}
+	if err := t.q.RollOverPendingDaily(ctx, database.RollOverPendingDailyParams{
+		Now: nowTz,
+		ID:  daily.ID,
+	}); err != nil {
+		return fmt.Errorf("roll over pending daily %v: %w", daily.ID, err)
+	}
+	return nil
+}
+
+func (t *pgTx) ListCompletedExpiredDailies(ctx context.Context, before time.Time, limit int32) ([]pgtype.UUID, error) {
+	rows, err := t.q.ListCompletedExpiredDailies(ctx, database.ListCompletedExpiredDailiesParams{
+		Before:    toTimestamptz(before),
+		BatchSize: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list completed expired dailies: %w", err)
+	}
+	return rows, nil
+}
+
+func (t *pgTx) ResetCompletedDaily(ctx context.Context, id pgtype.UUID, now time.Time) error {
+	if err := t.q.ResetCompletedDaily(ctx, database.ResetCompletedDailyParams{
+		Now: toTimestamptz(now),
+		ID:  id,
+	}); err != nil {
+		return fmt.Errorf("reset completed daily %v: %w", id, err)
 	}
 	return nil
 }

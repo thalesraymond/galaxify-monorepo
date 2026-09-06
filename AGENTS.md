@@ -111,7 +111,7 @@ HTTP handler tests follow the contract in
   `newTestRequest`, `wantStatus`, `decodeBody`, etc.) and table-driven cases.
 - Tests assert both the HTTP response and the parameters passed to the domain mock.
 
-Read ADR-0008 and ADR-0011 before writing or reviewing handler and domain code.
+Read ADR-0008, ADR-0011, and ADR-0012 before writing or reviewing handler and domain code.
 
 ## Shared infrastructure (cross-cutting `pkg/`)
 

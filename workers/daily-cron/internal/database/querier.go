@@ -11,13 +11,18 @@ import (
 )
 
 type Querier interface {
+	CreateDailyHistory(ctx context.Context, arg CreateDailyHistoryParams) error
 	GetDamageAmount(ctx context.Context, difficulty string) (int32, error)
-	// Selects up to `limit` PENDING dailies whose due_date has passed,
+	// Selects up to `batch_size` COMPLETED dailies whose due_date has passed,
+	// locking them with SKIP LOCKED so concurrent worker instances don't collide.
+	ListCompletedExpiredDailies(ctx context.Context, arg ListCompletedExpiredDailiesParams) ([]pgtype.UUID, error)
+	// Selects up to `batch_size` PENDING dailies whose due_date has passed,
 	// locking them with SKIP LOCKED so concurrent worker instances don't collide.
 	ListPendingExpiredDailies(ctx context.Context, arg ListPendingExpiredDailiesParams) ([]ListPendingExpiredDailiesRow, error)
-	// Idempotent: WHERE clause on status = 'PENDING' prevents double-marking.
-	// NOTE: daily.missed event publication is deferred to #20 (outbox pattern).
-	MarkDailyMissed(ctx context.Context, id pgtype.UUID) error
+	// Resets COMPLETED daily back to PENDING and advances due_date by 1 day.
+	ResetCompletedDaily(ctx context.Context, arg ResetCompletedDailyParams) error
+	// Snaps due_date forward in 24-hour increments until due_date > now while remaining PENDING.
+	RollOverPendingDaily(ctx context.Context, arg RollOverPendingDailyParams) error
 }
 
 var _ Querier = (*Queries)(nil)
