@@ -13,6 +13,14 @@ type ProcessedEvent struct {
 	ProcessedAt pgtype.Timestamptz
 }
 
+type Ship struct {
+	UserID           pgtype.UUID
+	HullHealth       int32
+	MaterialsBalance int32
+	Level            int32
+	UpdatedAt        pgtype.Timestamptz
+}
+
 type TestTable struct {
 	ID   int64
 	Name string

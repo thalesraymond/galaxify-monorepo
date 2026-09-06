@@ -11,12 +11,16 @@ import (
 )
 
 type Querier interface {
+	AddMaterials(ctx context.Context, arg AddMaterialsParams) (Ship, error)
+	ApplyDamage(ctx context.Context, arg ApplyDamageParams) (Ship, error)
 	CreateTestTable(ctx context.Context, name string) (TestTable, error)
 	DeleteOldProcessedEvents(ctx context.Context) (int64, error)
 	DeleteTestTable(ctx context.Context, id int64) error
+	GetByUser(ctx context.Context, userID pgtype.UUID) (Ship, error)
 	GetTestTable(ctx context.Context, id int64) (TestTable, error)
 	InsertProcessedEvent(ctx context.Context, eventID pgtype.UUID) (int64, error)
 	ListTestTables(ctx context.Context) ([]TestTable, error)
+	Repair(ctx context.Context, arg RepairParams) (Ship, error)
 	UpdateTestTable(ctx context.Context, arg UpdateTestTableParams) (TestTable, error)
 }
 
