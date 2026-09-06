@@ -55,6 +55,29 @@ func (q *Queries) ApplyDamage(ctx context.Context, arg ApplyDamageParams) (Ship,
 	return i, err
 }
 
+const createShip = `-- name: CreateShip :exec
+INSERT INTO ships (user_id, hull_health, materials_balance, level)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (user_id) DO NOTHING
+`
+
+type CreateShipParams struct {
+	UserID           pgtype.UUID
+	HullHealth       int32
+	MaterialsBalance int32
+	Level            int32
+}
+
+func (q *Queries) CreateShip(ctx context.Context, arg CreateShipParams) error {
+	_, err := q.db.Exec(ctx, createShip,
+		arg.UserID,
+		arg.HullHealth,
+		arg.MaterialsBalance,
+		arg.Level,
+	)
+	return err
+}
+
 const getByUser = `-- name: GetByUser :one
 SELECT user_id, hull_health, materials_balance, level, updated_at FROM ships WHERE user_id = $1
 `

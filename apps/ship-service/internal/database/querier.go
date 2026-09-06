@@ -13,6 +13,7 @@ import (
 type Querier interface {
 	AddMaterials(ctx context.Context, arg AddMaterialsParams) (Ship, error)
 	ApplyDamage(ctx context.Context, arg ApplyDamageParams) (Ship, error)
+	CreateShip(ctx context.Context, arg CreateShipParams) error
 	CreateTestTable(ctx context.Context, name string) (TestTable, error)
 	DeleteOldProcessedEvents(ctx context.Context) (int64, error)
 	DeleteTestTable(ctx context.Context, id int64) error
