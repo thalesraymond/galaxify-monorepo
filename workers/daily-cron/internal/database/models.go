@@ -20,6 +20,20 @@ type Daily struct {
 	UpdatedAt   pgtype.Timestamptz
 }
 
+type DailyHistory struct {
+	ID          pgtype.UUID
+	DailyID     pgtype.UUID
+	UserID      pgtype.UUID
+	Title       string
+	Description string
+	Difficulty  string
+	DueDate     pgtype.Timestamptz
+	Status      string
+	CompletedAt pgtype.Timestamptz
+	MissedAt    pgtype.Timestamptz
+	ArchivedAt  pgtype.Timestamptz
+}
+
 type DifficultyReward struct {
 	Difficulty      string
 	RewardMaterials int32

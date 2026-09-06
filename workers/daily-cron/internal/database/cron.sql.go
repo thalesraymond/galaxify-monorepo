@@ -11,6 +11,37 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createDailyHistory = `-- name: CreateDailyHistory :exec
+INSERT INTO daily_history (
+    daily_id, user_id, title, description, difficulty, due_date, status, missed_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, 'MISSED', $7
+)
+`
+
+type CreateDailyHistoryParams struct {
+	DailyID     pgtype.UUID
+	UserID      pgtype.UUID
+	Title       string
+	Description string
+	Difficulty  string
+	DueDate     pgtype.Timestamptz
+	MissedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) CreateDailyHistory(ctx context.Context, arg CreateDailyHistoryParams) error {
+	_, err := q.db.Exec(ctx, createDailyHistory,
+		arg.DailyID,
+		arg.UserID,
+		arg.Title,
+		arg.Description,
+		arg.Difficulty,
+		arg.DueDate,
+		arg.MissedAt,
+	)
+	return err
+}
+
 const getDamageAmount = `-- name: GetDamageAmount :one
 SELECT damage_amount FROM difficulty_rewards WHERE difficulty = $1
 `
@@ -22,8 +53,44 @@ func (q *Queries) GetDamageAmount(ctx context.Context, difficulty string) (int32
 	return damage_amount, err
 }
 
+const listCompletedExpiredDailies = `-- name: ListCompletedExpiredDailies :many
+SELECT id
+FROM dailies
+WHERE status = 'COMPLETED' AND due_date < $1
+ORDER BY due_date ASC
+LIMIT $2
+FOR UPDATE SKIP LOCKED
+`
+
+type ListCompletedExpiredDailiesParams struct {
+	Before    pgtype.Timestamptz
+	BatchSize int32
+}
+
+// Selects up to `batch_size` COMPLETED dailies whose due_date has passed,
+// locking them with SKIP LOCKED so concurrent worker instances don't collide.
+func (q *Queries) ListCompletedExpiredDailies(ctx context.Context, arg ListCompletedExpiredDailiesParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listCompletedExpiredDailies, arg.Before, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingExpiredDailies = `-- name: ListPendingExpiredDailies :many
-SELECT id, user_id, difficulty
+SELECT id, user_id, title, description, difficulty, due_date
 FROM dailies
 WHERE status = 'PENDING' AND due_date < $1
 ORDER BY due_date ASC
@@ -37,12 +104,15 @@ type ListPendingExpiredDailiesParams struct {
 }
 
 type ListPendingExpiredDailiesRow struct {
-	ID         pgtype.UUID
-	UserID     pgtype.UUID
-	Difficulty string
+	ID          pgtype.UUID
+	UserID      pgtype.UUID
+	Title       string
+	Description string
+	Difficulty  string
+	DueDate     pgtype.Timestamptz
 }
 
-// Selects up to `limit` PENDING dailies whose due_date has passed,
+// Selects up to `batch_size` PENDING dailies whose due_date has passed,
 // locking them with SKIP LOCKED so concurrent worker instances don't collide.
 func (q *Queries) ListPendingExpiredDailies(ctx context.Context, arg ListPendingExpiredDailiesParams) ([]ListPendingExpiredDailiesRow, error) {
 	rows, err := q.db.Query(ctx, listPendingExpiredDailies, arg.Before, arg.BatchSize)
@@ -53,7 +123,14 @@ func (q *Queries) ListPendingExpiredDailies(ctx context.Context, arg ListPending
 	var items []ListPendingExpiredDailiesRow
 	for rows.Next() {
 		var i ListPendingExpiredDailiesRow
-		if err := rows.Scan(&i.ID, &i.UserID, &i.Difficulty); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Title,
+			&i.Description,
+			&i.Difficulty,
+			&i.DueDate,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -64,15 +141,39 @@ func (q *Queries) ListPendingExpiredDailies(ctx context.Context, arg ListPending
 	return items, nil
 }
 
-const markDailyMissed = `-- name: MarkDailyMissed :exec
+const resetCompletedDaily = `-- name: ResetCompletedDaily :exec
 UPDATE dailies
-SET status = 'MISSED', updated_at = now()
-WHERE id = $1 AND status = 'PENDING'
+SET status = 'PENDING',
+    due_date = due_date + INTERVAL '1 day',
+    updated_at = $1::timestamptz
+WHERE id = $2 AND status = 'COMPLETED'
 `
 
-// Idempotent: WHERE clause on status = 'PENDING' prevents double-marking.
-// NOTE: daily.missed event publication is deferred to #20 (outbox pattern).
-func (q *Queries) MarkDailyMissed(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, markDailyMissed, id)
+type ResetCompletedDailyParams struct {
+	Now pgtype.Timestamptz
+	ID  pgtype.UUID
+}
+
+// Resets COMPLETED daily back to PENDING and advances due_date by 1 day.
+func (q *Queries) ResetCompletedDaily(ctx context.Context, arg ResetCompletedDailyParams) error {
+	_, err := q.db.Exec(ctx, resetCompletedDaily, arg.Now, arg.ID)
+	return err
+}
+
+const rollOverPendingDaily = `-- name: RollOverPendingDaily :exec
+UPDATE dailies
+SET due_date = due_date + CEIL(EXTRACT(EPOCH FROM ($1::timestamptz - due_date)) / 86400) * INTERVAL '1 day',
+    updated_at = $1::timestamptz
+WHERE id = $2 AND status = 'PENDING'
+`
+
+type RollOverPendingDailyParams struct {
+	Now pgtype.Timestamptz
+	ID  pgtype.UUID
+}
+
+// Snaps due_date forward in 24-hour increments until due_date > now while remaining PENDING.
+func (q *Queries) RollOverPendingDaily(ctx context.Context, arg RollOverPendingDailyParams) error {
+	_, err := q.db.Exec(ctx, rollOverPendingDaily, arg.Now, arg.ID)
 	return err
 }

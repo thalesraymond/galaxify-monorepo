@@ -77,8 +77,10 @@ func WithClock(now func() time.Time) WorkerOption {
 	}
 }
 
-// Tick runs one full mark cycle: marks expired dailies MISSED in batches, then
-// publishes a daily.missed event for each one outside the transaction.
+// Tick runs one full mark and rollover cycle:
+// 1. Missed Pending Sweep: finds expired PENDING dailies, records them in daily_history as MISSED,
+// snaps due_date forward to the next cycle, and publishes a daily.missed event.
+// 2. Completed Reset Sweep: finds expired COMPLETED dailies, resets status to PENDING, and advances due_date by 1 day.
 func (w *Worker) Tick(ctx context.Context) error {
 	now := w.now().UTC()
 	for {
@@ -92,12 +94,23 @@ func (w *Worker) Tick(ctx context.Context) error {
 		w.logger.Info("marked dailies missed", "count", len(marked))
 		w.publishBatch(ctx, marked)
 	}
+
+	for {
+		resetCount, err := w.resetCompletedBatch(ctx, now)
+		if err != nil {
+			return fmt.Errorf("reset completed batch: %w", err)
+		}
+		if resetCount == 0 {
+			break
+		}
+		w.logger.Info("reset completed dailies", "count", resetCount)
+	}
+
 	return nil
 }
 
-// markBatch marks up to batchSize pending expired dailies as MISSED inside a
-// single transaction (SKIP LOCKED prevents contention with concurrent instances).
-// It returns the rows that were marked so the caller can publish events for them.
+// markBatch atomically logs up to batchSize pending expired dailies to daily_history
+// as MISSED and snaps their due_date forward inside a single transaction.
 func (w *Worker) markBatch(ctx context.Context, now time.Time) ([]database.ListPendingExpiredDailiesRow, error) {
 	var marked []database.ListPendingExpiredDailiesRow
 	err := w.store.WithTx(ctx, func(tx Tx) error {
@@ -110,7 +123,7 @@ func (w *Worker) markBatch(ctx context.Context, now time.Time) ([]database.ListP
 		}
 
 		for _, daily := range dailies {
-			if err := tx.MarkDailyMissed(ctx, daily.ID); err != nil {
+			if err := tx.RollOverPendingDaily(ctx, daily, now); err != nil {
 				return err
 			}
 		}
@@ -122,6 +135,34 @@ func (w *Worker) markBatch(ctx context.Context, now time.Time) ([]database.ListP
 		return nil, err
 	}
 	return marked, nil
+}
+
+// resetCompletedBatch resets up to batchSize expired completed dailies to PENDING
+// and advances due_date by 1 day inside a single transaction.
+func (w *Worker) resetCompletedBatch(ctx context.Context, now time.Time) (int, error) {
+	var count int
+	err := w.store.WithTx(ctx, func(tx Tx) error {
+		dailies, err := tx.ListCompletedExpiredDailies(ctx, now, w.batchSize)
+		if err != nil {
+			return err
+		}
+		if len(dailies) == 0 {
+			return nil
+		}
+
+		for _, id := range dailies {
+			if err := tx.ResetCompletedDaily(ctx, id, now); err != nil {
+				return err
+			}
+		}
+
+		count = len(dailies)
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 // publishBatch publishes a daily.missed event for each row in marked.

@@ -95,7 +95,7 @@ func (q *Queries) CreateUserCache(ctx context.Context, id pgtype.UUID) error {
 }
 
 const deleteDaily = `-- name: DeleteDaily :execrows
-DELETE FROM dailies WHERE id = $1 AND user_id = $2 AND status = 'PENDING'
+DELETE FROM dailies WHERE id = $1 AND user_id = $2
 `
 
 type DeleteDailyParams struct {
@@ -192,6 +192,44 @@ func (q *Queries) ListDailies(ctx context.Context, arg ListDailiesParams) ([]Dai
 	return items, nil
 }
 
+const listDailyHistory = `-- name: ListDailyHistory :many
+SELECT id, daily_id, user_id, title, description, difficulty, due_date, status, completed_at, missed_at, archived_at FROM daily_history
+WHERE user_id = $1
+ORDER BY due_date DESC, archived_at DESC
+`
+
+func (q *Queries) ListDailyHistory(ctx context.Context, userID pgtype.UUID) ([]DailyHistory, error) {
+	rows, err := q.db.Query(ctx, listDailyHistory, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DailyHistory
+	for rows.Next() {
+		var i DailyHistory
+		if err := rows.Scan(
+			&i.ID,
+			&i.DailyID,
+			&i.UserID,
+			&i.Title,
+			&i.Description,
+			&i.Difficulty,
+			&i.DueDate,
+			&i.Status,
+			&i.CompletedAt,
+			&i.MissedAt,
+			&i.ArchivedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markDailyComplete = `-- name: MarkDailyComplete :one
 UPDATE dailies SET
     status = 'COMPLETED',
@@ -254,7 +292,7 @@ UPDATE dailies SET
     difficulty = COALESCE($5, difficulty),
     due_date = COALESCE($6, due_date),
     updated_at = now()
-WHERE id = $1 AND user_id = $2 AND status = 'PENDING'
+WHERE id = $1 AND user_id = $2
 RETURNING id, user_id, title, description, difficulty, due_date, status, created_at, updated_at
 `
 

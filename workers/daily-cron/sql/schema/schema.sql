@@ -23,3 +23,18 @@ CREATE TABLE dailies (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE daily_history (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    daily_id    UUID        NOT NULL,
+    user_id     UUID        NOT NULL,
+    title       TEXT        NOT NULL,
+    description TEXT        NOT NULL DEFAULT '',
+    difficulty  TEXT        NOT NULL,
+    due_date    TIMESTAMPTZ NOT NULL,
+    status      TEXT        NOT NULL,
+    completed_at TIMESTAMPTZ,
+    missed_at   TIMESTAMPTZ,
+    archived_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+

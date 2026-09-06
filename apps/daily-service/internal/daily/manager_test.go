@@ -72,6 +72,8 @@ type mockStore struct {
 	deleteDaily         func(ctx context.Context, arg database.DeleteDailyParams) (int64, error)
 	markDailyComplete   func(ctx context.Context, arg database.MarkDailyCompleteParams) (database.Daily, error)
 	getDifficultyReward func(ctx context.Context, difficulty string) (database.DifficultyReward, error)
+	createDailyHistory  func(ctx context.Context, arg database.CreateDailyHistoryParams) error
+	listDailyHistory    func(ctx context.Context, userID pgtype.UUID) ([]database.DailyHistory, error)
 }
 
 func (m *mockStore) CreateDaily(ctx context.Context, arg database.CreateDailyParams) (database.Daily, error) {
@@ -121,6 +123,20 @@ func (m *mockStore) GetDifficultyReward(ctx context.Context, difficulty string) 
 		return m.getDifficultyReward(ctx, difficulty)
 	}
 	return database.DifficultyReward{}, errors.New("unexpected GetDifficultyReward")
+}
+
+func (m *mockStore) CreateDailyHistory(ctx context.Context, arg database.CreateDailyHistoryParams) error {
+	if m.createDailyHistory != nil {
+		return m.createDailyHistory(ctx, arg)
+	}
+	return errors.New("unexpected CreateDailyHistory")
+}
+
+func (m *mockStore) ListDailyHistory(ctx context.Context, userID pgtype.UUID) ([]database.DailyHistory, error) {
+	if m.listDailyHistory != nil {
+		return m.listDailyHistory(ctx, userID)
+	}
+	return nil, errors.New("unexpected ListDailyHistory")
 }
 
 type mockPublisher struct {
@@ -346,20 +362,32 @@ func TestDailyManager_Update(t *testing.T) {
 		}
 	})
 
-	t.Run("returns ErrDailyNotPending when row is completed", func(t *testing.T) {
-		txStarter := &fakeTxStarter{}
+	t.Run("happy path updates completed daily", func(t *testing.T) {
+		tx := &fakeTx{}
+		txStarter := &fakeTxStarter{tx: tx}
 		store := &mockStore{
 			updateDaily: func(ctx context.Context, arg database.UpdateDailyParams) (database.Daily, error) {
-				return database.Daily{}, pgx.ErrNoRows
-			},
-			getDaily: func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error) {
-				return database.Daily{Status: "COMPLETED"}, nil
+				return database.Daily{
+					ID:     arg.ID,
+					UserID: arg.UserID,
+					Title:  arg.Title.String,
+					Status: "COMPLETED",
+				}, nil
 			},
 		}
 		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
-		_, err := mgr.Update(context.Background(), userID, dailyID, UpdateInput{Title: &newTitle})
-		if !errors.Is(err, ErrDailyNotPending) {
-			t.Errorf("error = %v, want ErrDailyNotPending", err)
+		item, err := mgr.Update(context.Background(), userID, dailyID, UpdateInput{Title: &newTitle})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if item.Title != newTitle {
+			t.Errorf("Title = %v, want %v", item.Title, newTitle)
+		}
+		if item.Status != StatusCompleted {
+			t.Errorf("Status = %v, want COMPLETED", item.Status)
+		}
+		if !tx.committed {
+			t.Errorf("tx was not committed")
 		}
 	})
 
@@ -412,20 +440,21 @@ func TestDailyManager_Delete(t *testing.T) {
 		}
 	})
 
-	t.Run("returns ErrDailyNotPending when row is completed", func(t *testing.T) {
-		txStarter := &fakeTxStarter{}
+	t.Run("happy path deletes completed daily", func(t *testing.T) {
+		tx := &fakeTx{}
+		txStarter := &fakeTxStarter{tx: tx}
 		store := &mockStore{
 			deleteDaily: func(ctx context.Context, arg database.DeleteDailyParams) (int64, error) {
-				return 0, nil
-			},
-			getDaily: func(ctx context.Context, arg database.GetDailyParams) (database.Daily, error) {
-				return database.Daily{Status: "COMPLETED"}, nil
+				return 1, nil
 			},
 		}
 		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
 		err := mgr.Delete(context.Background(), userID, dailyID)
-		if !errors.Is(err, ErrDailyNotPending) {
-			t.Errorf("error = %v, want ErrDailyNotPending", err)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !tx.committed {
+			t.Errorf("tx was not committed")
 		}
 	})
 }
@@ -434,7 +463,72 @@ func TestDailyManager_Complete(t *testing.T) {
 	userID := uuid.New()
 	dailyID := uuid.New()
 
-	t.Run("happy path completes daily and publishes event", func(t *testing.T) {
+	t.Run("happy path completes daily, creates history, and publishes event", func(t *testing.T) {
+		tx := &fakeTx{}
+		txStarter := &fakeTxStarter{tx: tx}
+		pub := &mockPublisher{}
+		var createdHistory *database.CreateDailyHistoryParams
+		now := time.Now().UTC()
+		store := &mockStore{
+			markDailyComplete: func(ctx context.Context, arg database.MarkDailyCompleteParams) (database.Daily, error) {
+				return database.Daily{
+					ID:          arg.ID,
+					UserID:      arg.UserID,
+					Title:       "Test Daily",
+					Description: "Test Description",
+					Difficulty:  "HARD",
+					DueDate:     pgtype.Timestamptz{Time: now, Valid: true},
+					Status:      "COMPLETED",
+					UpdatedAt:   pgtype.Timestamptz{Time: now, Valid: true},
+				}, nil
+			},
+			getDifficultyReward: func(ctx context.Context, difficulty string) (database.DifficultyReward, error) {
+				return database.DifficultyReward{Difficulty: difficulty, RewardMaterials: 25}, nil
+			},
+			createDailyHistory: func(ctx context.Context, arg database.CreateDailyHistoryParams) error {
+				createdHistory = &arg
+				return nil
+			},
+		}
+
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, pub)
+		item, err := mgr.Complete(context.Background(), userID, dailyID)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if item.Status != StatusCompleted {
+			t.Errorf("Status = %v, want COMPLETED", item.Status)
+		}
+		if !tx.committed {
+			t.Errorf("tx was not committed")
+		}
+		if createdHistory == nil {
+			t.Fatalf("CreateDailyHistory was not called")
+		}
+		if createdHistory.DailyID.Bytes != dailyID {
+			t.Errorf("createdHistory.DailyID = %v, want %v", createdHistory.DailyID.Bytes, dailyID)
+		}
+		if createdHistory.UserID.Bytes != userID {
+			t.Errorf("createdHistory.UserID = %v, want %v", createdHistory.UserID.Bytes, userID)
+		}
+		if createdHistory.Status != "COMPLETED" {
+			t.Errorf("createdHistory.Status = %v, want COMPLETED", createdHistory.Status)
+		}
+		if !createdHistory.CompletedAt.Valid {
+			t.Errorf("createdHistory.CompletedAt should be valid")
+		}
+		if createdHistory.MissedAt.Valid {
+			t.Errorf("createdHistory.MissedAt should NOT be valid")
+		}
+		if len(pub.published) != 1 {
+			t.Fatalf("len(published) = %d, want 1", len(pub.published))
+		}
+		if pub.published[0].RewardMaterials != 25 {
+			t.Errorf("reward = %d, want 25", pub.published[0].RewardMaterials)
+		}
+	})
+
+	t.Run("returns error and rolls back if createDailyHistory fails", func(t *testing.T) {
 		tx := &fakeTx{}
 		txStarter := &fakeTxStarter{tx: tx}
 		pub := &mockPublisher{}
@@ -450,24 +544,21 @@ func TestDailyManager_Complete(t *testing.T) {
 			getDifficultyReward: func(ctx context.Context, difficulty string) (database.DifficultyReward, error) {
 				return database.DifficultyReward{Difficulty: difficulty, RewardMaterials: 25}, nil
 			},
+			createDailyHistory: func(ctx context.Context, arg database.CreateDailyHistoryParams) error {
+				return errors.New("history insert error")
+			},
 		}
 
 		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, pub)
-		item, err := mgr.Complete(context.Background(), userID, dailyID)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		_, err := mgr.Complete(context.Background(), userID, dailyID)
+		if err == nil {
+			t.Fatalf("expected error when createDailyHistory fails")
 		}
-		if item.Status != StatusCompleted {
-			t.Errorf("Status = %v, want COMPLETED", item.Status)
+		if !tx.rolledBack {
+			t.Errorf("tx was not rolled back")
 		}
-		if !tx.committed {
-			t.Errorf("tx was not committed")
-		}
-		if len(pub.published) != 1 {
-			t.Fatalf("len(published) = %d, want 1", len(pub.published))
-		}
-		if pub.published[0].RewardMaterials != 25 {
-			t.Errorf("reward = %d, want 25", pub.published[0].RewardMaterials)
+		if len(pub.published) != 0 {
+			t.Errorf("published events = %d, want 0", len(pub.published))
 		}
 	})
 
@@ -541,6 +632,9 @@ func TestDailyManager_Complete(t *testing.T) {
 			getDifficultyReward: func(ctx context.Context, difficulty string) (database.DifficultyReward, error) {
 				return database.DifficultyReward{Difficulty: difficulty, RewardMaterials: 25}, nil
 			},
+			createDailyHistory: func(ctx context.Context, arg database.CreateDailyHistoryParams) error {
+				return nil
+			},
 		}
 
 		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, pub)
@@ -587,6 +681,9 @@ func TestDailyManager_Complete(t *testing.T) {
 			getDifficultyReward: func(ctx context.Context, difficulty string) (database.DifficultyReward, error) {
 				return database.DifficultyReward{Difficulty: difficulty, RewardMaterials: 25}, nil
 			},
+			createDailyHistory: func(ctx context.Context, arg database.CreateDailyHistoryParams) error {
+				return nil
+			},
 		}
 
 		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, pub)
@@ -621,6 +718,86 @@ func TestDailyManager_Complete(t *testing.T) {
 		defer pub.mu.Unlock()
 		if len(pub.published) != 1 {
 			t.Errorf("published events = %d, want 1", len(pub.published))
+		}
+	})
+}
+
+func TestDailyManager_ListHistory(t *testing.T) {
+	userID := uuid.New()
+	dailyID := uuid.New()
+	historyID := uuid.New()
+	now := time.Now().UTC()
+
+	t.Run("returns history items for user", func(t *testing.T) {
+		store := &mockStore{
+			listDailyHistory: func(ctx context.Context, uID pgtype.UUID) ([]database.DailyHistory, error) {
+				if uID.Bytes != userID {
+					t.Errorf("user_id = %v, want %v", uID.Bytes, userID)
+				}
+				return []database.DailyHistory{
+					{
+						ID:          pgtype.UUID{Bytes: historyID, Valid: true},
+						DailyID:     pgtype.UUID{Bytes: dailyID, Valid: true},
+						UserID:      uID,
+						Title:       "Meditate",
+						Description: "15 minutes",
+						Difficulty:  "MEDIUM",
+						DueDate:     pgtype.Timestamptz{Time: now, Valid: true},
+						Status:      "COMPLETED",
+						CompletedAt: pgtype.Timestamptz{Time: now, Valid: true},
+						MissedAt:    pgtype.Timestamptz{Valid: false},
+						ArchivedAt:  pgtype.Timestamptz{Time: now, Valid: true},
+					},
+				}, nil
+			},
+		}
+
+		mgr := NewDailyManager(nil, nil, store, nil)
+		items, err := mgr.ListHistory(context.Background(), userID)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(items) != 1 {
+			t.Fatalf("len(items) = %d, want 1", len(items))
+		}
+		item := items[0]
+		if item.ID != historyID {
+			t.Errorf("ID = %v, want %v", item.ID, historyID)
+		}
+		if item.DailyID != dailyID {
+			t.Errorf("DailyID = %v, want %v", item.DailyID, dailyID)
+		}
+		if item.UserID != userID {
+			t.Errorf("UserID = %v, want %v", item.UserID, userID)
+		}
+		if item.Title != "Meditate" {
+			t.Errorf("Title = %q, want Meditate", item.Title)
+		}
+		if item.Difficulty != DifficultyMedium {
+			t.Errorf("Difficulty = %v, want MEDIUM", item.Difficulty)
+		}
+		if item.Status != StatusCompleted {
+			t.Errorf("Status = %v, want COMPLETED", item.Status)
+		}
+		if item.CompletedAt == nil || !item.CompletedAt.Equal(now) {
+			t.Errorf("CompletedAt = %v, want %v", item.CompletedAt, now)
+		}
+		if item.MissedAt != nil {
+			t.Errorf("MissedAt = %v, want nil", item.MissedAt)
+		}
+	})
+
+	t.Run("returns error when store fails", func(t *testing.T) {
+		store := &mockStore{
+			listDailyHistory: func(ctx context.Context, uID pgtype.UUID) ([]database.DailyHistory, error) {
+				return nil, errors.New("db error")
+			},
+		}
+
+		mgr := NewDailyManager(nil, nil, store, nil)
+		_, err := mgr.ListHistory(context.Background(), userID)
+		if err == nil {
+			t.Fatalf("expected error from ListHistory")
 		}
 	})
 }

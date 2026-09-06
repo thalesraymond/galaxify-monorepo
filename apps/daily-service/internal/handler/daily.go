@@ -19,6 +19,7 @@ type dailyManager interface {
 	Create(ctx context.Context, input daily.CreateInput) (daily.Daily, error)
 	Get(ctx context.Context, userID, id uuid.UUID) (daily.Daily, error)
 	List(ctx context.Context, userID uuid.UUID, filter daily.ListFilter) ([]daily.Daily, error)
+	ListHistory(ctx context.Context, userID uuid.UUID) ([]daily.DailyHistory, error)
 	Update(ctx context.Context, userID, id uuid.UUID, input daily.UpdateInput) (daily.Daily, error)
 	Delete(ctx context.Context, userID, id uuid.UUID) error
 	Complete(ctx context.Context, userID, id uuid.UUID) (daily.Daily, error)
@@ -44,6 +45,7 @@ func NewDailyHandler(manager dailyManager, authHandshake *sharedhttp.AuthHandsha
 func (h *DailyHandler) RegisterDailyRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /dailies", h.authHandshake.RequireAuth(h.CreateDaily))
 	mux.Handle("GET /dailies", h.authHandshake.RequireAuth(h.ListDailies))
+	mux.Handle("GET /dailies/history", h.authHandshake.RequireAuth(h.ListDailyHistory))
 	mux.Handle("GET /dailies/{id}", h.authHandshake.RequireAuth(h.GetDaily))
 	mux.Handle("PATCH /dailies/{id}", h.authHandshake.RequireAuth(h.UpdateDaily))
 	mux.Handle("DELETE /dailies/{id}", h.authHandshake.RequireAuth(h.DeleteDaily))
@@ -61,6 +63,21 @@ type dailyResponse struct {
 	Status      string `json:"status"`
 	CreatedAt   string `json:"created_at"`
 	UpdatedAt   string `json:"updated_at"`
+}
+
+// dailyHistoryResponse is the on-the-wire shape for a daily history record.
+type dailyHistoryResponse struct {
+	ID          string  `json:"id"`
+	DailyID     string  `json:"daily_id"`
+	UserID      string  `json:"user_id"`
+	Title       string  `json:"title"`
+	Description string  `json:"description"`
+	Difficulty  string  `json:"difficulty"`
+	DueDate     string  `json:"due_date"`
+	Status      string  `json:"status"`
+	CompletedAt *string `json:"completed_at"`
+	MissedAt    *string `json:"missed_at"`
+	ArchivedAt  string  `json:"archived_at"`
 }
 
 type createDailyRequest struct {
@@ -182,6 +199,27 @@ func (h *DailyHandler) ListDailies(w http.ResponseWriter, r *http.Request, userI
 	sharedhttp.WriteJSON(w, http.StatusOK, resp)
 }
 
+// ListDailyHistory returns all past daily task executions from daily_history ordered by due_date DESC.
+func (h *DailyHandler) ListDailyHistory(w http.ResponseWriter, r *http.Request, userID string) {
+	userUUID, ok := h.parseUserID(w, userID)
+	if !ok {
+		return
+	}
+
+	items, err := h.manager.ListHistory(r.Context(), userUUID)
+	if err != nil {
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+		return
+	}
+
+	resp := make([]dailyHistoryResponse, len(items))
+	for i, item := range items {
+		resp[i] = dailyHistoryToResponse(item)
+	}
+
+	sharedhttp.WriteJSON(w, http.StatusOK, resp)
+}
+
 // GetDaily returns a single daily owned by the authenticated user.
 func (h *DailyHandler) GetDaily(w http.ResponseWriter, r *http.Request, userID string) {
 	userUUID, ok := h.parseUserID(w, userID)
@@ -207,7 +245,7 @@ func (h *DailyHandler) GetDaily(w http.ResponseWriter, r *http.Request, userID s
 	sharedhttp.WriteJSON(w, http.StatusOK, dailyToResponse(item))
 }
 
-// UpdateDaily edits a daily if it is still pending.
+// UpdateDaily edits a daily.
 func (h *DailyHandler) UpdateDaily(w http.ResponseWriter, r *http.Request, userID string) {
 	userUUID, ok := h.parseUserID(w, userID)
 	if !ok {
@@ -267,7 +305,7 @@ func (h *DailyHandler) UpdateDaily(w http.ResponseWriter, r *http.Request, userI
 	sharedhttp.WriteJSON(w, http.StatusOK, dailyToResponse(item))
 }
 
-// DeleteDaily removes a daily if it is still pending.
+// DeleteDaily removes a daily.
 func (h *DailyHandler) DeleteDaily(w http.ResponseWriter, r *http.Request, userID string) {
 	userUUID, ok := h.parseUserID(w, userID)
 	if !ok {
@@ -378,3 +416,28 @@ func formatTime(t time.Time) string {
 	}
 	return t.UTC().Format(time.RFC3339)
 }
+
+func formatOptionalTime(t *time.Time) *string {
+	if t == nil || t.IsZero() {
+		return nil
+	}
+	s := t.UTC().Format(time.RFC3339)
+	return &s
+}
+
+func dailyHistoryToResponse(item daily.DailyHistory) dailyHistoryResponse {
+	return dailyHistoryResponse{
+		ID:          item.ID.String(),
+		DailyID:     item.DailyID.String(),
+		UserID:      item.UserID.String(),
+		Title:       item.Title,
+		Description: item.Description,
+		Difficulty:  string(item.Difficulty),
+		DueDate:     formatTime(item.DueDate),
+		Status:      string(item.Status),
+		CompletedAt: formatOptionalTime(item.CompletedAt),
+		MissedAt:    formatOptionalTime(item.MissedAt),
+		ArchivedAt:  formatTime(item.ArchivedAt),
+	}
+}
+
