@@ -11,9 +11,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/thalesraymond/galaxify-monorepo/apps/ship-service/internal/consumer"
+	"github.com/thalesraymond/galaxify-monorepo/apps/ship-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/apps/ship-service/internal/handler"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/rabbitmq"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
@@ -53,8 +57,8 @@ func run(logger *slog.Logger) error {
 	// Long-lived context for the event subscriber. The startup ctx above has a
 	// 15s timeout and must NOT be reused for handlers — it expires shortly
 	// after boot, so every handler would fail with "context deadline exceeded".
-	// subCtx, subCancel := context.WithCancel(context.Background())
-	// defer subCancel()
+	subCtx, subCancel := context.WithCancel(context.Background())
+	defer subCancel()
 
 	pool, err := pgxpool.New(timeoutCtx, dbURL)
 	if err != nil {
@@ -71,6 +75,26 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer conn.Close()
+
+	ch, err := conn.Channel()
+	if err != nil {
+		return fmt.Errorf("create channel: %w", err)
+	}
+
+	subscriber, err := events.NewSubscriber(ch, serviceName, events.WithLogger(logger))
+	if err != nil {
+		return fmt.Errorf("create subscriber: %w", err)
+	}
+
+	subscriber.On("user.created", consumer.NewUserCreatedHandler(
+		pool,
+		func(tx pgx.Tx) events.IdempotencyStore { return database.New(tx) },
+		events.WithLogger(logger),
+	))
+
+	if err := subscriber.Start(subCtx); err != nil {
+		return fmt.Errorf("start subscriber: %w", err)
+	}
 
 	logger.Info(serviceName + ": connected to PostgreSQL and RabbitMQ")
 
@@ -104,6 +128,9 @@ func run(logger *slog.Logger) error {
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("graceful shutdown: %w", err)
+		}
+		if err := subscriber.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("subscriber shutdown: %w", err)
 		}
 		return nil
 	}
