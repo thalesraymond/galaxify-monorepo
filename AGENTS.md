@@ -97,21 +97,21 @@ failures.
   `LoggerBuilder`. Since Go functions are "loose" (package-level), names are
   very important.
 
-## Handler testing conventions
+## Handler and domain conventions
 
 HTTP handler tests follow the contract in
-[ADR-0008](docs/adr/0008-handler-owned-interfaces-and-table-driven-tests.md):
+[ADR-0008](docs/adr/0008-handler-owned-interfaces-and-table-driven-tests.md) and
+[ADR-0011](docs/adr/0011-domain-lifecycle-modules-and-deep-seams.md):
 
-- Handlers depend on a **narrow, handler-owned store interface** (e.g.
-  `authStore`), never the full generated `database.Querier`.
+- Handlers depend on **high-leverage domain interfaces** (e.g. `daily.Manager`),
+  never raw SQL queries or multi-step database orchestration.
 - Handlers expose a `RegisterXRoutes(*http.ServeMux)` method so tests can
   exercise the real route table.
 - Tests use package-local helpers (`newTestXHandler`, `newTestXRouter`,
   `newTestRequest`, `wantStatus`, `decodeBody`, etc.) and table-driven cases.
-- Tests assert both the HTTP response and the parameters passed to the store
-  mock.
+- Tests assert both the HTTP response and the parameters passed to the domain mock.
 
-Read ADR-0008 before writing or reviewing handler tests.
+Read ADR-0008 and ADR-0011 before writing or reviewing handler and domain code.
 
 ## Shared infrastructure (cross-cutting `pkg/`)
 

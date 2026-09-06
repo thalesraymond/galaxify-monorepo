@@ -149,11 +149,21 @@ func (q *Queries) GetDifficultyReward(ctx context.Context, difficulty string) (D
 }
 
 const listDailies = `-- name: ListDailies :many
-SELECT id, user_id, title, description, difficulty, due_date, status, created_at, updated_at FROM dailies WHERE user_id = $1 ORDER BY due_date ASC, created_at ASC
+SELECT id, user_id, title, description, difficulty, due_date, status, created_at, updated_at FROM dailies
+WHERE user_id = $1
+  AND ($2::text IS NULL OR status = $2)
+  AND ($3::date IS NULL OR due_date::date = $3::date)
+ORDER BY due_date ASC, created_at ASC
 `
 
-func (q *Queries) ListDailies(ctx context.Context, userID pgtype.UUID) ([]Daily, error) {
-	rows, err := q.db.Query(ctx, listDailies, userID)
+type ListDailiesParams struct {
+	UserID  pgtype.UUID
+	Status  pgtype.Text
+	DueDate pgtype.Date
+}
+
+func (q *Queries) ListDailies(ctx context.Context, arg ListDailiesParams) ([]Daily, error) {
+	rows, err := q.db.Query(ctx, listDailies, arg.UserID, arg.Status, arg.DueDate)
 	if err != nil {
 		return nil, err
 	}

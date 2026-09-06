@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/thalesraymond/galaxify-monorepo/apps/daily-service/internal/consumer"
+	"github.com/thalesraymond/galaxify-monorepo/apps/daily-service/internal/daily"
 	"github.com/thalesraymond/galaxify-monorepo/apps/daily-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/apps/daily-service/internal/handler"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
@@ -127,7 +128,15 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("create publisher: %w", err)
 	}
 
-	dailyHandler := handler.NewDailyHandler(db, publisher, authHandshake, logger)
+	dailyManager := daily.NewDailyManager(
+		pool,
+		func(tx pgx.Tx) daily.Store { return database.New(tx) },
+		db,
+		publisher,
+		daily.WithDailyManagerLogger(logger),
+	)
+
+	dailyHandler := handler.NewDailyHandler(dailyManager, authHandshake, logger)
 	dailyHandler.RegisterDailyRoutes(mux)
 
 	srv := &http.Server{

@@ -12,7 +12,11 @@ INSERT INTO dailies (
 SELECT * FROM dailies WHERE id = $1 AND user_id = $2;
 
 -- name: ListDailies :many
-SELECT * FROM dailies WHERE user_id = $1 ORDER BY due_date ASC, created_at ASC;
+SELECT * FROM dailies
+WHERE user_id = $1
+  AND (sqlc.narg('status')::text IS NULL OR status = sqlc.narg('status'))
+  AND (sqlc.narg('due_date')::date IS NULL OR due_date::date = sqlc.narg('due_date')::date)
+ORDER BY due_date ASC, created_at ASC;
 
 -- name: UpdateDaily :one
 UPDATE dailies SET
