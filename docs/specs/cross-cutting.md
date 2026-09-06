@@ -154,21 +154,17 @@ CREATE TABLE processed_events (
 CREATE INDEX processed_events_processed_at_idx ON processed_events (processed_at);
 ```
 
-Consumer-side pattern:
+Consumer-side pattern (governed by [ADR-0010](../adr/0010-idempotent-consumer-pipeline.md) and specified in [`idempotent-consumer-pipeline.md`](./idempotent-consumer-pipeline.md)):
+
+Consumers wrap their domain mutations in `events.NewIdempotentHandler[T]`, which atomically checks `processed_events`, executes the domain handler, and commits the transaction:
 
 ```go
-tag, err := db.Exec(ctx, `
-    INSERT INTO processed_events (event_id) VALUES ($1)
-    ON CONFLICT (event_id) DO NOTHING
-`, eventID)
-if err != nil {
-    return err
-}
-if tag.RowsAffected() == 0 {
-    // Already processed — ack and skip.
-    return nil
-}
-// First-time processing — do the work.
+subscriber.Consume(ctx, "user.created", events.NewIdempotentHandler(
+    pool,
+    func(tx pgx.Tx) events.IdempotencyStore { return database.New(tx) },
+    consumer.HandleUserCreated,
+    events.WithLogger(logger),
+))
 ```
 
 **Retention: 30 days** via nightly cron per consumer service:
