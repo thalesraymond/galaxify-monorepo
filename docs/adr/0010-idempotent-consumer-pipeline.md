@@ -31,7 +31,7 @@ func NewIdempotentHandler[T any](
 ) HandlerFunc
 ```
 
-The resulting `HandlerFunc` plugs directly into `subscriber.Consume(ctx, eventType, handler)` with zero changes required to `Subscriber`.
+The resulting `HandlerFunc` plugs directly into `subscriber.On(eventType, handler)` with zero changes required to `Subscriber`.
 
 ### 2. Narrow Interfaces at the Seam
 

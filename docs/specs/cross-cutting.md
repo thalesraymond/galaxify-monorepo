@@ -159,7 +159,7 @@ Consumer-side pattern (governed by [ADR-0010](../adr/0010-idempotent-consumer-pi
 Consumers wrap their domain mutations in `events.NewIdempotentHandler[T]`, which atomically checks `processed_events`, executes the domain handler, and commits the transaction:
 
 ```go
-subscriber.Consume(ctx, "user.created", events.NewIdempotentHandler(
+subscriber.On("user.created", events.NewIdempotentHandler(
     pool,
     func(tx pgx.Tx) events.IdempotencyStore { return database.New(tx) },
     consumer.HandleUserCreated,

@@ -65,6 +65,36 @@ type testPayload struct {
 	Count int    `json:"count"`
 }
 
+func newTestEnvelopeBytes(t *testing.T, eventID, eventType string, payload any) []byte {
+	t.Helper()
+	var payloadBytes []byte
+	switch p := payload.(type) {
+	case []byte:
+		payloadBytes = p
+	case json.RawMessage:
+		payloadBytes = p
+	default:
+		var err error
+		payloadBytes, err = json.Marshal(payload)
+		if err != nil {
+			t.Fatalf("failed to marshal test payload: %v", err)
+		}
+	}
+
+	env := Envelope{
+		EventId:    eventID,
+		EventType:  eventType,
+		OccurredAt: time.Now().UTC(),
+		Version:    1,
+		Payload:    payloadBytes,
+	}
+	envBytes, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("failed to marshal test envelope: %v", err)
+	}
+	return envBytes
+}
+
 func TestIdempotentHandler_FastFailValidation(t *testing.T) {
 	ctx := context.Background()
 
@@ -108,15 +138,7 @@ func TestIdempotentHandler_FastFailValidation(t *testing.T) {
 			},
 		)
 
-		payloadBytes, _ := json.Marshal(testPayload{Name: "alice", Count: 1})
-		env := Envelope{
-			EventId:    "not-a-valid-uuid",
-			EventType:  "test.event",
-			OccurredAt: time.Now(),
-			Version:    1,
-			Payload:    payloadBytes,
-		}
-		envBytes, _ := json.Marshal(env)
+		envBytes := newTestEnvelopeBytes(t, "not-a-valid-uuid", "test.event", testPayload{Name: "alice", Count: 1})
 
 		err := handler(ctx, "test.event", envBytes)
 		if err == nil {
@@ -144,14 +166,7 @@ func TestIdempotentHandler_FastFailValidation(t *testing.T) {
 			},
 		)
 
-		env := Envelope{
-			EventId:    uuid.New().String(),
-			EventType:  "test.event",
-			OccurredAt: time.Now(),
-			Version:    1,
-			Payload:    json.RawMessage(`{"count": "not-an-int"}`),
-		}
-		envBytes, _ := json.Marshal(env)
+		envBytes := newTestEnvelopeBytes(t, uuid.New().String(), "test.event", json.RawMessage(`{"count": "not-an-int"}`))
 
 		err := handler(ctx, "test.event", envBytes)
 		if err == nil {
@@ -189,15 +204,7 @@ func TestIdempotentHandler_ExecutionLifecycle(t *testing.T) {
 		)
 
 		eventID := uuid.New().String()
-		payloadBytes, _ := json.Marshal(testPayload{Name: "bob", Count: 42})
-		env := Envelope{
-			EventId:    eventID,
-			EventType:  "test.event",
-			OccurredAt: time.Now().UTC(),
-			Version:    1,
-			Payload:    payloadBytes,
-		}
-		envBytes, _ := json.Marshal(env)
+		envBytes := newTestEnvelopeBytes(t, eventID, "test.event", testPayload{Name: "bob", Count: 42})
 
 		err := handler(ctx, "test.event", envBytes)
 		if err != nil {
@@ -240,15 +247,7 @@ func TestIdempotentHandler_ExecutionLifecycle(t *testing.T) {
 		)
 
 		eventID := uuid.New().String()
-		payloadBytes, _ := json.Marshal(testPayload{Name: "charlie", Count: 3})
-		env := Envelope{
-			EventId:    eventID,
-			EventType:  "test.event",
-			OccurredAt: time.Now().UTC(),
-			Version:    1,
-			Payload:    payloadBytes,
-		}
-		envBytes, _ := json.Marshal(env)
+		envBytes := newTestEnvelopeBytes(t, eventID, "test.event", testPayload{Name: "charlie", Count: 3})
 
 		err := handler(ctx, "test.event", envBytes)
 		if err != nil {
@@ -280,15 +279,7 @@ func TestIdempotentHandler_ExecutionLifecycle(t *testing.T) {
 		)
 
 		eventID := uuid.New().String()
-		payloadBytes, _ := json.Marshal(testPayload{Name: "dave", Count: 1})
-		env := Envelope{
-			EventId:    eventID,
-			EventType:  "test.event",
-			OccurredAt: time.Now().UTC(),
-			Version:    1,
-			Payload:    payloadBytes,
-		}
-		envBytes, _ := json.Marshal(env)
+		envBytes := newTestEnvelopeBytes(t, eventID, "test.event", testPayload{Name: "dave", Count: 1})
 
 		err := handler(ctx, "test.event", envBytes)
 		if err == nil {
@@ -316,15 +307,7 @@ func TestIdempotentHandler_ExecutionLifecycle(t *testing.T) {
 		)
 
 		eventID := uuid.New().String()
-		payloadBytes, _ := json.Marshal(testPayload{Name: "eve", Count: 1})
-		env := Envelope{
-			EventId:    eventID,
-			EventType:  "test.event",
-			OccurredAt: time.Now().UTC(),
-			Version:    1,
-			Payload:    payloadBytes,
-		}
-		envBytes, _ := json.Marshal(env)
+		envBytes := newTestEnvelopeBytes(t, eventID, "test.event", testPayload{Name: "eve", Count: 1})
 
 		err := handler(ctx, "test.event", envBytes)
 		if err == nil {
@@ -356,15 +339,7 @@ func TestIdempotentHandler_ExecutionLifecycle(t *testing.T) {
 		)
 
 		eventID := uuid.New().String()
-		payloadBytes, _ := json.Marshal(testPayload{Name: "frank", Count: 1})
-		env := Envelope{
-			EventId:    eventID,
-			EventType:  "test.event",
-			OccurredAt: time.Now().UTC(),
-			Version:    1,
-			Payload:    payloadBytes,
-		}
-		envBytes, _ := json.Marshal(env)
+		envBytes := newTestEnvelopeBytes(t, eventID, "test.event", testPayload{Name: "frank", Count: 1})
 
 		err := handler(ctx, "test.event", envBytes)
 		if err == nil {
@@ -396,15 +371,7 @@ func TestIdempotentHandler_ExecutionLifecycle(t *testing.T) {
 		)
 
 		eventID := uuid.New().String()
-		payloadBytes, _ := json.Marshal(testPayload{Name: "grace", Count: 1})
-		env := Envelope{
-			EventId:    eventID,
-			EventType:  "test.event",
-			OccurredAt: time.Now().UTC(),
-			Version:    1,
-			Payload:    payloadBytes,
-		}
-		envBytes, _ := json.Marshal(env)
+		envBytes := newTestEnvelopeBytes(t, eventID, "test.event", testPayload{Name: "grace", Count: 1})
 
 		err := handler(ctx, "test.event", envBytes)
 		if err == nil {
@@ -436,15 +403,7 @@ func TestIdempotentHandler_ExecutionLifecycle(t *testing.T) {
 		)
 
 		eventID := uuid.New().String()
-		payloadBytes, _ := json.Marshal(testPayload{Name: "heidi", Count: 1})
-		env := Envelope{
-			EventId:    eventID,
-			EventType:  "test.event",
-			OccurredAt: time.Now().UTC(),
-			Version:    1,
-			Payload:    payloadBytes,
-		}
-		envBytes, _ := json.Marshal(env)
+		envBytes := newTestEnvelopeBytes(t, eventID, "test.event", testPayload{Name: "heidi", Count: 1})
 
 		err := handler(ctx, "test.event", envBytes)
 		if err != nil {

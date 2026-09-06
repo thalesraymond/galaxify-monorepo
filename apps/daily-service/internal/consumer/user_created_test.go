@@ -34,6 +34,32 @@ func (f *fakeTx) Exec(ctx context.Context, sql string, args ...any) (pgconn.Comm
 	return pgconn.NewCommandTag("INSERT 0 1"), nil
 }
 
+func newTestConsumerEnvelope(eventType string) events.Envelope {
+	return events.Envelope{
+		EventId:    uuid.New().String(),
+		EventType:  eventType,
+		OccurredAt: time.Now().UTC(),
+		Version:    1,
+	}
+}
+
+func assertSingleExecUUID(t *testing.T, tx *fakeTx, expectedUUID pgtype.UUID) {
+	t.Helper()
+	if len(tx.execCalls) != 1 {
+		t.Fatalf("expected 1 exec call, got %d", len(tx.execCalls))
+	}
+	if len(tx.execCalls[0].args) != 1 {
+		t.Fatalf("expected 1 arg to exec call, got %d", len(tx.execCalls[0].args))
+	}
+	gotUUID, ok := tx.execCalls[0].args[0].(pgtype.UUID)
+	if !ok {
+		t.Fatalf("expected arg to be pgtype.UUID, got %T", tx.execCalls[0].args[0])
+	}
+	if gotUUID != expectedUUID {
+		t.Fatalf("expected UUID %v, got %v", expectedUUID, gotUUID)
+	}
+}
+
 func TestHandleUserCreated(t *testing.T) {
 	ctx := context.Background()
 
@@ -45,12 +71,7 @@ func TestHandleUserCreated(t *testing.T) {
 			t.Fatalf("failed to parse test uuid: %v", err)
 		}
 
-		env := events.Envelope{
-			EventId:    uuid.New().String(),
-			EventType:  "user.created",
-			OccurredAt: time.Now().UTC(),
-			Version:    1,
-		}
+		env := newTestConsumerEnvelope("user.created")
 		data := events.UserCreated{
 			Version:  1,
 			UserID:   userID,
@@ -58,34 +79,16 @@ func TestHandleUserCreated(t *testing.T) {
 			Username: "pilot",
 		}
 
-		err = HandleUserCreated(ctx, tx, env, data)
-		if err != nil {
+		if err := HandleUserCreated(ctx, tx, env, data); err != nil {
 			t.Fatalf("expected nil error, got %v", err)
 		}
 
-		if len(tx.execCalls) != 1 {
-			t.Fatalf("expected 1 exec call, got %d", len(tx.execCalls))
-		}
-		if len(tx.execCalls[0].args) != 1 {
-			t.Fatalf("expected 1 arg to exec call, got %d", len(tx.execCalls[0].args))
-		}
-		gotUUID, ok := tx.execCalls[0].args[0].(pgtype.UUID)
-		if !ok {
-			t.Fatalf("expected arg to be pgtype.UUID, got %T", tx.execCalls[0].args[0])
-		}
-		if gotUUID != expectedUUID {
-			t.Fatalf("expected UUID %v, got %v", expectedUUID, gotUUID)
-		}
+		assertSingleExecUUID(t, tx, expectedUUID)
 	})
 
 	t.Run("returns error when user_id is not a valid UUID", func(t *testing.T) {
 		tx := &fakeTx{}
-		env := events.Envelope{
-			EventId:    uuid.New().String(),
-			EventType:  "user.created",
-			OccurredAt: time.Now().UTC(),
-			Version:    1,
-		}
+		env := newTestConsumerEnvelope("user.created")
 		data := events.UserCreated{
 			Version:  1,
 			UserID:   "invalid-uuid",
@@ -93,8 +96,7 @@ func TestHandleUserCreated(t *testing.T) {
 			Username: "pilot",
 		}
 
-		err := HandleUserCreated(ctx, tx, env, data)
-		if err == nil {
+		if err := HandleUserCreated(ctx, tx, env, data); err == nil {
 			t.Fatal("expected error on invalid user_id, got nil")
 		}
 		if len(tx.execCalls) != 0 {
@@ -105,17 +107,10 @@ func TestHandleUserCreated(t *testing.T) {
 	t.Run("propagates database error", func(t *testing.T) {
 		dbErr := errors.New("db error")
 		tx := &fakeTx{execErr: dbErr}
-		userID := uuid.New().String()
-
-		env := events.Envelope{
-			EventId:    uuid.New().String(),
-			EventType:  "user.created",
-			OccurredAt: time.Now().UTC(),
-			Version:    1,
-		}
+		env := newTestConsumerEnvelope("user.created")
 		data := events.UserCreated{
 			Version:  1,
-			UserID:   userID,
+			UserID:   uuid.New().String(),
 			Email:    "pilot@galaxify.io",
 			Username: "pilot",
 		}

@@ -46,7 +46,8 @@ type IdempotencyStore interface {
 
 ```go
 // ConsumerOption configures pipeline options (e.g. custom logger).
-type ConsumerOption func(*consumerConfig)
+// In pkg/events, ConsumerOption is aliased to Option, enabling reuse of WithLogger.
+type ConsumerOption = Option
 
 // NewIdempotentHandler constructs an events.HandlerFunc that decodes payload T,
 // ensures idempotency against processed_events, and executes handler inside an atomic tx.
@@ -62,7 +63,7 @@ The returned `HandlerFunc` has signature:
 ```go
 type HandlerFunc func(ctx context.Context, eventType string, payload []byte) error
 ```
-This plugs directly into `subscriber.Consume(ctx, eventType, handler)` with zero changes required to `pkg/events.Subscriber`.
+This plugs directly into `subscriber.On(eventType, handler)` with zero changes required to `pkg/events.Subscriber`.
 
 ---
 
@@ -166,7 +167,7 @@ func HandleUserCreated(ctx context.Context, tx pgx.Tx, env events.Envelope, data
 ### 4.2. Wiring in `main.go`
 
 ```go
-subscriber.Consume(ctx, "user.created", events.NewIdempotentHandler(
+subscriber.On("user.created", events.NewIdempotentHandler(
     pool,
     func(tx pgx.Tx) events.IdempotencyStore { return database.New(tx) },
     consumer.HandleUserCreated,
