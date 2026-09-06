@@ -133,7 +133,7 @@ func TestCreateDaily(t *testing.T) {
 					if input.Description != "scan surface" {
 						t.Errorf("description = %q, want scan surface", input.Description)
 					}
-					if input.Difficulty != "MEDIUM" {
+					if input.Difficulty != daily.DifficultyMedium {
 						t.Errorf("difficulty = %q, want MEDIUM", input.Difficulty)
 					}
 					if !input.DueDate.Equal(dueDate) {
@@ -144,9 +144,9 @@ func TestCreateDaily(t *testing.T) {
 						UserID:      userID,
 						Title:       "Explore Mars",
 						Description: "scan surface",
-						Difficulty:  "MEDIUM",
+						Difficulty:  daily.DifficultyMedium,
 						DueDate:     dueDate,
-						Status:      "PENDING",
+						Status:      daily.StatusPending,
 						CreatedAt:   createdAt,
 						UpdatedAt:   createdAt,
 					}, nil
@@ -290,9 +290,9 @@ func TestListDailies(t *testing.T) {
 							ID:         dailyID,
 							UserID:     userID,
 							Title:      "Explore Mars",
-							Difficulty: "EASY",
+							Difficulty: daily.DifficultyEasy,
 							DueDate:    dueDate,
-							Status:     "PENDING",
+							Status:     daily.StatusPending,
 							CreatedAt:  createdAt,
 							UpdatedAt:  createdAt,
 						},
@@ -320,7 +320,7 @@ func TestListDailies(t *testing.T) {
 					if id != userID {
 						t.Errorf("user_id = %v, want %v", id, userID)
 					}
-					if filter.Status == nil || *filter.Status != "PENDING" {
+					if filter.Status == nil || *filter.Status != daily.StatusPending {
 						t.Errorf("status filter = %v, want PENDING", filter.Status)
 					}
 					wantDate := time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC)
@@ -332,9 +332,9 @@ func TestListDailies(t *testing.T) {
 							ID:         dailyID,
 							UserID:     userID,
 							Title:      "Explore Mars",
-							Difficulty: "EASY",
+							Difficulty: daily.DifficultyEasy,
 							DueDate:    dueDate,
-							Status:     "PENDING",
+							Status:     daily.StatusPending,
 							CreatedAt:  createdAt,
 							UpdatedAt:  createdAt,
 						},
@@ -347,6 +347,12 @@ func TestListDailies(t *testing.T) {
 					t.Fatalf("len(dailies) = %d, want 1", len(resp))
 				}
 			},
+		},
+		{
+			name:           "invalid status filter returns 422",
+			path:           "/dailies?status=INVALID_STATUS",
+			wantStatus:     http.StatusUnprocessableEntity,
+			wantFieldError: map[string]string{"status": "must be one of: PENDING, COMPLETED, MISSED"},
 		},
 		{
 			name:           "invalid date filter returns 422",
@@ -456,9 +462,9 @@ func TestGetDaily(t *testing.T) {
 						ID:         dailyID,
 						UserID:     userID,
 						Title:      "Explore Mars",
-						Difficulty: "HARD",
+						Difficulty: daily.DifficultyHard,
 						DueDate:    dueDate,
-						Status:     "PENDING",
+						Status:     daily.StatusPending,
 						CreatedAt:  createdAt,
 						UpdatedAt:  createdAt,
 					}, nil
@@ -578,9 +584,9 @@ func TestUpdateDaily(t *testing.T) {
 						ID:          dailyID,
 						UserID:      userID,
 						Title:       "Colonize Mars",
-						Difficulty:  "MEDIUM",
+						Difficulty:  daily.DifficultyMedium,
 						DueDate:     dueDate,
-						Status:      "PENDING",
+						Status:      daily.StatusPending,
 						CreatedAt:   createdAt,
 						UpdatedAt:   updatedAt,
 					}, nil
@@ -612,9 +618,9 @@ func TestUpdateDaily(t *testing.T) {
 						ID:          dailyID,
 						UserID:      userID,
 						Title:       "Explore Mars",
-						Difficulty:  "MEDIUM",
+						Difficulty:  daily.DifficultyMedium,
 						DueDate:     newDueDate,
-						Status:      "PENDING",
+						Status:      daily.StatusPending,
 						CreatedAt:   createdAt,
 						UpdatedAt:   updatedAt,
 					}, nil
@@ -827,8 +833,8 @@ func TestCompleteDaily(t *testing.T) {
 						ID:         dailyID,
 						UserID:     userID,
 						Title:      "Explore Mars",
-						Difficulty: "HARD",
-						Status:     "COMPLETED",
+						Difficulty: daily.DifficultyHard,
+						Status:     daily.StatusCompleted,
 						DueDate:    dueDate,
 						CreatedAt:  createdAt,
 						UpdatedAt:  createdAt,

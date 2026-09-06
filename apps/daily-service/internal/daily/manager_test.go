@@ -158,7 +158,7 @@ func TestDailyManager_Create(t *testing.T) {
 			UserID:      userID,
 			Title:       "Test task",
 			Description: "Do something",
-			Difficulty:  "MEDIUM",
+			Difficulty:  DifficultyMedium,
 			DueDate:     now.Add(24 * time.Hour),
 		})
 		if err != nil {
@@ -167,7 +167,7 @@ func TestDailyManager_Create(t *testing.T) {
 		if item.ID != dailyID {
 			t.Errorf("ID = %v, want %v", item.ID, dailyID)
 		}
-		if item.Status != "PENDING" {
+		if item.Status != StatusPending {
 			t.Errorf("Status = %v, want PENDING", item.Status)
 		}
 	})
@@ -177,7 +177,7 @@ func TestDailyManager_Create(t *testing.T) {
 			UserID:      userID,
 			Title:       "Test task",
 			Description: "Do something",
-			Difficulty:  "EXTREME",
+			Difficulty:  Difficulty("EXTREME"),
 			DueDate:     now.Add(24 * time.Hour),
 		})
 		if !errors.Is(err, ErrInvalidDifficulty) {
@@ -257,12 +257,12 @@ func TestDailyManager_List(t *testing.T) {
 	})
 
 	t.Run("filters by status and date", func(t *testing.T) {
-		statusFilter := "PENDING"
+		statusFilter := StatusPending
 		dateFilter := time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC)
 
 		store := &mockStore{
 			listDailies: func(ctx context.Context, arg database.ListDailiesParams) ([]database.Daily, error) {
-				if !arg.Status.Valid || arg.Status.String != statusFilter {
+				if !arg.Status.Valid || arg.Status.String != string(statusFilter) {
 					t.Errorf("status = %v, want %v", arg.Status.String, statusFilter)
 				}
 				if !arg.DueDate.Valid || !arg.DueDate.Time.Equal(dateFilter) {
@@ -353,7 +353,7 @@ func TestDailyManager_Update(t *testing.T) {
 	})
 
 	t.Run("returns ErrInvalidDifficulty when difficulty is invalid", func(t *testing.T) {
-		invalidDiff := "SUPER_HARD"
+		invalidDiff := Difficulty("SUPER_HARD")
 		mgr := NewDailyManager(nil, nil, nil, nil)
 		_, err := mgr.Update(context.Background(), userID, dailyID, UpdateInput{Difficulty: &invalidDiff})
 		if !errors.Is(err, ErrInvalidDifficulty) {
@@ -446,7 +446,7 @@ func TestDailyManager_Complete(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if item.Status != "COMPLETED" {
+		if item.Status != StatusCompleted {
 			t.Errorf("Status = %v, want COMPLETED", item.Status)
 		}
 		if !tx.committed {

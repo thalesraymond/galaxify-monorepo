@@ -6,15 +6,59 @@ import (
 	"github.com/google/uuid"
 )
 
+// Difficulty represents the task difficulty level.
+type Difficulty string
+
+// Valid difficulty levels
+const (
+	DifficultyEasy   Difficulty = "EASY"
+	DifficultyMedium Difficulty = "MEDIUM"
+	DifficultyHard   Difficulty = "HARD"
+)
+
+var validDifficulties = map[Difficulty]struct{}{
+	DifficultyEasy:   {},
+	DifficultyMedium: {},
+	DifficultyHard:   {},
+}
+
+// IsValidDifficulty checks if the given difficulty tier is supported.
+func IsValidDifficulty(d Difficulty) bool {
+	_, ok := validDifficulties[d]
+	return ok
+}
+
+// Status represents the state of a daily task in its lifecycle.
+type Status string
+
+// Valid task statuses
+const (
+	StatusPending   Status = "PENDING"
+	StatusCompleted Status = "COMPLETED"
+	StatusMissed    Status = "MISSED"
+)
+
+var validStatuses = map[Status]struct{}{
+	StatusPending:   {},
+	StatusCompleted: {},
+	StatusMissed:    {},
+}
+
+// IsValidStatus checks if the given status is supported.
+func IsValidStatus(s Status) bool {
+	_, ok := validStatuses[s]
+	return ok
+}
+
 // Daily represents a task in the domain model.
 type Daily struct {
 	ID          uuid.UUID
 	UserID      uuid.UUID
 	Title       string
 	Description string
-	Difficulty  string
+	Difficulty  Difficulty
 	DueDate     time.Time
-	Status      string
+	Status      Status
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
@@ -24,32 +68,13 @@ type CreateInput struct {
 	UserID      uuid.UUID
 	Title       string
 	Description string
-	Difficulty  string
+	Difficulty  Difficulty
 	DueDate     time.Time
-}
-
-// Valid difficulty levels
-const (
-	DifficultyEasy   = "EASY"
-	DifficultyMedium = "MEDIUM"
-	DifficultyHard   = "HARD"
-)
-
-var validDifficulties = map[string]struct{}{
-	DifficultyEasy:   {},
-	DifficultyMedium: {},
-	DifficultyHard:   {},
-}
-
-// IsValidDifficulty checks if the given difficulty tier is supported.
-func IsValidDifficulty(d string) bool {
-	_, ok := validDifficulties[d]
-	return ok
 }
 
 // ListFilter defines optional filtering criteria when querying dailies.
 type ListFilter struct {
-	Status *string
+	Status *Status
 	Date   *time.Time
 }
 
@@ -57,6 +82,6 @@ type ListFilter struct {
 type UpdateInput struct {
 	Title       *string
 	Description *string
-	Difficulty  *string
+	Difficulty  *Difficulty
 	DueDate     *time.Time
 }

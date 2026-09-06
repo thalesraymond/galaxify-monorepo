@@ -118,7 +118,7 @@ func (h *DailyHandler) CreateDaily(w http.ResponseWriter, r *http.Request, userI
 		UserID:      userUUID,
 		Title:       req.Title,
 		Description: req.Description,
-		Difficulty:  req.Difficulty,
+		Difficulty:  daily.Difficulty(req.Difficulty),
 		DueDate:     dueDate,
 	})
 	if err != nil {
@@ -144,7 +144,12 @@ func (h *DailyHandler) ListDailies(w http.ResponseWriter, r *http.Request, userI
 	q := r.URL.Query()
 
 	if status := q.Get("status"); status != "" {
-		filter.Status = &status
+		s := daily.Status(status)
+		if !daily.IsValidStatus(s) {
+			sharedhttp.WriteValidationError(w, map[string]string{"status": "must be one of: PENDING, COMPLETED, MISSED"})
+			return
+		}
+		filter.Status = &s
 	}
 
 	dateParam := q.Get("date")
@@ -234,7 +239,8 @@ func (h *DailyHandler) UpdateDaily(w http.ResponseWriter, r *http.Request, userI
 		input.Description = &req.Description
 	}
 	if req.Difficulty != "" {
-		input.Difficulty = &req.Difficulty
+		d := daily.Difficulty(req.Difficulty)
+		input.Difficulty = &d
 	}
 	if dueDate != nil {
 		input.DueDate = dueDate
@@ -324,7 +330,7 @@ func validateCreateDailyRequest(req createDailyRequest) (map[string]string, time
 	if req.Title == "" {
 		fieldErrors["title"] = "title is required"
 	}
-	if !daily.IsValidDifficulty(req.Difficulty) {
+	if !daily.IsValidDifficulty(daily.Difficulty(req.Difficulty)) {
 		fieldErrors["difficulty"] = "must be one of: EASY, MEDIUM, HARD"
 	}
 	dueDate, err := time.Parse(time.RFC3339, req.DueDate)
@@ -337,7 +343,7 @@ func validateCreateDailyRequest(req createDailyRequest) (map[string]string, time
 func validateUpdateDailyRequest(req updateDailyRequest) (map[string]string, *time.Time) {
 	fieldErrors := make(map[string]string)
 	if req.Difficulty != "" {
-		if !daily.IsValidDifficulty(req.Difficulty) {
+		if !daily.IsValidDifficulty(daily.Difficulty(req.Difficulty)) {
 			fieldErrors["difficulty"] = "must be one of: EASY, MEDIUM, HARD"
 		}
 	}
@@ -358,9 +364,9 @@ func dailyToResponse(item daily.Daily) dailyResponse {
 		UserID:      item.UserID.String(),
 		Title:       item.Title,
 		Description: item.Description,
-		Difficulty:  item.Difficulty,
+		Difficulty:  string(item.Difficulty),
 		DueDate:     formatTime(item.DueDate),
-		Status:      item.Status,
+		Status:      string(item.Status),
 		CreatedAt:   formatTime(item.CreatedAt),
 		UpdatedAt:   formatTime(item.UpdatedAt),
 	}

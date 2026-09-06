@@ -101,7 +101,7 @@ func (m *DailyManager) Create(ctx context.Context, input CreateInput) (Daily, er
 		UserID:      pgUserID,
 		Title:       input.Title,
 		Description: input.Description,
-		Difficulty:  input.Difficulty,
+		Difficulty:  string(input.Difficulty),
 		DueDate:     pgtype.Timestamptz{Time: input.DueDate, Valid: true},
 	})
 	if err != nil {
@@ -131,7 +131,7 @@ func (m *DailyManager) List(ctx context.Context, userID uuid.UUID, filter ListFi
 		UserID: pgtype.UUID{Bytes: userID, Valid: true},
 	}
 	if filter.Status != nil {
-		params.Status = pgtype.Text{String: *filter.Status, Valid: true}
+		params.Status = pgtype.Text{String: string(*filter.Status), Valid: true}
 	}
 	if filter.Date != nil {
 		params.DueDate = pgtype.Date{Time: *filter.Date, Valid: true}
@@ -175,7 +175,7 @@ func (m *DailyManager) Update(ctx context.Context, userID, id uuid.UUID, input U
 		params.Description = pgtype.Text{String: *input.Description, Valid: true}
 	}
 	if input.Difficulty != nil {
-		params.Difficulty = pgtype.Text{String: *input.Difficulty, Valid: true}
+		params.Difficulty = pgtype.Text{String: string(*input.Difficulty), Valid: true}
 	}
 	if input.DueDate != nil {
 		params.DueDate = pgtype.Timestamptz{Time: *input.DueDate, Valid: true}
@@ -238,7 +238,7 @@ func (m *DailyManager) Delete(ctx context.Context, userID, id uuid.UUID) error {
 			}
 			return fmt.Errorf("get daily: %w", getErr)
 		}
-		if existing.Status != "PENDING" {
+		if existing.Status != string(StatusPending) {
 			return ErrDailyNotPending
 		}
 		return fmt.Errorf("delete daily: 0 rows affected")
@@ -280,10 +280,10 @@ func (m *DailyManager) Complete(ctx context.Context, userID, id uuid.UUID) (Dail
 				}
 				return Daily{}, fmt.Errorf("get daily: %w", getErr)
 			}
-			if existing.Status == "COMPLETED" {
+			if existing.Status == string(StatusCompleted) {
 				return Daily{}, ErrDailyAlreadyCompleted
 			}
-			if existing.Status != "PENDING" {
+			if existing.Status != string(StatusPending) {
 				return Daily{}, ErrDailyNotPending
 			}
 		}
@@ -337,9 +337,9 @@ func toDomainDaily(row database.Daily) Daily {
 		UserID:      userID,
 		Title:       row.Title,
 		Description: row.Description,
-		Difficulty:  row.Difficulty,
+		Difficulty:  Difficulty(row.Difficulty),
 		DueDate:     dueDate,
-		Status:      row.Status,
+		Status:      Status(row.Status),
 		CreatedAt:   createdAt,
 		UpdatedAt:   updatedAt,
 	}
