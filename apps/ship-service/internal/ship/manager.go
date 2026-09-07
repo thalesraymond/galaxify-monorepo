@@ -36,6 +36,7 @@ type State struct {
 
 // Manager executes ship lifecycle operations.
 type Manager interface {
+	Get(ctx context.Context, userID uuid.UUID) (State, error)
 	Repair(ctx context.Context, userID uuid.UUID) (State, error)
 }
 
@@ -61,15 +62,20 @@ func newManager(store store, eventPublisher publisher.EventPublisher, roll repai
 	return &manager{store: store, eventPublisher: eventPublisher, roll: roll}
 }
 
+// Get retrieves the current state of a user's ship.
+func (m *manager) Get(ctx context.Context, userID uuid.UUID) (State, error) {
+	current, err := m.getShip(ctx, userID)
+	if err != nil {
+		return State{}, err
+	}
+	return stateFromDatabase(current), nil
+}
+
 // Repair spends materials to restore hull health and publishes the resulting state.
 func (m *manager) Repair(ctx context.Context, userID uuid.UUID) (State, error) {
-	parsedUserID := pgtype.UUID{Bytes: userID, Valid: true}
-	current, err := m.store.GetByUser(ctx, parsedUserID)
+	current, err := m.getShip(ctx, userID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return State{}, ErrNotFound
-		}
-		return State{}, fmt.Errorf("get ship: %w", err)
+		return State{}, err
 	}
 	if current.HullHealth == 100 {
 		return State{}, ErrHullFull
@@ -79,7 +85,7 @@ func (m *manager) Repair(ctx context.Context, userID uuid.UUID) (State, error) {
 	}
 
 	materialsToUse, hullToRestore := m.repairAmounts(current)
-	updated, err := m.store.Repair(ctx, database.RepairParams{UserID: parsedUserID, MaterialsBalance: materialsToUse, HullHealth: hullToRestore})
+	updated, err := m.store.Repair(ctx, database.RepairParams{UserID: current.UserID, MaterialsBalance: materialsToUse, HullHealth: hullToRestore})
 	if err != nil {
 		return State{}, fmt.Errorf("repair ship: %w", err)
 	}
@@ -93,6 +99,18 @@ func (m *manager) Repair(ctx context.Context, userID uuid.UUID) (State, error) {
 		return State{}, fmt.Errorf("publish ship status: %w", err)
 	}
 	return state, nil
+}
+
+func (m *manager) getShip(ctx context.Context, userID uuid.UUID) (database.Ship, error) {
+	parsedUserID := pgtype.UUID{Bytes: userID, Valid: true}
+	current, err := m.store.GetByUser(ctx, parsedUserID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return database.Ship{}, ErrNotFound
+		}
+		return database.Ship{}, fmt.Errorf("get ship: %w", err)
+	}
+	return current, nil
 }
 
 func (m *manager) repairAmounts(current database.Ship) (materialsToUse, hullToRestore int32) {

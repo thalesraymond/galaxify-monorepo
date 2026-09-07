@@ -22,7 +22,15 @@ import (
 )
 
 type mockShipManager struct {
+	get    func(context.Context, uuid.UUID) (ship.State, error)
 	repair func(context.Context, uuid.UUID) (ship.State, error)
+}
+
+func (m *mockShipManager) Get(ctx context.Context, userID uuid.UUID) (ship.State, error) {
+	if m.get == nil {
+		return ship.State{}, errors.New("unexpected Get call")
+	}
+	return m.get(ctx, userID)
 }
 
 func (m *mockShipManager) Repair(ctx context.Context, userID uuid.UUID) (ship.State, error) {
@@ -129,4 +137,103 @@ func TestShipHandlerRepairRequiresAuthentication(t *testing.T) {
 
 	sharedhttptest.WantStatus(t, rec, http.StatusUnauthorized)
 	sharedhttptest.WantErrorCode(t, rec, "AUTH_MISSING_HEADER")
+}
+
+func TestShipHandlerGetMe(t *testing.T) {
+	userID := uuid.New()
+	updatedAt := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
+	state := ship.State{
+		UserID:           userID,
+		HullHealth:       100,
+		MaterialsBalance: 15,
+		Level:            1,
+		UpdatedAt:        updatedAt,
+	}
+
+	tests := []struct {
+		name           string
+		tokenUserID    string
+		noAuthHeader   bool
+		getErr         error
+		wantStatus     int
+		wantErrorCode  string
+		wantCallUserID uuid.UUID
+	}{
+		{
+			name:           "happy path: valid token and ship exists returns 200 with ship state",
+			tokenUserID:    userID.String(),
+			wantStatus:     http.StatusOK,
+			wantCallUserID: userID,
+		},
+		{
+			name:           "ship not found returns 404 SHIP_NOT_FOUND",
+			tokenUserID:    userID.String(),
+			getErr:         ship.ErrNotFound,
+			wantStatus:     http.StatusNotFound,
+			wantErrorCode:  "SHIP_NOT_FOUND",
+			wantCallUserID: userID,
+		},
+		{
+			name:           "invalid user id returns 422 VALIDATION_FAILED",
+			tokenUserID:    "not-a-uuid",
+			wantStatus:     http.StatusUnprocessableEntity,
+			wantErrorCode:  "VALIDATION_FAILED",
+			wantCallUserID: uuid.Nil,
+		},
+		{
+			name:           "internal error returns 500 INTERNAL_ERROR",
+			tokenUserID:    userID.String(),
+			getErr:         errors.New("database unavailable"),
+			wantStatus:     http.StatusInternalServerError,
+			wantErrorCode:  "INTERNAL_ERROR",
+			wantCallUserID: userID,
+		},
+		{
+			name:           "missing auth header returns 401 AUTH_MISSING_HEADER",
+			noAuthHeader:   true,
+			wantStatus:     http.StatusUnauthorized,
+			wantErrorCode:  "AUTH_MISSING_HEADER",
+			wantCallUserID: uuid.Nil,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var calledUserID uuid.UUID
+			manager := &mockShipManager{
+				get: func(_ context.Context, gotUserID uuid.UUID) (ship.State, error) {
+					calledUserID = gotUserID
+					return state, test.getErr
+				},
+			}
+			router, signer := newTestShipRouter(t, manager)
+			req := httptest.NewRequest(http.MethodGet, "/ships/me", nil)
+			if !test.noAuthHeader {
+				req.Header.Set("Authorization", "Bearer "+signer.token(t, test.tokenUserID))
+			}
+			rec := httptest.NewRecorder()
+
+			router.ServeHTTP(rec, req)
+
+			sharedhttptest.WantStatus(t, rec, test.wantStatus)
+			if test.wantErrorCode != "" {
+				sharedhttptest.WantErrorCode(t, rec, test.wantErrorCode)
+			}
+			if calledUserID != test.wantCallUserID {
+				t.Errorf("manager called with user_id = %s, want %s", calledUserID, test.wantCallUserID)
+			}
+			if test.wantErrorCode != "" {
+				return
+			}
+			var response shipResponse
+			sharedhttptest.DecodeBody(t, rec, &response)
+			if response.UserID != userID.String() ||
+				response.HullHealth != state.HullHealth ||
+				response.MaterialsBalance != state.MaterialsBalance ||
+				response.Level != state.Level ||
+				response.UpdatedAt != updatedAt.Format(time.RFC3339Nano) {
+				t.Errorf("response = %+v, want ship state %+v", response, state)
+			}
+		})
+	}
 }

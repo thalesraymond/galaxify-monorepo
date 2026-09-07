@@ -131,6 +131,73 @@ func TestManagerRepair(t *testing.T) {
 	}
 }
 
+func TestManagerGet(t *testing.T) {
+	userID := uuid.New()
+	wantShip := testShip(userID, 85, 10)
+	wantState := State{
+		UserID:           userID,
+		HullHealth:       85,
+		MaterialsBalance: 10,
+		Level:            2,
+		UpdatedAt:        testTime,
+	}
+
+	tests := []struct {
+		name      string
+		current   database.Ship
+		getErr    error
+		wantErr   error
+		wantState State
+	}{
+		{
+			name:      "returns ship state when found",
+			current:   wantShip,
+			wantState: wantState,
+		},
+		{
+			name:    "returns ErrNotFound when ship does not exist",
+			getErr:  pgx.ErrNoRows,
+			wantErr: ErrNotFound,
+		},
+		{
+			name:    "wraps store errors",
+			getErr:  errors.New("database unavailable"),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := &mockStore{
+				getByUser: func(_ context.Context, gotUserID pgtype.UUID) (database.Ship, error) {
+					if gotUserID.Bytes != userID {
+						t.Errorf("get user_id = %s, want %s", gotUserID.Bytes, userID)
+					}
+					return test.current, test.getErr
+				},
+			}
+			manager := newManager(store, &recordingPublisher{}, nil)
+
+			state, err := manager.Get(context.Background(), userID)
+
+			if test.wantErr != nil {
+				if !errors.Is(err, test.wantErr) {
+					t.Fatalf("error = %v, want %v", err, test.wantErr)
+				}
+				return
+			}
+			if test.getErr != nil && err == nil {
+				t.Fatal("expected an error")
+			}
+			if err != nil {
+				return
+			}
+			if state != test.wantState {
+				t.Errorf("state = %+v, want %+v", state, test.wantState)
+			}
+		})
+	}
+}
+
 var testTime = time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
 
 func testShip(userID uuid.UUID, hullHealth, materialsBalance int32) database.Ship {
