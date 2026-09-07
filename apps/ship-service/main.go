@@ -17,6 +17,7 @@ import (
 	"github.com/thalesraymond/galaxify-monorepo/apps/ship-service/internal/consumer"
 	"github.com/thalesraymond/galaxify-monorepo/apps/ship-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/apps/ship-service/internal/handler"
+	"github.com/thalesraymond/galaxify-monorepo/apps/ship-service/internal/publisher"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/rabbitmq"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
@@ -86,9 +87,24 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("create subscriber: %w", err)
 	}
 
+	idempotencyStoreFactory := func(tx pgx.Tx) events.IdempotencyStore { return database.New(tx) }
+	eventPublisher := publisher.NewNoOpPublisher()
+
 	subscriber.On("user.created", consumer.NewUserCreatedHandler(
 		pool,
-		func(tx pgx.Tx) events.IdempotencyStore { return database.New(tx) },
+		idempotencyStoreFactory,
+		events.WithLogger(logger),
+	))
+	subscriber.On("daily.completed", consumer.NewDailyCompletedHandler(
+		pool,
+		idempotencyStoreFactory,
+		eventPublisher,
+		events.WithLogger(logger),
+	))
+	subscriber.On("daily.missed", consumer.NewDailyMissedHandler(
+		pool,
+		idempotencyStoreFactory,
+		eventPublisher,
 		events.WithLogger(logger),
 	))
 

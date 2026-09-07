@@ -204,7 +204,7 @@ func (f *fullFakeTx) Rollback(ctx context.Context) error {
 type fakeTxStarter struct {
 	beginCalls int
 	beginErr   error
-	tx         *fullFakeTx
+	tx         pgx.Tx
 }
 
 func (f *fakeTxStarter) Begin(ctx context.Context) (pgx.Tx, error) {
