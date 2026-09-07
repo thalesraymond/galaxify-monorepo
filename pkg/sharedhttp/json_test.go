@@ -41,6 +41,12 @@ func TestWriteJSON(t *testing.T) {
 			body:         nil,
 			expectedBody: "null\n",
 		},
+		{
+			name:         "encoding failure (unsupported type)",
+			status:       http.StatusInternalServerError,
+			body:         make(chan int),
+			expectedBody: "",
+		},
 	}
 
 	for _, tt := range tests {
