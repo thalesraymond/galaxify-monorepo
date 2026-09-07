@@ -29,3 +29,18 @@ func TestApplyOptions(t *testing.T) {
 		}
 	})
 }
+
+func TestWithLogger(t *testing.T) {
+	customLogger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	opt := WithLogger(customLogger)
+
+	o := &options{}
+	opt(o)
+
+	if o.logger == nil {
+		t.Fatal("expected logger to not be nil")
+	}
+	if o.logger != customLogger {
+		t.Errorf("expected logger to be customLogger, got %v", o.logger)
+	}
+}
