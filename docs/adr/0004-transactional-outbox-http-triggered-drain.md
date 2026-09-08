@@ -1,6 +1,6 @@
 # ADR-0004: Transactional outbox pattern with HTTP-triggered drain
 
-- **Status:** Accepted
+- **Status:** Superseded in part by ADR-0013
 - **Date:** 2026-08-31
 - **Source:** Phase 1 cross-cutting ticket [#11](https://github.com/thalesraymond/galaxify-monorepo/issues/11)
 
@@ -87,8 +87,8 @@ independent goroutine):
 
 ## Consequences
 
-- Every publishing service (User, Daily, Ship) owns its `outbox` table.
-  Expedition only consumes, so no outbox.
+- Every publishing service (User, Daily, Ship, and Expedition) owns its `outbox` table.
+  Expedition's ownership is recorded in ADR-0013.
 - The `outbox` table grows unboundedly. A nightly cron truncates rows where
   `published_at < now() - 30 days` (or `status = 'PUBLISHED'`).
 - Event latency is **coupled to user activity**: if a row sits in `outbox` and
