@@ -12,7 +12,7 @@ CREATE TABLE expeditions (
 );
 
 CREATE INDEX expeditions_user_id_idx ON expeditions (user_id);
-CREATE INDEX expeditions_current_idx ON expeditions (user_id, status)
+CREATE UNIQUE INDEX expeditions_current_idx ON expeditions (user_id, status)
     WHERE status = 'IN_FLIGHT';
 CREATE INDEX expeditions_resolve_at_idx ON expeditions (status, resolve_at)
     WHERE status = 'IN_FLIGHT';
