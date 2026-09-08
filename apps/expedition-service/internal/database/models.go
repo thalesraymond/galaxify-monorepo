@@ -8,6 +8,35 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Expedition struct {
+	ID                pgtype.UUID
+	UserID            pgtype.UUID
+	MaterialsInvested int32
+	SuccessChance     float64
+	ResolveAt         pgtype.Timestamptz
+	Status            string
+	CreatedAt         pgtype.Timestamptz
+	ResolvedAt        pgtype.Timestamptz
+}
+
+type ExpeditionResult struct {
+	ID            pgtype.UUID
+	ExpeditionID  pgtype.UUID
+	Outcome       string
+	RewardSummary []byte
+	CreatedAt     pgtype.Timestamptz
+}
+
+type Outbox struct {
+	ID          int64
+	EventID     pgtype.UUID
+	EventType   string
+	Payload     []byte
+	Status      string
+	CreatedAt   pgtype.Timestamptz
+	PublishedAt pgtype.Timestamptz
+}
+
 type ProcessedEvent struct {
 	EventID     pgtype.UUID
 	ProcessedAt pgtype.Timestamptz
@@ -16,4 +45,11 @@ type ProcessedEvent struct {
 type TestTable struct {
 	ID   int64
 	Name string
+}
+
+type UserShipStateCache struct {
+	UserID           pgtype.UUID
+	HullHealth       int32
+	MaterialsBalance int32
+	UpdatedAt        pgtype.Timestamptz
 }

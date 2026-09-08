@@ -14,10 +14,18 @@ type Querier interface {
 	CreateTestTable(ctx context.Context, name string) (TestTable, error)
 	DeleteOldProcessedEvents(ctx context.Context) (int64, error)
 	DeleteTestTable(ctx context.Context, id int64) error
+	GetByID(ctx context.Context, id pgtype.UUID) (Expedition, error)
+	GetCurrentByUser(ctx context.Context, userID pgtype.UUID) (Expedition, error)
+	GetLastResolveAt(ctx context.Context, userID pgtype.UUID) (pgtype.Timestamptz, error)
+	GetShipCache(ctx context.Context, userID pgtype.UUID) (UserShipStateCache, error)
 	GetTestTable(ctx context.Context, id int64) (TestTable, error)
+	InsertExpedition(ctx context.Context, arg InsertExpeditionParams) (Expedition, error)
+	InsertExpeditionResult(ctx context.Context, arg InsertExpeditionResultParams) (ExpeditionResult, error)
 	InsertProcessedEvent(ctx context.Context, eventID pgtype.UUID) (int64, error)
+	ListByUser(ctx context.Context, arg ListByUserParams) ([]Expedition, error)
 	ListTestTables(ctx context.Context) ([]TestTable, error)
 	UpdateTestTable(ctx context.Context, arg UpdateTestTableParams) (TestTable, error)
+	UpsertShipCache(ctx context.Context, arg UpsertShipCacheParams) (UserShipStateCache, error)
 }
 
 var _ Querier = (*Queries)(nil)
