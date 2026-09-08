@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -14,7 +15,7 @@ import (
 )
 
 const (
-	// shipNotFoundCode identifies a repair request for an unprovisioned ship.
+	// shipNotFoundCode identifies an unprovisioned ship.
 	shipNotFoundCode = "SHIP_NOT_FOUND"
 	// shipHullFullCode identifies a repair request for a fully restored hull.
 	shipHullFullCode = "SHIP_HULL_FULL"
@@ -22,21 +23,45 @@ const (
 	shipInsufficientMaterialsCode = "SHIP_INSUFFICIENT_MATERIALS"
 )
 
+type shipManager interface {
+	Get(ctx context.Context, userID uuid.UUID) (ship.State, error)
+	Repair(ctx context.Context, userID uuid.UUID) (ship.State, error)
+}
+
 // ShipHandler translates authenticated ship HTTP requests to the ship domain.
 type ShipHandler struct {
-	manager       ship.Manager
+	manager       shipManager
 	authHandshake *sharedhttp.AuthHandshake
 	logger        *slog.Logger
 }
 
 // NewShipHandler creates a ShipHandler.
-func NewShipHandler(manager ship.Manager, authHandshake *sharedhttp.AuthHandshake, logger *slog.Logger) *ShipHandler {
+func NewShipHandler(manager shipManager, authHandshake *sharedhttp.AuthHandshake, logger *slog.Logger) *ShipHandler {
 	return &ShipHandler{manager: manager, authHandshake: authHandshake, logger: logger}
 }
 
 // RegisterShipRoutes wires auth-protected ship routes into mux.
 func (h *ShipHandler) RegisterShipRoutes(mux *http.ServeMux) {
+	mux.Handle("GET /ships/me", h.authHandshake.RequireAuth(h.GetMe))
 	mux.Handle("POST /ships/repair", h.authHandshake.RequireAuth(h.Repair))
+}
+
+// GetMe returns the authenticated user's ship state.
+func (h *ShipHandler) GetMe(w http.ResponseWriter, r *http.Request, userID string) {
+	parsedUserID, ok := h.parseUserID(w, userID)
+	if !ok {
+		return
+	}
+	state, err := h.manager.Get(r.Context(), parsedUserID)
+	if err != nil {
+		if errors.Is(err, ship.ErrNotFound) {
+			sharedhttp.WriteError(w, http.StatusNotFound, shipNotFoundCode, "Ship not found")
+			return
+		}
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+		return
+	}
+	sharedhttp.WriteJSON(w, http.StatusOK, shipToResponse(state))
 }
 
 // Repair spends available materials to restore the authenticated user's hull.
@@ -46,9 +71,8 @@ func (h *ShipHandler) Repair(w http.ResponseWriter, r *http.Request, userID stri
 		return
 	}
 
-	parsedUserID, err := uuid.Parse(userID)
-	if err != nil {
-		sharedhttp.WriteValidationError(w, map[string]string{"user_id": "invalid UUID"})
+	parsedUserID, ok := h.parseUserID(w, userID)
+	if !ok {
 		return
 	}
 	state, err := h.manager.Repair(r.Context(), parsedUserID)
@@ -66,6 +90,15 @@ func (h *ShipHandler) Repair(w http.ResponseWriter, r *http.Request, userID stri
 		return
 	}
 	sharedhttp.WriteJSON(w, http.StatusOK, shipToResponse(state))
+}
+
+func (h *ShipHandler) parseUserID(w http.ResponseWriter, userID string) (uuid.UUID, bool) {
+	parsedUserID, err := uuid.Parse(userID)
+	if err != nil {
+		sharedhttp.WriteValidationError(w, map[string]string{"user_id": "invalid UUID"})
+		return uuid.Nil, false
+	}
+	return parsedUserID, true
 }
 
 func rejectNonEmptyBody(r *http.Request) error {
