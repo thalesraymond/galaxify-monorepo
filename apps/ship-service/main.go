@@ -113,6 +113,18 @@ func run(logger *slog.Logger) error {
 		eventPublisher,
 		events.WithLogger(logger),
 	))
+	subscriber.On("expedition.launched", consumer.NewExpeditionLaunchedHandler(
+		pool,
+		idempotencyStoreFactory,
+		eventPublisher,
+		events.WithLogger(logger),
+	))
+	subscriber.On("expedition.completed", consumer.NewExpeditionCompletedHandler(
+		pool,
+		idempotencyStoreFactory,
+		eventPublisher,
+		events.WithLogger(logger),
+	))
 
 	if err := subscriber.Start(subCtx); err != nil {
 		return fmt.Errorf("start subscriber: %w", err)
