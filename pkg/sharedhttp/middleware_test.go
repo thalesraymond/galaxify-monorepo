@@ -89,20 +89,13 @@ func newMockJWKSCache() *mockJWKSCache {
 	}
 }
 
-func (m *mockJWKSCache) GetKey(kid string) (crypto.PublicKey, bool) {
 func (m *mockJWKSCache) GetKey(ctx context.Context, kid string) (crypto.PublicKey, error) {
 	key, ok := m.keys[kid]
-	return key, ok
 	if !ok {
 		m.forceRefreshCalled = true
 		return nil, auth.ErrUnknownKeyID
 	}
 	return key, nil
-}
-
-func (m *mockJWKSCache) ForceRefresh(ctx context.Context) error {
-	m.forceRefreshCalled = true
-	return nil
 }
 
 func (m *mockJWKSCache) AddKey(kid string, key ed25519.PublicKey) {
@@ -111,11 +104,9 @@ func (m *mockJWKSCache) AddKey(kid string, key ed25519.PublicKey) {
 
 func TestRequireAuth_MissingAuthorizationHeader(t *testing.T) {
 	cache := newMockJWKSCache()
-	handler := RequireAuth(cache)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	hs := NewAuthHandshake(cache)
 	handler := hs.RequireAuth(func(w http.ResponseWriter, r *http.Request, userID string) {
 		t.Error("handler should not be called")
-	}))
 	})
 
 	req := httptest.NewRequest("GET", "/protected", nil)
@@ -129,10 +120,6 @@ func TestRequireAuth_MissingAuthorizationHeader(t *testing.T) {
 }
 
 func TestRequireAuth_MalformedBearerToken(t *testing.T) {
-	cache := newMockJWKSCache()
-	handler := RequireAuth(cache)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Error("handler should not be called")
-	}))
 	tests := []struct {
 		name       string
 		authHeader string
@@ -145,9 +132,6 @@ func TestRequireAuth_MalformedBearerToken(t *testing.T) {
 		{name: "malformed token string", authHeader: "Bearer invalid-token-string"},
 	}
 
-	req := httptest.NewRequest("GET", "/protected", nil)
-	req.Header.Set("Authorization", "InvalidFormat")
-	rec := httptest.NewRecorder()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cache := newMockJWKSCache()
@@ -156,13 +140,10 @@ func TestRequireAuth_MalformedBearerToken(t *testing.T) {
 				t.Error("handler should not be called")
 			})
 
-	handler.ServeHTTP(rec, req)
 			req := httptest.NewRequest("GET", "/protected", nil)
 			req.Header.Set("Authorization", tt.authHeader)
 			rec := httptest.NewRecorder()
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 			handler.ServeHTTP(rec, req)
 
 			if rec.Code != http.StatusUnauthorized {
@@ -193,15 +174,12 @@ func TestRequireAuth_ValidToken(t *testing.T) {
 
 	// Track if handler was called
 	handlerCalled := false
-	handler := RequireAuth(cache)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	handler := hs.RequireAuth(func(w http.ResponseWriter, r *http.Request, userID string) {
 		handlerCalled = true
-		userID := UserIDFromContext(r.Context())
 		if userID != "user-123" {
 			t.Errorf("userID = %q, want user-123", userID)
 		}
 		w.WriteHeader(http.StatusOK)
-	}))
 	})
 
 	req := httptest.NewRequest("GET", "/protected", nil)
@@ -238,11 +216,9 @@ func TestRequireAuth_ExpiredToken(t *testing.T) {
 	cache := newMockJWKSCache()
 	cache.AddKey("key-1", priv.Public().(ed25519.PublicKey))
 
-	handler := RequireAuth(cache)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	hs := NewAuthHandshake(cache)
 	handler := hs.RequireAuth(func(w http.ResponseWriter, r *http.Request, userID string) {
 		t.Error("handler should not be called")
-	}))
 	})
 
 	req := httptest.NewRequest("GET", "/protected", nil)
@@ -270,11 +246,9 @@ func TestRequireAuth_UnknownKidForceRefresh(t *testing.T) {
 	cache := newMockJWKSCache()
 	// Don't add the key - should trigger force refresh
 
-	handler := RequireAuth(cache)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	hs := NewAuthHandshake(cache)
 	handler := hs.RequireAuth(func(w http.ResponseWriter, r *http.Request, userID string) {
 		t.Error("handler should not be called")
-	}))
 	})
 
 	req := httptest.NewRequest("GET", "/protected", nil)

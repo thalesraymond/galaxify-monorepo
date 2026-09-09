@@ -62,7 +62,6 @@ func TestNewSimpleJWKSCache(t *testing.T) {
 func TestSimpleJWKSCache_GetKey(t *testing.T) {
 	t.Parallel()
 
-	t.Run("returns key when present", func(t *testing.T) {
 	t.Run("returns key when fetched successfully", func(t *testing.T) {
 		t.Parallel()
 
@@ -71,18 +70,9 @@ func TestSimpleJWKSCache_GetKey(t *testing.T) {
 		cache := NewSimpleJWKSCache("http://example.com/jwks")
 		cache.fetchFn = mockFetchJWKS([]JWK{jwk}, nil)
 
-		// Populate cache
-		if err := cache.ForceRefresh(context.Background()); err != nil {
-			t.Fatalf("ForceRefresh failed: %v", err)
 		gotKey, err := cache.GetKey(context.Background(), "key-1")
 		if err != nil {
 			t.Fatalf("GetKey failed: %v", err)
-		}
-
-		// Retrieve key
-		gotKey, ok := cache.GetKey("key-1")
-		if !ok {
-			t.Fatal("expected key to be found")
 		}
 
 		gotPub, ok := gotKey.(ed25519.PublicKey)
@@ -95,16 +85,12 @@ func TestSimpleJWKSCache_GetKey(t *testing.T) {
 		}
 	})
 
-	t.Run("returns false when key not present", func(t *testing.T) {
 	t.Run("returns ErrUnknownKeyID when key not present after fetch", func(t *testing.T) {
 		t.Parallel()
 
 		cache := NewSimpleJWKSCache("http://example.com/jwks")
 		cache.fetchFn = mockFetchJWKS([]JWK{}, nil)
 
-		gotKey, ok := cache.GetKey("nonexistent")
-		if ok {
-			t.Error("expected key not to be found")
 		gotKey, err := cache.GetKey(context.Background(), "nonexistent")
 		if !errors.Is(err, ErrUnknownKeyID) {
 			t.Errorf("expected ErrUnknownKeyID, got %v", err)
@@ -124,11 +110,6 @@ func TestSimpleJWKSCache_GetKey(t *testing.T) {
 		cache := NewSimpleJWKSCache("http://example.com/jwks")
 		cache.fetchFn = mockFetchJWKS([]JWK{jwk1, jwk2, jwk3}, nil)
 
-		if err := cache.ForceRefresh(context.Background()); err != nil {
-			t.Fatalf("ForceRefresh failed: %v", err)
-		}
-
-		// Verify each key
 		tests := []struct {
 			kid     string
 			wantPub ed25519.PublicKey
@@ -139,9 +120,6 @@ func TestSimpleJWKSCache_GetKey(t *testing.T) {
 		}
 
 		for _, tt := range tests {
-			gotKey, ok := cache.GetKey(tt.kid)
-			if !ok {
-				t.Errorf("key %q not found", tt.kid)
 			gotKey, err := cache.GetKey(context.Background(), tt.kid)
 			if err != nil {
 				t.Errorf("key %q not found, err: %v", tt.kid, err)
@@ -155,11 +133,9 @@ func TestSimpleJWKSCache_GetKey(t *testing.T) {
 	})
 }
 
-func TestSimpleJWKSCache_ForceRefresh(t *testing.T) {
 func TestSimpleJWKSCache_RefreshBehavior(t *testing.T) {
 	t.Parallel()
 
-	t.Run("populates cache from JWKS", func(t *testing.T) {
 	t.Run("replaces cache on refresh", func(t *testing.T) {
 		t.Parallel()
 
@@ -167,31 +143,23 @@ func TestSimpleJWKSCache_RefreshBehavior(t *testing.T) {
 		jwk2, _, _ := generateTestJWK(t, "key-2")
 
 		cache := NewSimpleJWKSCache("http://example.com/jwks")
-		cache.fetchFn = mockFetchJWKS([]JWK{jwk1, jwk2}, nil)
 		cache.SetMinRefreshInterval(0)
 
-		if err := cache.ForceRefresh(context.Background()); err != nil {
-			t.Fatalf("ForceRefresh failed: %v", err)
 		cache.fetchFn = mockFetchJWKS([]JWK{jwk1}, nil)
 		if _, err := cache.GetKey(context.Background(), "key-1"); err != nil {
 			t.Fatalf("first GetKey failed: %v", err)
 		}
 
-		if _, ok := cache.GetKey("key-1"); !ok {
-			t.Error("key-1 not found after refresh")
 		cache.fetchFn = mockFetchJWKS([]JWK{jwk2}, nil)
 		if _, err := cache.GetKey(context.Background(), "key-2"); err != nil {
 			t.Fatalf("second GetKey failed: %v", err)
 		}
-		if _, ok := cache.GetKey("key-2"); !ok {
-			t.Error("key-2 not found after refresh")
 
 		if _, err := cache.GetKey(context.Background(), "key-1"); !errors.Is(err, ErrUnknownKeyID) {
 			t.Error("key-1 should not exist after rotation")
 		}
 	})
 
-	t.Run("replaces cache on refresh", func(t *testing.T) {
 	t.Run("throttles rapid refreshes within minRefreshInterval", func(t *testing.T) {
 		t.Parallel()
 
@@ -211,36 +179,18 @@ func TestSimpleJWKSCache_RefreshBehavior(t *testing.T) {
 		cache.SetMinRefreshInterval(10 * time.Second)
 		cache.fetchFn = fetchFn
 
-		// First refresh with key-1
-		cache.fetchFn = mockFetchJWKS([]JWK{jwk1}, nil)
-		if err := cache.ForceRefresh(context.Background()); err != nil {
-			t.Fatalf("first ForceRefresh failed: %v", err)
 		if _, err := cache.GetKey(context.Background(), "key-1"); err != nil {
 			t.Fatalf("first GetKey failed: %v", err)
 		}
-
-		if _, ok := cache.GetKey("key-1"); !ok {
-			t.Error("key-1 not found after first refresh")
 		if fetchCount != 1 {
 			t.Fatalf("fetchCount = %d, want 1", fetchCount)
 		}
 
-		// Second refresh with key-2 (simulates key rotation)
-		cache.fetchFn = mockFetchJWKS([]JWK{jwk2}, nil)
-		if err := cache.ForceRefresh(context.Background()); err != nil {
-			t.Fatalf("second ForceRefresh failed: %v", err)
 		if _, err := cache.GetKey(context.Background(), "key-2"); !errors.Is(err, ErrUnknownKeyID) {
 			t.Fatalf("expected ErrUnknownKeyID due to throttling")
 		}
-
-		// key-1 should be gone, key-2 should be present
-		if _, ok := cache.GetKey("key-1"); ok {
-			t.Error("key-1 should not exist after rotation")
 		if fetchCount != 1 {
 			t.Fatalf("fetchCount = %d, want 1 (should have been throttled)", fetchCount)
-		}
-		if _, ok := cache.GetKey("key-2"); !ok {
-			t.Error("key-2 not found after rotation")
 		}
 	})
 
@@ -249,10 +199,8 @@ func TestSimpleJWKSCache_RefreshBehavior(t *testing.T) {
 
 		validJWK, _, _ := generateTestJWK(t, "valid-key")
 
-		// Create an invalid JWK (wrong curve)
 		invalidJWK := JWK{
 			Kty: "OKP",
-			Crv: "P-256", // wrong curve
 			Crv: "P-256",
 			X:   "abc123",
 			Kid: "invalid-key",
@@ -261,19 +209,10 @@ func TestSimpleJWKSCache_RefreshBehavior(t *testing.T) {
 		cache := NewSimpleJWKSCache("http://example.com/jwks")
 		cache.fetchFn = mockFetchJWKS([]JWK{validJWK, invalidJWK}, nil)
 
-		if err := cache.ForceRefresh(context.Background()); err != nil {
-			t.Fatalf("ForceRefresh failed: %v", err)
 		if _, err := cache.GetKey(context.Background(), "valid-key"); err != nil {
 			t.Fatalf("valid-key not found: %v", err)
 		}
 
-		// Valid key should be present
-		if _, ok := cache.GetKey("valid-key"); !ok {
-			t.Error("valid-key not found")
-		}
-
-		// Invalid key should be skipped
-		if _, ok := cache.GetKey("invalid-key"); ok {
 		if _, err := cache.GetKey(context.Background(), "invalid-key"); !errors.Is(err, ErrUnknownKeyID) {
 			t.Error("invalid-key should have been skipped")
 		}
@@ -285,28 +224,9 @@ func TestSimpleJWKSCache_RefreshBehavior(t *testing.T) {
 		cache := NewSimpleJWKSCache("http://example.com/jwks")
 		cache.fetchFn = mockFetchJWKS(nil, errors.New("network error"))
 
-		err := cache.ForceRefresh(context.Background())
-		if err == nil {
-			t.Fatal("expected error, got nil")
 		_, err := cache.GetKey(context.Background(), "key-1")
 		if err == nil || errors.Is(err, ErrUnknownKeyID) {
 			t.Fatalf("expected fetch error, got %v", err)
-		}
-	})
-
-	t.Run("handles empty JWKS", func(t *testing.T) {
-		t.Parallel()
-
-		cache := NewSimpleJWKSCache("http://example.com/jwks")
-		cache.fetchFn = mockFetchJWKS([]JWK{}, nil)
-
-		if err := cache.ForceRefresh(context.Background()); err != nil {
-			t.Fatalf("ForceRefresh failed: %v", err)
-		}
-
-		// Cache should be empty but not error
-		if len(cache.keys) != 0 {
-			t.Errorf("expected empty cache, got %d keys", len(cache.keys))
 		}
 	})
 }
@@ -468,38 +388,17 @@ func TestSimpleJWKSCache_ConcurrentAccess(t *testing.T) {
 	cache := NewSimpleJWKSCache("http://example.com/jwks")
 	cache.fetchFn = mockFetchJWKS([]JWK{jwk}, nil)
 
-	// Populate cache
-	if err := cache.ForceRefresh(context.Background()); err != nil {
-		t.Fatalf("ForceRefresh failed: %v", err)
-	}
-
-	// Run concurrent reads and writes
 	done := make(chan bool)
 
-	// Concurrent readers
-	for i := 0; i < 10; i++ {
 	for i := 0; i < 15; i++ {
 		go func() {
 			for j := 0; j < 100; j++ {
-				cache.GetKey("key-1")
 				cache.GetKey(context.Background(), "key-1")
 			}
 			done <- true
 		}()
 	}
 
-	// Concurrent writers
-	for i := 0; i < 3; i++ {
-		go func() {
-			for j := 0; j < 10; j++ {
-				cache.ForceRefresh(context.Background())
-			}
-			done <- true
-		}()
-	}
-
-	// Wait for all goroutines
-	for i := 0; i < 13; i++ {
 	for i := 0; i < 15; i++ {
 		<-done
 	}
