@@ -1,3 +1,11 @@
+-- name: SeedShipCache :exec
+INSERT INTO user_ship_state_cache (
+    user_id, hull_health, materials_balance
+) VALUES (
+    $1, $2, $3
+)
+ON CONFLICT (user_id) DO NOTHING;
+
 -- name: UpsertShipCache :one
 INSERT INTO user_ship_state_cache (
     user_id, hull_health, materials_balance

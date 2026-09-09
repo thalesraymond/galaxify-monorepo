@@ -91,9 +91,15 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("create subscriber: %w", err)
 	}
+	idempotencyStoreFactory := func(tx pgx.Tx) events.IdempotencyStore { return database.New(tx) }
 	subscriber.On("ship.status_updated", consumer.NewShipStatusUpdatedHandler(
 		pool,
-		func(tx pgx.Tx) events.IdempotencyStore { return database.New(tx) },
+		idempotencyStoreFactory,
+		events.WithLogger(logger),
+	))
+	subscriber.On("user.created", consumer.NewUserCreatedHandler(
+		pool,
+		idempotencyStoreFactory,
 		events.WithLogger(logger),
 	))
 	if err := subscriber.Start(subCtx); err != nil {
