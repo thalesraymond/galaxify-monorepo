@@ -10,6 +10,14 @@ RETURNING *;
 SELECT * FROM expeditions
 WHERE id = $1;
 
+-- name: GetByIDAndUser :one
+SELECT * FROM expeditions
+WHERE id = $1 AND user_id = $2;
+
+-- name: GetResultByExpedition :one
+SELECT * FROM expedition_results
+WHERE expedition_id = $1;
+
 -- name: GetCurrentByUser :one
 SELECT * FROM expeditions
 WHERE user_id = $1 AND status = 'IN_FLIGHT'

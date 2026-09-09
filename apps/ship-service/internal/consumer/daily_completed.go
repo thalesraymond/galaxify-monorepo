@@ -7,7 +7,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/thalesraymond/galaxify-monorepo/apps/ship-service/internal/database"
-	"github.com/thalesraymond/galaxify-monorepo/apps/ship-service/internal/publisher"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
@@ -20,7 +19,7 @@ func HandleDailyCompleted(
 	tx pgx.Tx,
 	_ events.Envelope,
 	data events.DailyCompleted,
-	eventPublisher publisher.EventPublisher,
+	eventPublisher events.EventPublisher,
 ) error {
 	userID, err := sharedhttp.ParseUUID(data.UserID)
 	if err != nil {
@@ -45,7 +44,7 @@ func HandleDailyCompleted(
 func NewDailyCompletedHandler(
 	pool events.TxStarter,
 	storeFactory func(tx pgx.Tx) events.IdempotencyStore,
-	eventPublisher publisher.EventPublisher,
+	eventPublisher events.EventPublisher,
 	opts ...events.ConsumerOption,
 ) events.HandlerFunc {
 	return events.NewIdempotentHandler(
@@ -60,7 +59,7 @@ func NewDailyCompletedHandler(
 
 func publishShipStatus(
 	ctx context.Context,
-	eventPublisher publisher.EventPublisher,
+	eventPublisher events.EventPublisher,
 	userID string,
 	ship database.Ship,
 ) error {

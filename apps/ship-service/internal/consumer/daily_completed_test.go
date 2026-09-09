@@ -61,7 +61,7 @@ type recordingPublisher struct {
 	err   error
 }
 
-func (p *recordingPublisher) Publish(ctx context.Context, eventType string, payload any) error {
+func (p *recordingPublisher) Publish(ctx context.Context, eventType string, payload any, _ ...events.PublishOption) error {
 	p.calls = append(p.calls, publishCall{eventType: eventType, payload: payload})
 	return p.err
 }

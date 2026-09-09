@@ -31,6 +31,15 @@ type Publisher struct {
 	logger  *slog.Logger
 }
 
+// EventPublisher publishes domain events using the Galaxify event envelope.
+// It is satisfied by Publisher and lets domain packages substitute a recorder
+// in unit tests.
+type EventPublisher interface {
+	Publish(ctx context.Context, eventType string, payload any, opts ...PublishOption) error
+}
+
+var _ EventPublisher = (*Publisher)(nil)
+
 // PublishOption configures a single Publish call.
 type PublishOption func(*publishOptions)
 

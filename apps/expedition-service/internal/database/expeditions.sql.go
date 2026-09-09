@@ -32,6 +32,32 @@ func (q *Queries) GetByID(ctx context.Context, id pgtype.UUID) (Expedition, erro
 	return i, err
 }
 
+const getByIDAndUser = `-- name: GetByIDAndUser :one
+SELECT id, user_id, materials_invested, success_chance, resolve_at, status, created_at, resolved_at FROM expeditions
+WHERE id = $1 AND user_id = $2
+`
+
+type GetByIDAndUserParams struct {
+	ID     pgtype.UUID
+	UserID pgtype.UUID
+}
+
+func (q *Queries) GetByIDAndUser(ctx context.Context, arg GetByIDAndUserParams) (Expedition, error) {
+	row := q.db.QueryRow(ctx, getByIDAndUser, arg.ID, arg.UserID)
+	var i Expedition
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.MaterialsInvested,
+		&i.SuccessChance,
+		&i.ResolveAt,
+		&i.Status,
+		&i.CreatedAt,
+		&i.ResolvedAt,
+	)
+	return i, err
+}
+
 const getCurrentByUser = `-- name: GetCurrentByUser :one
 SELECT id, user_id, materials_invested, success_chance, resolve_at, status, created_at, resolved_at FROM expeditions
 WHERE user_id = $1 AND status = 'IN_FLIGHT'
@@ -67,6 +93,24 @@ func (q *Queries) GetLastResolveAt(ctx context.Context, userID pgtype.UUID) (pgt
 	var resolve_at pgtype.Timestamptz
 	err := row.Scan(&resolve_at)
 	return resolve_at, err
+}
+
+const getResultByExpedition = `-- name: GetResultByExpedition :one
+SELECT id, expedition_id, outcome, reward_summary, created_at FROM expedition_results
+WHERE expedition_id = $1
+`
+
+func (q *Queries) GetResultByExpedition(ctx context.Context, expeditionID pgtype.UUID) (ExpeditionResult, error) {
+	row := q.db.QueryRow(ctx, getResultByExpedition, expeditionID)
+	var i ExpeditionResult
+	err := row.Scan(
+		&i.ID,
+		&i.ExpeditionID,
+		&i.Outcome,
+		&i.RewardSummary,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const insertExpedition = `-- name: InsertExpedition :one
