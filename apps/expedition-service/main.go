@@ -11,9 +11,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/thalesraymond/galaxify-monorepo/apps/expedition-service/internal/consumer"
+	"github.com/thalesraymond/galaxify-monorepo/apps/expedition-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/apps/expedition-service/internal/handler"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/rabbitmq"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
@@ -51,10 +55,10 @@ func run(logger *slog.Logger) error {
 	defer cancel()
 
 	// Long-lived context for the event subscriber. The startup ctx above has a
-	// 15s timeout and must NOT be reused for handlers — it expires shortly
+	// 15s timeout and must not be reused for handlers — it expires shortly
 	// after boot, so every handler would fail with "context deadline exceeded".
-	// subCtx, subCancel := context.WithCancel(context.Background())
-	// defer subCancel()
+	subCtx, subCancel := context.WithCancel(context.Background())
+	defer subCancel()
 
 	pool, err := pgxpool.New(timeoutCtx, dbURL)
 	if err != nil {
@@ -71,6 +75,37 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer conn.Close()
+
+	ch, err := conn.Channel()
+	if err != nil {
+		return fmt.Errorf("create channel: %w", err)
+	}
+
+	// NewPublisher declares galaxify.events and its alternate-exchange safety net.
+	// The returned publisher is intentionally unused until Expedition emits lifecycle events.
+	if _, err := events.NewPublisher(ch, events.WithLogger(logger)); err != nil {
+		return fmt.Errorf("declare event topology: %w", err)
+	}
+
+	subscriber, err := events.NewSubscriber(ch, serviceName, events.WithLogger(logger))
+	if err != nil {
+		return fmt.Errorf("create subscriber: %w", err)
+	}
+	subscriber.On("ship.status_updated", consumer.NewShipStatusUpdatedHandler(
+		pool,
+		func(tx pgx.Tx) events.IdempotencyStore { return database.New(tx) },
+		events.WithLogger(logger),
+	))
+	if err := subscriber.Start(subCtx); err != nil {
+		return fmt.Errorf("start subscriber: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := subscriber.Shutdown(shutdownCtx); err != nil {
+			logger.Error("shutdown subscriber", "error", err)
+		}
+	}()
 
 	logger.Info(serviceName + ": connected to PostgreSQL and RabbitMQ")
 
