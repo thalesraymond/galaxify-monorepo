@@ -17,7 +17,6 @@ import (
 	"github.com/thalesraymond/galaxify-monorepo/apps/ship-service/internal/consumer"
 	"github.com/thalesraymond/galaxify-monorepo/apps/ship-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/apps/ship-service/internal/handler"
-	"github.com/thalesraymond/galaxify-monorepo/apps/ship-service/internal/publisher"
 	"github.com/thalesraymond/galaxify-monorepo/apps/ship-service/internal/ship"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
@@ -92,7 +91,10 @@ func run(logger *slog.Logger) error {
 	}
 
 	idempotencyStoreFactory := func(tx pgx.Tx) events.IdempotencyStore { return database.New(tx) }
-	eventPublisher := publisher.NewNoOpPublisher()
+	eventPublisher, err := events.NewPublisher(ch, events.WithLogger(logger))
+	if err != nil {
+		return fmt.Errorf("create event publisher: %w", err)
+	}
 
 	subscriber.On("user.created", consumer.NewUserCreatedHandler(
 		pool,

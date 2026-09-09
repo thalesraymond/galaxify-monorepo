@@ -13,7 +13,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/thalesraymond/galaxify-monorepo/apps/ship-service/internal/database"
-	"github.com/thalesraymond/galaxify-monorepo/apps/ship-service/internal/publisher"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 )
 
@@ -49,16 +48,16 @@ type repairRoll func() int
 
 type manager struct {
 	store          store
-	eventPublisher publisher.EventPublisher
+	eventPublisher events.EventPublisher
 	roll           repairRoll
 }
 
 // NewManager constructs the ship lifecycle manager.
-func NewManager(store store, eventPublisher publisher.EventPublisher) Manager {
+func NewManager(store store, eventPublisher events.EventPublisher) Manager {
 	return newManager(store, eventPublisher, func() int { return rand.IntN(6) - 2 })
 }
 
-func newManager(store store, eventPublisher publisher.EventPublisher, roll repairRoll) *manager {
+func newManager(store store, eventPublisher events.EventPublisher, roll repairRoll) *manager {
 	return &manager{store: store, eventPublisher: eventPublisher, roll: roll}
 }
 

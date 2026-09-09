@@ -33,7 +33,7 @@ type recordingPublisher struct {
 	err       error
 }
 
-func (p *recordingPublisher) Publish(_ context.Context, eventType string, payload any) error {
+func (p *recordingPublisher) Publish(_ context.Context, eventType string, payload any, _ ...events.PublishOption) error {
 	p.eventType, p.payload = eventType, payload
 	return p.err
 }
@@ -160,8 +160,8 @@ func TestManagerGet(t *testing.T) {
 			wantErr: ErrNotFound,
 		},
 		{
-			name:    "wraps store errors",
-			getErr:  errors.New("database unavailable"),
+			name:   "wraps store errors",
+			getErr: errors.New("database unavailable"),
 		},
 	}
 
