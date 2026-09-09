@@ -28,6 +28,26 @@ func (q *Queries) GetShipCache(ctx context.Context, userID pgtype.UUID) (UserShi
 	return i, err
 }
 
+const seedShipCache = `-- name: SeedShipCache :exec
+INSERT INTO user_ship_state_cache (
+    user_id, hull_health, materials_balance
+) VALUES (
+    $1, $2, $3
+)
+ON CONFLICT (user_id) DO NOTHING
+`
+
+type SeedShipCacheParams struct {
+	UserID           pgtype.UUID
+	HullHealth       int32
+	MaterialsBalance int32
+}
+
+func (q *Queries) SeedShipCache(ctx context.Context, arg SeedShipCacheParams) error {
+	_, err := q.db.Exec(ctx, seedShipCache, arg.UserID, arg.HullHealth, arg.MaterialsBalance)
+	return err
+}
+
 const upsertShipCache = `-- name: UpsertShipCache :one
 INSERT INTO user_ship_state_cache (
     user_id, hull_health, materials_balance

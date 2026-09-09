@@ -24,6 +24,7 @@ type Querier interface {
 	InsertProcessedEvent(ctx context.Context, eventID pgtype.UUID) (int64, error)
 	ListByUser(ctx context.Context, arg ListByUserParams) ([]Expedition, error)
 	ListTestTables(ctx context.Context) ([]TestTable, error)
+	SeedShipCache(ctx context.Context, arg SeedShipCacheParams) error
 	UpdateTestTable(ctx context.Context, arg UpdateTestTableParams) (TestTable, error)
 	UpsertShipCache(ctx context.Context, arg UpsertShipCacheParams) (UserShipStateCache, error)
 }
