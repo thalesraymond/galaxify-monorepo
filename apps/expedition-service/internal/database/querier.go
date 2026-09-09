@@ -15,8 +15,10 @@ type Querier interface {
 	DeleteOldProcessedEvents(ctx context.Context) (int64, error)
 	DeleteTestTable(ctx context.Context, id int64) error
 	GetByID(ctx context.Context, id pgtype.UUID) (Expedition, error)
+	GetByIDAndUser(ctx context.Context, arg GetByIDAndUserParams) (Expedition, error)
 	GetCurrentByUser(ctx context.Context, userID pgtype.UUID) (Expedition, error)
 	GetLastResolveAt(ctx context.Context, userID pgtype.UUID) (pgtype.Timestamptz, error)
+	GetResultByExpedition(ctx context.Context, expeditionID pgtype.UUID) (ExpeditionResult, error)
 	GetShipCache(ctx context.Context, userID pgtype.UUID) (UserShipStateCache, error)
 	GetTestTable(ctx context.Context, id int64) (TestTable, error)
 	InsertExpedition(ctx context.Context, arg InsertExpeditionParams) (Expedition, error)

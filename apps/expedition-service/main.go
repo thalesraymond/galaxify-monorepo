@@ -16,7 +16,9 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/thalesraymond/galaxify-monorepo/apps/expedition-service/internal/consumer"
 	"github.com/thalesraymond/galaxify-monorepo/apps/expedition-service/internal/database"
+	"github.com/thalesraymond/galaxify-monorepo/apps/expedition-service/internal/expedition"
 	"github.com/thalesraymond/galaxify-monorepo/apps/expedition-service/internal/handler"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/rabbitmq"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
@@ -30,6 +32,7 @@ const (
 	defaultDatabaseURL = "postgres://postgres:password@localhost:5434/expedition_db"
 	defaultRabbitMQURL = "amqp://guest:guest@localhost:5672/"
 	defaultHTTPAddr    = ":8084"
+	defaultJWKSURL     = "http://localhost:8081/.well-known/jwks.json"
 )
 
 func main() {
@@ -50,6 +53,7 @@ func run(logger *slog.Logger) error {
 	dbURL := envOr("DATABASE_URL", defaultDatabaseURL)
 	amqpURL := envOr("RABBITMQ_URL", defaultRabbitMQURL)
 	httpAddr := envOr("HTTP_ADDR", defaultHTTPAddr)
+	jwksURL := envOr("JWKS_URL", defaultJWKSURL)
 
 	timeoutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -114,9 +118,15 @@ func run(logger *slog.Logger) error {
 	}()
 
 	logger.Info(serviceName + ": connected to PostgreSQL and RabbitMQ")
+	jwksCache := auth.NewSimpleJWKSCache(jwksURL)
+	if err := jwksCache.ForceRefresh(timeoutCtx); err != nil {
+		return fmt.Errorf("warm JWKS cache: %w", err)
+	}
+	authHandshake := sharedhttp.NewAuthHandshake(jwksCache)
 
 	mux := http.NewServeMux()
 	handler.NewHealthHandler(serviceName).RegisterHealthRoutes(mux)
+	handler.NewExpeditionReadHandler(expedition.NewManager(database.New(pool)), authHandshake, logger).RegisterExpeditionReadRoutes(mux)
 
 	srv := &http.Server{
 		Addr:    httpAddr,
