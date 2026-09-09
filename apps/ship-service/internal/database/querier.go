@@ -15,6 +15,7 @@ type Querier interface {
 	ApplyDamage(ctx context.Context, arg ApplyDamageParams) (Ship, error)
 	CreateShip(ctx context.Context, arg CreateShipParams) error
 	CreateTestTable(ctx context.Context, name string) (TestTable, error)
+	DeductMaterials(ctx context.Context, arg DeductMaterialsParams) (Ship, error)
 	DeleteOldProcessedEvents(ctx context.Context) (int64, error)
 	DeleteTestTable(ctx context.Context, id int64) error
 	GetByUser(ctx context.Context, userID pgtype.UUID) (Ship, error)

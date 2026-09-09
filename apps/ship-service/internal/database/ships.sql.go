@@ -78,6 +78,28 @@ func (q *Queries) CreateShip(ctx context.Context, arg CreateShipParams) error {
 	return err
 }
 
+const deductMaterials = `-- name: DeductMaterials :one
+UPDATE ships SET materials_balance = materials_balance - $1, updated_at = now() WHERE user_id = $2 RETURNING user_id, hull_health, materials_balance, level, updated_at
+`
+
+type DeductMaterialsParams struct {
+	MaterialsBalance int32
+	UserID           pgtype.UUID
+}
+
+func (q *Queries) DeductMaterials(ctx context.Context, arg DeductMaterialsParams) (Ship, error) {
+	row := q.db.QueryRow(ctx, deductMaterials, arg.MaterialsBalance, arg.UserID)
+	var i Ship
+	err := row.Scan(
+		&i.UserID,
+		&i.HullHealth,
+		&i.MaterialsBalance,
+		&i.Level,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getByUser = `-- name: GetByUser :one
 SELECT user_id, hull_health, materials_balance, level, updated_at FROM ships WHERE user_id = $1
 `
