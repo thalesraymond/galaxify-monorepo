@@ -3,6 +3,7 @@ package ship
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/thalesraymond/galaxify-monorepo/apps/ship-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
 var (
@@ -39,40 +41,57 @@ type Manager interface {
 	Repair(ctx context.Context, userID uuid.UUID) (State, error)
 }
 
-type store interface {
+// TxStarter abstracts opening the transaction that atomically repairs a ship
+// and stages its status event. *pgxpool.Pool satisfies it in production.
+type TxStarter interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
+}
+
+// Store is the database surface required by the ship manager.
+// *database.Queries satisfies it directly.
+type Store interface {
 	GetByUser(ctx context.Context, userID pgtype.UUID) (database.Ship, error)
 	Repair(ctx context.Context, params database.RepairParams) (database.Ship, error)
+	InsertOutbox(ctx context.Context, arg database.InsertOutboxParams) error
 }
 
 type repairRoll func() int
 
 type manager struct {
-	store          store
-	eventPublisher events.EventPublisher
-	roll           repairRoll
+	store        Store
+	txStarter    TxStarter
+	storeFactory func(tx pgx.Tx) Store
+	roll         repairRoll
 }
 
 // NewManager constructs the ship lifecycle manager.
-func NewManager(store store, eventPublisher events.EventPublisher) Manager {
-	return newManager(store, eventPublisher, func() int { return rand.IntN(6) - 2 })
+func NewManager(store Store, txStarter TxStarter, storeFactory func(tx pgx.Tx) Store) Manager {
+	return newManager(store, txStarter, storeFactory, func() int { return rand.IntN(6) - 2 })
 }
 
-func newManager(store store, eventPublisher events.EventPublisher, roll repairRoll) *manager {
-	return &manager{store: store, eventPublisher: eventPublisher, roll: roll}
+func newManager(store Store, txStarter TxStarter, storeFactory func(tx pgx.Tx) Store, roll repairRoll) *manager {
+	return &manager{store: store, txStarter: txStarter, storeFactory: storeFactory, roll: roll}
 }
 
 // Get retrieves the current state of a user's ship.
 func (m *manager) Get(ctx context.Context, userID uuid.UUID) (State, error) {
-	current, err := m.getShip(ctx, userID)
+	current, err := getShip(ctx, m.store, userID)
 	if err != nil {
 		return State{}, err
 	}
 	return stateFromDatabase(current), nil
 }
 
-// Repair spends materials to restore hull health and publishes the resulting state.
+// Repair spends materials to restore hull health and stages the resulting state.
 func (m *manager) Repair(ctx context.Context, userID uuid.UUID) (State, error) {
-	current, err := m.getShip(ctx, userID)
+	tx, err := m.txStarter.Begin(ctx)
+	if err != nil {
+		return State{}, fmt.Errorf("begin repair transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	store := m.storeFactory(tx)
+	current, err := getShip(ctx, store, userID)
 	if err != nil {
 		return State{}, err
 	}
@@ -84,25 +103,40 @@ func (m *manager) Repair(ctx context.Context, userID uuid.UUID) (State, error) {
 	}
 
 	materialsToUse, hullToRestore := m.repairAmounts(current)
-	updated, err := m.store.Repair(ctx, database.RepairParams{UserID: current.UserID, MaterialsBalance: materialsToUse, HullHealth: hullToRestore})
+	updated, err := store.Repair(ctx, database.RepairParams{UserID: current.UserID, MaterialsBalance: materialsToUse, HullHealth: hullToRestore})
 	if err != nil {
 		return State{}, fmt.Errorf("repair ship: %w", err)
 	}
 	state := stateFromDatabase(updated)
-	if err := m.eventPublisher.Publish(ctx, statusUpdatedEventType, events.ShipStatusUpdated{
+
+	payload, err := json.Marshal(events.ShipStatusUpdated{
 		Version:          1,
 		UserID:           state.UserID.String(),
 		HullHealth:       int(state.HullHealth),
 		MaterialsBalance: int(state.MaterialsBalance),
+	})
+	if err != nil {
+		return State{}, fmt.Errorf("marshal ship status event: %w", err)
+	}
+	requestID := sharedhttp.RequestIDFromContext(ctx)
+	if err := store.InsertOutbox(ctx, database.InsertOutboxParams{
+		EventID:   pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		EventType: statusUpdatedEventType,
+		Payload:   payload,
+		RequestID: pgtype.Text{String: requestID, Valid: requestID != ""},
 	}); err != nil {
-		return State{}, fmt.Errorf("publish ship status: %w", err)
+		return State{}, fmt.Errorf("insert ship status outbox event: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return State{}, fmt.Errorf("commit repair transaction: %w", err)
 	}
 	return state, nil
 }
 
-func (m *manager) getShip(ctx context.Context, userID uuid.UUID) (database.Ship, error) {
+func getShip(ctx context.Context, store Store, userID uuid.UUID) (database.Ship, error) {
 	parsedUserID := pgtype.UUID{Bytes: userID, Valid: true}
-	current, err := m.store.GetByUser(ctx, parsedUserID)
+	current, err := store.GetByUser(ctx, parsedUserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return database.Ship{}, ErrNotFound

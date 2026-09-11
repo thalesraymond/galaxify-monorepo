@@ -11,13 +11,12 @@ import (
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
-// HandleDailyMissed applies damage and publishes the resulting ship state.
+// HandleDailyMissed applies damage and stages the resulting ship state.
 func HandleDailyMissed(
 	ctx context.Context,
 	tx pgx.Tx,
 	_ events.Envelope,
 	data events.DailyMissed,
-	eventPublisher events.EventPublisher,
 ) error {
 	userID, err := sharedhttp.ParseUUID(data.UserID)
 	if err != nil {
@@ -32,7 +31,7 @@ func HandleDailyMissed(
 		return fmt.Errorf("apply damage: %w", err)
 	}
 
-	if err := publishShipStatus(ctx, eventPublisher, data.UserID, ship); err != nil {
+	if err := stageShipStatus(ctx, tx, data.UserID, ship); err != nil {
 		return err
 	}
 	return nil
@@ -42,14 +41,13 @@ func HandleDailyMissed(
 func NewDailyMissedHandler(
 	pool events.TxStarter,
 	storeFactory func(tx pgx.Tx) events.IdempotencyStore,
-	eventPublisher events.EventPublisher,
 	opts ...events.ConsumerOption,
 ) events.HandlerFunc {
 	return events.NewIdempotentHandler(
 		pool,
 		storeFactory,
 		func(ctx context.Context, tx pgx.Tx, env events.Envelope, data events.DailyMissed) error {
-			return HandleDailyMissed(ctx, tx, env, data, eventPublisher)
+			return HandleDailyMissed(ctx, tx, env, data)
 		},
 		opts...,
 	)

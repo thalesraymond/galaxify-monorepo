@@ -2,6 +2,7 @@ package consumer_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -51,23 +52,8 @@ func (f *shipMutationTx) QueryRow(ctx context.Context, sql string, args ...any) 
 	return f.row
 }
 
-type publishCall struct {
-	eventType string
-	payload   any
-}
-
-type recordingPublisher struct {
-	calls []publishCall
-	err   error
-}
-
-func (p *recordingPublisher) Publish(ctx context.Context, eventType string, payload any, _ ...events.PublishOption) error {
-	p.calls = append(p.calls, publishCall{eventType: eventType, payload: payload})
-	return p.err
-}
-
 func TestHandleDailyCompleted(t *testing.T) {
-	t.Run("adds reward to existing materials and publishes updated status", func(t *testing.T) {
+	t.Run("adds reward to existing materials and stages updated status", func(t *testing.T) {
 		userID := uuid.New().String()
 		parsedUserID, err := sharedhttp.ParseUUID(userID)
 		if err != nil {
@@ -79,7 +65,6 @@ func TestHandleDailyCompleted(t *testing.T) {
 			materialsBalance: 17,
 			level:            1,
 		}}}
-		publisher := &recordingPublisher{}
 
 		err = consumer.HandleDailyCompleted(t.Context(), tx, newTestConsumerEnvelope("daily.completed"), events.DailyCompleted{
 			Version:         1,
@@ -87,30 +72,30 @@ func TestHandleDailyCompleted(t *testing.T) {
 			DailyID:         uuid.New().String(),
 			Difficulty:      "MEDIUM",
 			RewardMaterials: 7,
-		}, publisher)
+		})
 		if err != nil {
 			t.Fatalf("HandleDailyCompleted() error = %v", err)
 		}
 
 		assertShipMutationCall(t, tx, parsedUserID, 7, "materials_balance = materials_balance + $2")
-		assertPublishedShipStatus(t, publisher, userID, 83, 17)
+		assertStagedShipStatus(t, tx, userID, 83, 17)
 	})
 
-	t.Run("returns publisher error", func(t *testing.T) {
-		publishErr := errors.New("publish failed")
+	t.Run("returns outbox insert error", func(t *testing.T) {
+		outboxErr := errors.New("outbox insert failed")
 		userID := uuid.New().String()
 		parsedUserID, err := sharedhttp.ParseUUID(userID)
 		if err != nil {
 			t.Fatalf("parse user id: %v", err)
 		}
 		tx := &shipMutationTx{row: fakeRow{ship: fakeShipState{userID: parsedUserID}}}
-		publisher := &recordingPublisher{err: publishErr}
+		tx.execErr = outboxErr
 
 		err = consumer.HandleDailyCompleted(t.Context(), tx, newTestConsumerEnvelope("daily.completed"), events.DailyCompleted{
 			Version: 1, UserID: userID, RewardMaterials: 5,
-		}, publisher)
-		if !errors.Is(err, publishErr) {
-			t.Fatalf("HandleDailyCompleted() error = %v, want wrapped publisher error", err)
+		})
+		if !errors.Is(err, outboxErr) {
+			t.Fatalf("HandleDailyCompleted() error = %v, want wrapped outbox error", err)
 		}
 	})
 }
@@ -129,11 +114,9 @@ func TestNewDailyCompletedHandler(t *testing.T) {
 	}}}
 	starter := &fakeTxStarter{tx: tx}
 	store := &fakeIdempotencyStore{rowsAffected: 1}
-	publisher := &recordingPublisher{}
 	handler := consumer.NewDailyCompletedHandler(
 		starter,
 		func(tx pgx.Tx) events.IdempotencyStore { return store },
-		publisher,
 	)
 	eventID := uuid.New().String()
 
@@ -157,18 +140,16 @@ func TestNewDailyCompletedHandler(t *testing.T) {
 		t.Fatalf("processed event id = %v, want %v", store.insertedIDs[0], expectedEventID)
 	}
 	assertShipMutationCall(t, tx, parsedUserID, 4, "materials_balance = materials_balance + $2")
-	assertPublishedShipStatus(t, publisher, userID, 91, 14)
+	assertStagedShipStatus(t, tx, userID, 91, 14)
 }
 
 func TestNewDailyCompletedHandlerIdempotency(t *testing.T) {
 	tx := &shipMutationTx{}
 	starter := &fakeTxStarter{tx: tx}
 	store := &fakeIdempotencyStore{rowsAffected: 0}
-	publisher := &recordingPublisher{}
 	handler := consumer.NewDailyCompletedHandler(
 		starter,
 		func(tx pgx.Tx) events.IdempotencyStore { return store },
-		publisher,
 	)
 	eventID := uuid.New().String()
 
@@ -181,8 +162,8 @@ func TestNewDailyCompletedHandlerIdempotency(t *testing.T) {
 	if len(tx.queryCalls) != 0 {
 		t.Fatalf("ship mutation calls = %d, want 0", len(tx.queryCalls))
 	}
-	if len(publisher.calls) != 0 {
-		t.Fatalf("publish calls = %d, want 0", len(publisher.calls))
+	if len(tx.execCalls) != 0 {
+		t.Fatalf("outbox insert calls = %d, want 0", len(tx.execCalls))
 	}
 }
 
@@ -205,18 +186,31 @@ func assertShipMutationCall(t *testing.T, tx *shipMutationTx, expectedUserID pgt
 	}
 }
 
-func assertPublishedShipStatus(t *testing.T, publisher *recordingPublisher, expectedUserID string, expectedHull, expectedMaterials int) {
+func assertStagedShipStatus(t *testing.T, tx *shipMutationTx, expectedUserID string, expectedHull, expectedMaterials int) {
 	t.Helper()
-	if len(publisher.calls) != 1 {
-		t.Fatalf("publish calls = %d, want 1", len(publisher.calls))
+	var outboxCalls []execCall
+	for _, call := range tx.execCalls {
+		if strings.Contains(call.sql, "INSERT INTO outbox") {
+			outboxCalls = append(outboxCalls, call)
+		}
 	}
-	call := publisher.calls[0]
-	if call.eventType != "ship.status_updated" {
-		t.Fatalf("event type = %q, want ship.status_updated", call.eventType)
+	if len(outboxCalls) != 1 {
+		t.Fatalf("outbox insert calls = %d, want 1", len(outboxCalls))
 	}
-	payload, ok := call.payload.(events.ShipStatusUpdated)
+	call := outboxCalls[0]
+	if len(call.args) != 4 {
+		t.Fatalf("outbox insert args = %d, want 4", len(call.args))
+	}
+	if eventType, _ := call.args[1].(string); eventType != "ship.status_updated" {
+		t.Fatalf("event type = %v, want ship.status_updated", call.args[1])
+	}
+	payloadBytes, ok := call.args[2].([]byte)
 	if !ok {
-		t.Fatalf("payload type = %T, want events.ShipStatusUpdated", call.payload)
+		t.Fatalf("payload arg type = %T, want []byte", call.args[2])
+	}
+	var payload events.ShipStatusUpdated
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		t.Fatalf("decode outbox payload: %v", err)
 	}
 	expected := events.ShipStatusUpdated{
 		Version:          1,

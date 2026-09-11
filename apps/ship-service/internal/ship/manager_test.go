@@ -2,6 +2,7 @@ package ship
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -15,8 +16,9 @@ import (
 )
 
 type mockStore struct {
-	getByUser func(context.Context, pgtype.UUID) (database.Ship, error)
-	repair    func(context.Context, database.RepairParams) (database.Ship, error)
+	getByUser    func(context.Context, pgtype.UUID) (database.Ship, error)
+	repair       func(context.Context, database.RepairParams) (database.Ship, error)
+	insertOutbox func(context.Context, database.InsertOutboxParams) error
 }
 
 func (m *mockStore) GetByUser(ctx context.Context, userID pgtype.UUID) (database.Ship, error) {
@@ -27,15 +29,26 @@ func (m *mockStore) Repair(ctx context.Context, params database.RepairParams) (d
 	return m.repair(ctx, params)
 }
 
-type recordingPublisher struct {
-	eventType string
-	payload   any
-	err       error
+func (m *mockStore) InsertOutbox(ctx context.Context, arg database.InsertOutboxParams) error {
+	return m.insertOutbox(ctx, arg)
 }
 
-func (p *recordingPublisher) Publish(_ context.Context, eventType string, payload any, _ ...events.PublishOption) error {
-	p.eventType, p.payload = eventType, payload
-	return p.err
+type fakeTx struct {
+	pgx.Tx
+	committed  bool
+	rolledBack bool
+}
+
+func (f *fakeTx) Commit(context.Context) error   { f.committed = true; return nil }
+func (f *fakeTx) Rollback(context.Context) error { f.rolledBack = true; return nil }
+
+type fakeTxStarter struct{ tx *fakeTx }
+
+func (s *fakeTxStarter) Begin(context.Context) (pgx.Tx, error) {
+	if s.tx == nil {
+		s.tx = &fakeTx{}
+	}
+	return s.tx, nil
 }
 
 func TestManagerRepair(t *testing.T) {
@@ -45,7 +58,7 @@ func TestManagerRepair(t *testing.T) {
 		current          database.Ship
 		getErr           error
 		repairErr        error
-		publisherErr     error
+		outboxErr        error
 		roll             repairRoll
 		wantErr          error
 		wantMaterialsUse int32
@@ -73,12 +86,13 @@ func TestManagerRepair(t *testing.T) {
 		{name: "does not repair without materials", current: testShip(userID, 80, 0), wantErr: ErrInsufficientMaterials},
 		{name: "wraps store errors", getErr: errors.New("database unavailable")},
 		{name: "wraps repair errors", current: testShip(userID, 80, 2), repairErr: errors.New("update failed"), roll: func() int { return 0 }},
-		{name: "wraps publish errors", current: testShip(userID, 80, 2), publisherErr: errors.New("publish failed"), roll: func() int { return 0 }},
+		{name: "wraps outbox errors", current: testShip(userID, 80, 2), outboxErr: errors.New("outbox insert failed"), roll: func() int { return 0 }},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var gotParams database.RepairParams
+			var outbox *database.InsertOutboxParams
 			store := &mockStore{
 				getByUser: func(_ context.Context, gotUserID pgtype.UUID) (database.Ship, error) {
 					if gotUserID.Bytes != userID {
@@ -96,9 +110,13 @@ func TestManagerRepair(t *testing.T) {
 					updated.MaterialsBalance -= params.MaterialsBalance
 					return updated, nil
 				},
+				insertOutbox: func(_ context.Context, arg database.InsertOutboxParams) error {
+					outbox = &arg
+					return test.outboxErr
+				},
 			}
-			publisher := &recordingPublisher{err: test.publisherErr}
-			manager := newManager(store, publisher, test.roll)
+			starter := &fakeTxStarter{}
+			manager := newManager(store, starter, func(tx pgx.Tx) Store { return store }, test.roll)
 
 			state, err := manager.Repair(context.Background(), userID)
 
@@ -108,7 +126,7 @@ func TestManagerRepair(t *testing.T) {
 				}
 				return
 			}
-			if (test.getErr != nil || test.repairErr != nil || test.publisherErr != nil) && err == nil {
+			if (test.getErr != nil || test.repairErr != nil || test.outboxErr != nil) && err == nil {
 				t.Fatal("expected an error")
 			}
 			if err != nil {
@@ -120,12 +138,22 @@ func TestManagerRepair(t *testing.T) {
 			if state != test.wantState {
 				t.Errorf("state = %+v, want %+v", state, test.wantState)
 			}
-			if publisher.eventType != statusUpdatedEventType {
-				t.Errorf("event type = %q, want %q", publisher.eventType, statusUpdatedEventType)
+			if !starter.tx.committed {
+				t.Error("repair transaction was not committed")
+			}
+			if outbox == nil {
+				t.Fatal("outbox event was not staged")
+			}
+			if outbox.EventType != statusUpdatedEventType {
+				t.Errorf("event type = %q, want %q", outbox.EventType, statusUpdatedEventType)
+			}
+			var payload events.ShipStatusUpdated
+			if err := json.Unmarshal(outbox.Payload, &payload); err != nil {
+				t.Fatalf("decode outbox payload: %v", err)
 			}
 			wantPayload := events.ShipStatusUpdated{Version: 1, UserID: userID.String(), HullHealth: int(state.HullHealth), MaterialsBalance: int(state.MaterialsBalance)}
-			if publisher.payload != wantPayload {
-				t.Errorf("event payload = %#v, want %#v", publisher.payload, wantPayload)
+			if payload != wantPayload {
+				t.Errorf("event payload = %#v, want %#v", payload, wantPayload)
 			}
 		})
 	}
@@ -175,7 +203,7 @@ func TestManagerGet(t *testing.T) {
 					return test.current, test.getErr
 				},
 			}
-			manager := newManager(store, &recordingPublisher{}, nil)
+			manager := newManager(store, &fakeTxStarter{}, func(tx pgx.Tx) Store { return store }, nil)
 
 			state, err := manager.Get(context.Background(), userID)
 

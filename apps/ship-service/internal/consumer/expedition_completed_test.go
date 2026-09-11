@@ -17,10 +17,10 @@ func TestHandleExpeditionCompleted(t *testing.T) {
 		name             string
 		outcome          string
 		wantMutation     bool
-		wantPublish      bool
+		wantStage        bool
 		wantErrSubstring string
 	}{
-		{name: "success adds reward and publishes updated status", outcome: "SUCCESS", wantMutation: true, wantPublish: true},
+		{name: "success adds reward and stages updated status", outcome: "SUCCESS", wantMutation: true, wantStage: true},
 		{name: "failure grants no reward", outcome: "FAILURE"},
 		{name: "unknown outcome is rejected", outcome: "UNKNOWN", wantErrSubstring: "invalid outcome"},
 	}
@@ -35,11 +35,10 @@ func TestHandleExpeditionCompleted(t *testing.T) {
 			tx := &shipMutationTx{row: fakeRow{ship: fakeShipState{
 				userID: parsedUserID, hullHealth: 79, materialsBalance: 34, level: 1,
 			}}}
-			publisher := &recordingPublisher{}
 
 			err = consumer.HandleExpeditionCompleted(t.Context(), tx, newTestConsumerEnvelope("expedition.completed"), events.ExpeditionCompleted{
 				Version: 1, UserID: userID, ExpeditionID: uuid.New().String(), Outcome: tt.outcome, MaterialsReward: 21,
-			}, publisher)
+			})
 			if tt.wantErrSubstring != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErrSubstring) {
 					t.Fatalf("HandleExpeditionCompleted() error = %v, want containing %q", err, tt.wantErrSubstring)
@@ -55,10 +54,10 @@ func TestHandleExpeditionCompleted(t *testing.T) {
 			} else if len(tx.queryCalls) != 0 {
 				t.Fatalf("ship mutation calls = %d, want 0", len(tx.queryCalls))
 			}
-			if tt.wantPublish {
-				assertPublishedShipStatus(t, publisher, userID, 79, 34)
-			} else if len(publisher.calls) != 0 {
-				t.Fatalf("publish calls = %d, want 0", len(publisher.calls))
+			if tt.wantStage {
+				assertStagedShipStatus(t, tx, userID, 79, 34)
+			} else if len(tx.execCalls) != 0 {
+				t.Fatalf("outbox insert calls = %d, want 0", len(tx.execCalls))
 			}
 		})
 	}
@@ -75,11 +74,9 @@ func TestNewExpeditionCompletedHandler(t *testing.T) {
 			userID: parsedUserID, hullHealth: 84, materialsBalance: 46, level: 1,
 		}}}
 		store := &fakeIdempotencyStore{rowsAffected: 1}
-		publisher := &recordingPublisher{}
 		handler := consumer.NewExpeditionCompletedHandler(
 			&fakeTxStarter{tx: tx},
 			func(tx pgx.Tx) events.IdempotencyStore { return store },
-			publisher,
 		)
 
 		err = handler(t.Context(), "expedition.completed", newRawEnvelopeBytes(t, uuid.New().String(), "expedition.completed", events.ExpeditionCompleted{
@@ -95,16 +92,14 @@ func TestNewExpeditionCompletedHandler(t *testing.T) {
 			t.Fatalf("processed event inserts = %d, want 1", len(store.insertedIDs))
 		}
 		assertShipMutationCall(t, tx, parsedUserID, 9, "materials_balance = materials_balance + $2")
-		assertPublishedShipStatus(t, publisher, userID, 84, 46)
+		assertStagedShipStatus(t, tx, userID, 84, 46)
 	})
 
 	t.Run("commits failure without reward", func(t *testing.T) {
 		tx := &shipMutationTx{}
-		publisher := &recordingPublisher{}
 		handler := consumer.NewExpeditionCompletedHandler(
 			&fakeTxStarter{tx: tx},
 			func(tx pgx.Tx) events.IdempotencyStore { return &fakeIdempotencyStore{rowsAffected: 1} },
-			publisher,
 		)
 
 		err := handler(t.Context(), "expedition.completed", newRawEnvelopeBytes(t, uuid.New().String(), "expedition.completed", events.ExpeditionCompleted{
@@ -116,19 +111,17 @@ func TestNewExpeditionCompletedHandler(t *testing.T) {
 		if !tx.committed {
 			t.Fatal("transaction was not committed")
 		}
-		if len(tx.queryCalls) != 0 || len(publisher.calls) != 0 {
-			t.Fatal("failure outcome mutated or published ship state")
+		if len(tx.queryCalls) != 0 || len(tx.execCalls) != 0 {
+			t.Fatal("failure outcome mutated or staged ship state")
 		}
 	})
 }
 
 func TestNewExpeditionCompletedHandlerIdempotency(t *testing.T) {
 	tx := &shipMutationTx{}
-	publisher := &recordingPublisher{}
 	handler := consumer.NewExpeditionCompletedHandler(
 		&fakeTxStarter{tx: tx},
 		func(tx pgx.Tx) events.IdempotencyStore { return &fakeIdempotencyStore{rowsAffected: 0} },
-		publisher,
 	)
 
 	err := handler(t.Context(), "expedition.completed", newRawEnvelopeBytes(t, uuid.New().String(), "expedition.completed", events.ExpeditionCompleted{
@@ -137,7 +130,7 @@ func TestNewExpeditionCompletedHandlerIdempotency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("duplicate handler call error = %v", err)
 	}
-	if len(tx.queryCalls) != 0 || len(publisher.calls) != 0 {
-		t.Fatal("duplicate event mutated or published ship state")
+	if len(tx.queryCalls) != 0 || len(tx.execCalls) != 0 {
+		t.Fatal("duplicate event mutated or staged ship state")
 	}
 }

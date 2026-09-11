@@ -20,8 +20,11 @@ type Querier interface {
 	DeleteTestTable(ctx context.Context, id int64) error
 	GetByUser(ctx context.Context, userID pgtype.UUID) (Ship, error)
 	GetTestTable(ctx context.Context, id int64) (TestTable, error)
+	InsertOutbox(ctx context.Context, arg InsertOutboxParams) error
 	InsertProcessedEvent(ctx context.Context, eventID pgtype.UUID) (int64, error)
+	ListPendingOutbox(ctx context.Context, limit int32) ([]Outbox, error)
 	ListTestTables(ctx context.Context) ([]TestTable, error)
+	MarkOutboxPublished(ctx context.Context, id int64) error
 	Repair(ctx context.Context, arg RepairParams) (Ship, error)
 	UpdateTestTable(ctx context.Context, arg UpdateTestTableParams) (TestTable, error)
 }
