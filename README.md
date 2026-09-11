@@ -159,11 +159,14 @@ When changing a module, the required verification is `go build ./...`,
 
 ## Current implementation tickets
 
-The open backlog as of 2026-09-07 is organized around these milestones:
+The open backlog as of 2026-09-11 is organized around these milestones:
 
-1. **Reliable event publication** — implement the transactional outbox and
-   bounded HTTP-triggered drain in
-   [#20](https://github.com/thalesraymond/galaxify-monorepo/issues/20).
+1. **Reliable event publication** — the transactional outbox and bounded
+   HTTP-triggered drain
+   ([#20](https://github.com/thalesraymond/galaxify-monorepo/issues/20)) are
+   implemented across User, Daily, Ship, and Expedition, plus the
+   `daily-cron` worker (staging events in the mutation transaction and draining
+   through `pkg/events.OutboxDrainer`).
 2. **Finish Ship Service** — consume daily outcomes
    ([#64](https://github.com/thalesraymond/galaxify-monorepo/issues/64)), add
    repair ([#65](https://github.com/thalesraymond/galaxify-monorepo/issues/65))

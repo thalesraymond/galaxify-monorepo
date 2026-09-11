@@ -48,20 +48,19 @@ func TestHandleDailyMissed(t *testing.T) {
 				materialsBalance: tt.materials,
 				level:            1,
 			}}}
-			publisher := &recordingPublisher{}
 
 			err = consumer.HandleDailyMissed(t.Context(), tx, newTestConsumerEnvelope("daily.missed"), events.DailyMissed{
 				Version:      1,
 				UserID:       userID,
 				DailyID:      uuid.New().String(),
 				DamageAmount: tt.damageAmount,
-			}, publisher)
+			})
 			if err != nil {
 				t.Fatalf("HandleDailyMissed() error = %v", err)
 			}
 
 			assertShipMutationCall(t, tx, parsedUserID, int32(tt.damageAmount), "GREATEST(0, hull_health - $2)")
-			assertPublishedShipStatus(t, publisher, userID, tt.expectedHull, int(tt.materials))
+			assertStagedShipStatus(t, tx, userID, tt.expectedHull, int(tt.materials))
 		})
 	}
 }
@@ -80,11 +79,9 @@ func TestNewDailyMissedHandler(t *testing.T) {
 	}}}
 	starter := &fakeTxStarter{tx: tx}
 	store := &fakeIdempotencyStore{rowsAffected: 1}
-	publisher := &recordingPublisher{}
 	handler := consumer.NewDailyMissedHandler(
 		starter,
 		func(tx pgx.Tx) events.IdempotencyStore { return store },
-		publisher,
 	)
 
 	err = handler(t.Context(), "daily.missed", newRawEnvelopeBytes(t, uuid.New().String(), "daily.missed", events.DailyMissed{
@@ -100,18 +97,16 @@ func TestNewDailyMissedHandler(t *testing.T) {
 		t.Fatalf("processed event inserts = %d, want 1", len(store.insertedIDs))
 	}
 	assertShipMutationCall(t, tx, parsedUserID, 6, "GREATEST(0, hull_health - $2)")
-	assertPublishedShipStatus(t, publisher, userID, 76, 8)
+	assertStagedShipStatus(t, tx, userID, 76, 8)
 }
 
 func TestNewDailyMissedHandlerIdempotency(t *testing.T) {
 	tx := &shipMutationTx{}
 	starter := &fakeTxStarter{tx: tx}
 	store := &fakeIdempotencyStore{rowsAffected: 0}
-	publisher := &recordingPublisher{}
 	handler := consumer.NewDailyMissedHandler(
 		starter,
 		func(tx pgx.Tx) events.IdempotencyStore { return store },
-		publisher,
 	)
 
 	err := handler(t.Context(), "daily.missed", newRawEnvelopeBytes(t, uuid.New().String(), "daily.missed", events.DailyMissed{
@@ -123,7 +118,7 @@ func TestNewDailyMissedHandlerIdempotency(t *testing.T) {
 	if len(tx.queryCalls) != 0 {
 		t.Fatalf("ship mutation calls = %d, want 0", len(tx.queryCalls))
 	}
-	if len(publisher.calls) != 0 {
-		t.Fatalf("publish calls = %d, want 0", len(publisher.calls))
+	if len(tx.execCalls) != 0 {
+		t.Fatalf("outbox insert calls = %d, want 0", len(tx.execCalls))
 	}
 }

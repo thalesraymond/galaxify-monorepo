@@ -69,19 +69,18 @@ Runs in `workers/daily-cron` as a standalone worker. Responsible for rolling act
      - Atomically inserts a `MISSED` record into `daily_history` (`missed_at = now()`).
      - Snaps `due_date` forward by adding full 24-hour increments until `due_date > now()`, preserving the user's deadline time-of-day.
      - Leaves `status = 'PENDING'` for the new cycle.
-     - Publishes `daily.missed` (or stages to outbox per #20).
+     - Stages a `daily.missed` event in the `outbox` table within the same transaction.
   2. **Completed Reset Sweep**:
      - Finds `status = 'COMPLETED' AND due_date < now()`.
      - Advances `due_date = due_date + INTERVAL '1 day'` and resets `status = 'PENDING'` for the new cycle.
      - Does not emit events or write to history (history was already written on completion).
 
-### ⚠️ Event publication deferred to [#20](https://github.com/thalesraymond/galaxify-monorepo/issues/20)
+### Daily.missed publication
 
-`daily.missed` events are **not yet published**. The outbox table, outbox drain
-logic, and RabbitMQ wiring are all part of issue #20 (transactional outbox
-pattern). Once #20 lands, the worker will write a `daily.missed` row to the
-`outbox` table **inside the same transaction** as the miss processing,
-guaranteeing atomicity between state change and event.
+The worker writes a `daily.missed` row to the `outbox` table **inside the same
+transaction** as the miss processing, guaranteeing atomicity between the state
+change and the event. After each non-empty batch it drains the outbox with the
+shared `pkg/events.OutboxDrainer` (see cross-cutting §6 and ADR-0004).
 
 ## Out of Scope (Phase 1)
 - Custom recurring schedules (e.g., specific days of week like Monday/Wednesday/Friday). All dailies repeat daily.

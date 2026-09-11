@@ -2,6 +2,7 @@ package daily
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,17 +14,15 @@ import (
 
 	"github.com/thalesraymond/galaxify-monorepo/apps/daily-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
+
+const dailyCompletedEventType = "daily.completed"
 
 // TxStarter abstracts opening database transactions.
 // *pgxpool.Pool satisfies TxStarter directly in production.
 type TxStarter interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
-}
-
-// EventPublisher is the narrow interface for publishing domain events.
-type EventPublisher interface {
-	Publish(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error
 }
 
 // Store is the internal database surface required by DailyManager.
@@ -38,6 +37,7 @@ type Store interface {
 	GetDifficultyReward(ctx context.Context, difficulty string) (database.DifficultyReward, error)
 	CreateDailyHistory(ctx context.Context, arg database.CreateDailyHistoryParams) error
 	ListDailyHistory(ctx context.Context, userID pgtype.UUID) ([]database.DailyHistory, error)
+	InsertOutbox(ctx context.Context, arg database.InsertOutboxParams) error
 }
 
 // Manager defines the high-leverage domain interface for the Daily Task Lifecycle.
@@ -56,7 +56,6 @@ type DailyManager struct {
 	pool         TxStarter
 	storeFactory func(tx pgx.Tx) Store
 	baseStore    Store
-	publisher    EventPublisher
 	logger       *slog.Logger
 }
 
@@ -77,14 +76,12 @@ func NewDailyManager(
 	pool TxStarter,
 	storeFactory func(tx pgx.Tx) Store,
 	baseStore Store,
-	publisher EventPublisher,
 	opts ...DailyManagerOption,
 ) *DailyManager {
 	m := &DailyManager{
 		pool:         pool,
 		storeFactory: storeFactory,
 		baseStore:    baseStore,
-		publisher:    publisher,
 		logger:       slog.Default(),
 	}
 	for _, opt := range opts {
@@ -287,25 +284,28 @@ func (m *DailyManager) Complete(ctx context.Context, userID, id uuid.UUID) (Dail
 		return Daily{}, fmt.Errorf("get difficulty reward: %w", err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return Daily{}, fmt.Errorf("commit tx: %w", err)
+	payload, err := json.Marshal(events.DailyCompleted{
+		Version:         1,
+		UserID:          userID.String(),
+		DailyID:         id.String(),
+		Difficulty:      completedRow.Difficulty,
+		RewardMaterials: int(reward.RewardMaterials),
+	})
+	if err != nil {
+		return Daily{}, fmt.Errorf("marshal daily.completed event: %w", err)
+	}
+	requestID := sharedhttp.RequestIDFromContext(ctx)
+	if err := s.InsertOutbox(ctx, database.InsertOutboxParams{
+		EventID:   pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		EventType: dailyCompletedEventType,
+		Payload:   payload,
+		RequestID: pgtype.Text{String: requestID, Valid: requestID != ""},
+	}); err != nil {
+		return Daily{}, fmt.Errorf("insert daily.completed outbox event: %w", err)
 	}
 
-	if m.publisher != nil {
-		if err := m.publisher.Publish(ctx, "daily.completed", events.DailyCompleted{
-			Version:         1,
-			UserID:          userID.String(),
-			DailyID:         id.String(),
-			Difficulty:      completedRow.Difficulty,
-			RewardMaterials: int(reward.RewardMaterials),
-		}); err != nil {
-			m.logger.ErrorContext(ctx, "failed to publish daily.completed event",
-				"error", err,
-				"user_id", userID,
-				"daily_id", id,
-			)
-			return toDomainDaily(completedRow), fmt.Errorf("publish daily.completed: %w", err)
-		}
+	if err := tx.Commit(ctx); err != nil {
+		return Daily{}, fmt.Errorf("commit tx: %w", err)
 	}
 
 	return toDomainDaily(completedRow), nil

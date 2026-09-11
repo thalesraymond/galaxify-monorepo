@@ -113,25 +113,21 @@ func run(logger *slog.Logger) error {
 	subscriber.On("daily.completed", consumer.NewDailyCompletedHandler(
 		pool,
 		idempotencyStoreFactory,
-		eventPublisher,
 		events.WithLogger(logger),
 	))
 	subscriber.On("daily.missed", consumer.NewDailyMissedHandler(
 		pool,
 		idempotencyStoreFactory,
-		eventPublisher,
 		events.WithLogger(logger),
 	))
 	subscriber.On("expedition.launched", consumer.NewExpeditionLaunchedHandler(
 		pool,
 		idempotencyStoreFactory,
-		eventPublisher,
 		events.WithLogger(logger),
 	))
 	subscriber.On("expedition.completed", consumer.NewExpeditionCompletedHandler(
 		pool,
 		idempotencyStoreFactory,
-		eventPublisher,
 		events.WithLogger(logger),
 	))
 
@@ -149,11 +145,24 @@ func run(logger *slog.Logger) error {
 
 	mux := http.NewServeMux()
 	handler.NewHealthHandler(serviceName).RegisterHealthRoutes(mux)
-	handler.NewShipHandler(ship.NewManager(database.New(pool), eventPublisher), authHandshake, logger).RegisterShipRoutes(mux)
+	shipManager := ship.NewManager(
+		database.New(pool),
+		pool,
+		func(tx pgx.Tx) ship.Store { return database.New(tx) },
+	)
+	handler.NewShipHandler(shipManager, authHandshake, logger).RegisterShipRoutes(mux)
+
+	outboxDrainer := events.NewOutboxDrainer(func(ctx context.Context) (events.OutboxBatch, error) {
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return ship.NewOutboxBatch(tx), nil
+	}, eventPublisher, logger)
 
 	srv := &http.Server{
 		Addr:    httpAddr,
-		Handler: sharedhttp.RequestIDMiddleware(mux),
+		Handler: sharedhttp.RequestIDMiddleware(outboxDrainer.DrainAfterRequest(mux, 50)),
 	}
 
 	serveErr := make(chan error, 1)

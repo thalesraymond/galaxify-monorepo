@@ -16,13 +16,12 @@ const (
 	expeditionOutcomeFailure = "FAILURE"
 )
 
-// HandleExpeditionCompleted grants successful expedition rewards and publishes the resulting ship state.
+// HandleExpeditionCompleted grants successful expedition rewards and stages the resulting ship state.
 func HandleExpeditionCompleted(
 	ctx context.Context,
 	tx pgx.Tx,
 	_ events.Envelope,
 	data events.ExpeditionCompleted,
-	eventPublisher events.EventPublisher,
 ) error {
 	switch data.Outcome {
 	case expeditionOutcomeFailure:
@@ -46,7 +45,7 @@ func HandleExpeditionCompleted(
 		return fmt.Errorf("add expedition reward: %w", err)
 	}
 
-	if err := publishShipStatus(ctx, eventPublisher, data.UserID, ship); err != nil {
+	if err := stageShipStatus(ctx, tx, data.UserID, ship); err != nil {
 		return err
 	}
 	return nil
@@ -56,14 +55,13 @@ func HandleExpeditionCompleted(
 func NewExpeditionCompletedHandler(
 	pool events.TxStarter,
 	storeFactory func(tx pgx.Tx) events.IdempotencyStore,
-	eventPublisher events.EventPublisher,
 	opts ...events.ConsumerOption,
 ) events.HandlerFunc {
 	return events.NewIdempotentHandler(
 		pool,
 		storeFactory,
 		func(ctx context.Context, tx pgx.Tx, env events.Envelope, data events.ExpeditionCompleted) error {
-			return HandleExpeditionCompleted(ctx, tx, env, data, eventPublisher)
+			return HandleExpeditionCompleted(ctx, tx, env, data)
 		},
 		opts...,
 	)

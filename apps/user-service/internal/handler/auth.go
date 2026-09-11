@@ -1,16 +1,5 @@
 package handler
 
-import (
-	"context"
-
-	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
-)
-
-// EventPublisher is the narrow surface used by handlers to emit domain events.
-type EventPublisher interface {
-	Publish(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error
-}
-
 // userResponse is the shared on-the-wire shape for a user resource.
 type userResponse struct {
 	ID        string `json:"id"`

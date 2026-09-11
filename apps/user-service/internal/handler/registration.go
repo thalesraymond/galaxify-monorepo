@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -25,31 +26,34 @@ var (
 	usernameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,30}$`)
 )
 
-// registrationStore is the narrow database surface used by RegistrationHandler.
-type registrationStore interface {
+const userCreatedEventType = "user.created"
+
+// RegistrationStore is the narrow database surface used by RegistrationHandler.
+type RegistrationStore interface {
 	InsertUser(ctx context.Context, arg database.InsertUserParams) (database.User, error)
+	InsertOutbox(ctx context.Context, arg database.InsertOutboxParams) error
 }
 
 // RegistrationHandler handles user registration.
 type RegistrationHandler struct {
-	store       registrationStore
-	tokenIssuer *TokenIssuer
-	publisher   EventPublisher
-	logger      *slog.Logger
+	txStarter    events.TxStarter
+	storeFactory func(tx pgx.Tx) RegistrationStore
+	tokenIssuer  *TokenIssuer
+	logger       *slog.Logger
 }
 
 // NewRegistrationHandler creates a RegistrationHandler.
 func NewRegistrationHandler(
-	store registrationStore,
+	txStarter events.TxStarter,
+	storeFactory func(tx pgx.Tx) RegistrationStore,
 	tokenIssuer *TokenIssuer,
-	publisher EventPublisher,
 	logger *slog.Logger,
 ) *RegistrationHandler {
 	return &RegistrationHandler{
-		store:       store,
-		tokenIssuer: tokenIssuer,
-		publisher:   publisher,
-		logger:      logger,
+		txStarter:    txStarter,
+		storeFactory: storeFactory,
+		tokenIssuer:  tokenIssuer,
+		logger:       logger,
 	}
 }
 
@@ -90,7 +94,15 @@ func (h *RegistrationHandler) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.store.InsertUser(r.Context(), database.InsertUserParams{
+	tx, err := h.txStarter.Begin(r.Context())
+	if err != nil {
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+
+	store := h.storeFactory(tx)
+	user, err := store.InsertUser(r.Context(), database.InsertUserParams{
 		ID:           pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		Email:        input.Email,
 		Username:     input.Username,
@@ -101,18 +113,34 @@ func (h *RegistrationHandler) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, refreshToken, err := h.tokenIssuer.IssueSession(r.Context(), user.ID, input.Email)
-	if err != nil {
-		sharedhttp.WriteInternal(w, r, err, h.logger)
-		return
-	}
-
-	if err := h.publisher.Publish(r.Context(), "user.created", events.UserCreated{
+	eventPayload, err := json.Marshal(events.UserCreated{
 		Version:  1,
 		UserID:   sharedhttp.UUIDToString(user.ID),
 		Email:    input.Email,
 		Username: input.Username,
+	})
+	if err != nil {
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+		return
+	}
+	requestID := sharedhttp.RequestIDFromContext(r.Context())
+	if err := store.InsertOutbox(r.Context(), database.InsertOutboxParams{
+		EventID:   pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		EventType: userCreatedEventType,
+		Payload:   eventPayload,
+		RequestID: pgtype.Text{String: requestID, Valid: requestID != ""},
 	}); err != nil {
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+		return
+	}
+
+	accessToken, refreshToken, err := h.tokenIssuer.IssueSession(r.Context(), user.ID, input.Email)
+	if err != nil {
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return
 	}

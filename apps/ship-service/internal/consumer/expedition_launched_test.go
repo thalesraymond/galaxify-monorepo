@@ -14,7 +14,7 @@ import (
 )
 
 func TestHandleExpeditionLaunched(t *testing.T) {
-	t.Run("deducts invested materials and publishes updated status", func(t *testing.T) {
+	t.Run("deducts invested materials and stages updated status", func(t *testing.T) {
 		userID := uuid.New().String()
 		parsedUserID, err := sharedhttp.ParseUUID(userID)
 		if err != nil {
@@ -26,7 +26,6 @@ func TestHandleExpeditionLaunched(t *testing.T) {
 			materialsBalance: 27,
 			level:            1,
 		}}}
-		publisher := &recordingPublisher{}
 
 		err = consumer.HandleExpeditionLaunched(t.Context(), tx, newTestConsumerEnvelope("expedition.launched"), events.ExpeditionLaunched{
 			Version:           1,
@@ -35,7 +34,7 @@ func TestHandleExpeditionLaunched(t *testing.T) {
 			MaterialsInvested: 13,
 			SuccessChance:     0.65,
 			ResolveAt:         "2026-09-10T12:00:00Z",
-		}, publisher)
+		})
 		if err != nil {
 			t.Fatalf("HandleExpeditionLaunched() error = %v", err)
 		}
@@ -52,23 +51,24 @@ func TestHandleExpeditionLaunched(t *testing.T) {
 		if got := tx.queryCalls[0].args[1]; got != parsedUserID {
 			t.Fatalf("user id arg = %v, want %v", got, parsedUserID)
 		}
-		assertPublishedShipStatus(t, publisher, userID, 88, 27)
+		assertStagedShipStatus(t, tx, userID, 88, 27)
 	})
 
-	t.Run("returns publisher error", func(t *testing.T) {
-		publishErr := errors.New("publish failed")
+	t.Run("returns outbox insert error", func(t *testing.T) {
+		outboxErr := errors.New("outbox insert failed")
 		userID := uuid.New().String()
 		parsedUserID, err := sharedhttp.ParseUUID(userID)
 		if err != nil {
 			t.Fatalf("parse user id: %v", err)
 		}
 		tx := &shipMutationTx{row: fakeRow{ship: fakeShipState{userID: parsedUserID}}}
+		tx.execErr = outboxErr
 
 		err = consumer.HandleExpeditionLaunched(t.Context(), tx, newTestConsumerEnvelope("expedition.launched"), events.ExpeditionLaunched{
 			Version: 1, UserID: userID, MaterialsInvested: 5,
-		}, &recordingPublisher{err: publishErr})
-		if !errors.Is(err, publishErr) {
-			t.Fatalf("HandleExpeditionLaunched() error = %v, want wrapped publisher error", err)
+		})
+		if !errors.Is(err, outboxErr) {
+			t.Fatalf("HandleExpeditionLaunched() error = %v, want wrapped outbox error", err)
 		}
 	})
 }
@@ -83,11 +83,9 @@ func TestNewExpeditionLaunchedHandler(t *testing.T) {
 		userID: parsedUserID, hullHealth: 92, materialsBalance: 18, level: 1,
 	}}}
 	store := &fakeIdempotencyStore{rowsAffected: 1}
-	publisher := &recordingPublisher{}
 	handler := consumer.NewExpeditionLaunchedHandler(
 		&fakeTxStarter{tx: tx},
 		func(tx pgx.Tx) events.IdempotencyStore { return store },
-		publisher,
 	)
 
 	err = handler(t.Context(), "expedition.launched", newRawEnvelopeBytes(t, uuid.New().String(), "expedition.launched", events.ExpeditionLaunched{
@@ -102,16 +100,14 @@ func TestNewExpeditionLaunchedHandler(t *testing.T) {
 	if len(store.insertedIDs) != 1 {
 		t.Fatalf("processed event inserts = %d, want 1", len(store.insertedIDs))
 	}
-	assertPublishedShipStatus(t, publisher, userID, 92, 18)
+	assertStagedShipStatus(t, tx, userID, 92, 18)
 }
 
 func TestNewExpeditionLaunchedHandlerIdempotency(t *testing.T) {
 	tx := &shipMutationTx{}
-	publisher := &recordingPublisher{}
 	handler := consumer.NewExpeditionLaunchedHandler(
 		&fakeTxStarter{tx: tx},
 		func(tx pgx.Tx) events.IdempotencyStore { return &fakeIdempotencyStore{rowsAffected: 0} },
-		publisher,
 	)
 
 	err := handler(t.Context(), "expedition.launched", newRawEnvelopeBytes(t, uuid.New().String(), "expedition.launched", events.ExpeditionLaunched{
@@ -123,7 +119,7 @@ func TestNewExpeditionLaunchedHandlerIdempotency(t *testing.T) {
 	if len(tx.queryCalls) != 0 {
 		t.Fatalf("ship mutation calls = %d, want 0", len(tx.queryCalls))
 	}
-	if len(publisher.calls) != 0 {
-		t.Fatalf("publish calls = %d, want 0", len(publisher.calls))
+	if len(tx.execCalls) != 0 {
+		t.Fatalf("outbox insert calls = %d, want 0", len(tx.execCalls))
 	}
 }

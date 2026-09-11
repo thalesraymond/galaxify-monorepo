@@ -2,6 +2,7 @@ package daily
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -74,6 +75,7 @@ type mockStore struct {
 	getDifficultyReward func(ctx context.Context, difficulty string) (database.DifficultyReward, error)
 	createDailyHistory  func(ctx context.Context, arg database.CreateDailyHistoryParams) error
 	listDailyHistory    func(ctx context.Context, userID pgtype.UUID) ([]database.DailyHistory, error)
+	insertOutbox        func(ctx context.Context, arg database.InsertOutboxParams) error
 }
 
 func (m *mockStore) CreateDaily(ctx context.Context, arg database.CreateDailyParams) (database.Daily, error) {
@@ -139,22 +141,11 @@ func (m *mockStore) ListDailyHistory(ctx context.Context, userID pgtype.UUID) ([
 	return nil, errors.New("unexpected ListDailyHistory")
 }
 
-type mockPublisher struct {
-	mu        sync.Mutex
-	published []events.DailyCompleted
-	err       error
-}
-
-func (p *mockPublisher) Publish(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.err != nil {
-		return p.err
+func (m *mockStore) InsertOutbox(ctx context.Context, arg database.InsertOutboxParams) error {
+	if m.insertOutbox != nil {
+		return m.insertOutbox(ctx, arg)
 	}
-	if event, ok := payload.(events.DailyCompleted); ok {
-		p.published = append(p.published, event)
-	}
-	return nil
+	return errors.New("unexpected InsertOutbox")
 }
 
 func TestDailyManager_Create(t *testing.T) {
@@ -178,7 +169,7 @@ func TestDailyManager_Create(t *testing.T) {
 		},
 	}
 
-	mgr := NewDailyManager(nil, nil, store, nil)
+	mgr := NewDailyManager(nil, nil, store)
 
 	t.Run("happy path creates pending daily", func(t *testing.T) {
 		item, err := mgr.Create(context.Background(), CreateInput{
@@ -228,7 +219,7 @@ func TestDailyManager_Get(t *testing.T) {
 				}, nil
 			},
 		}
-		mgr := NewDailyManager(nil, nil, store, nil)
+		mgr := NewDailyManager(nil, nil, store)
 		item, err := mgr.Get(context.Background(), userID, dailyID)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -244,7 +235,7 @@ func TestDailyManager_Get(t *testing.T) {
 				return database.Daily{}, pgx.ErrNoRows
 			},
 		}
-		mgr := NewDailyManager(nil, nil, store, nil)
+		mgr := NewDailyManager(nil, nil, store)
 		_, err := mgr.Get(context.Background(), userID, dailyID)
 		if !errors.Is(err, ErrDailyNotFound) {
 			t.Errorf("error = %v, want ErrDailyNotFound", err)
@@ -273,7 +264,7 @@ func TestDailyManager_List(t *testing.T) {
 				}, nil
 			},
 		}
-		mgr := NewDailyManager(nil, nil, store, nil)
+		mgr := NewDailyManager(nil, nil, store)
 		items, err := mgr.List(context.Background(), userID, ListFilter{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -300,7 +291,7 @@ func TestDailyManager_List(t *testing.T) {
 				}, nil
 			},
 		}
-		mgr := NewDailyManager(nil, nil, store, nil)
+		mgr := NewDailyManager(nil, nil, store)
 		items, err := mgr.List(context.Background(), userID, ListFilter{
 			Status: &statusFilter,
 			Date:   &dateFilter,
@@ -332,7 +323,7 @@ func TestDailyManager_Update(t *testing.T) {
 				}, nil
 			},
 		}
-		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil)
 		item, err := mgr.Update(context.Background(), userID, dailyID, UpdateInput{Title: &newTitle})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -355,7 +346,7 @@ func TestDailyManager_Update(t *testing.T) {
 				return database.Daily{}, pgx.ErrNoRows
 			},
 		}
-		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil)
 		_, err := mgr.Update(context.Background(), userID, dailyID, UpdateInput{Title: &newTitle})
 		if !errors.Is(err, ErrDailyNotFound) {
 			t.Errorf("error = %v, want ErrDailyNotFound", err)
@@ -375,7 +366,7 @@ func TestDailyManager_Update(t *testing.T) {
 				}, nil
 			},
 		}
-		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil)
 		item, err := mgr.Update(context.Background(), userID, dailyID, UpdateInput{Title: &newTitle})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -393,7 +384,7 @@ func TestDailyManager_Update(t *testing.T) {
 
 	t.Run("returns ErrInvalidDifficulty when difficulty is invalid", func(t *testing.T) {
 		invalidDiff := Difficulty("SUPER_HARD")
-		mgr := NewDailyManager(nil, nil, nil, nil)
+		mgr := NewDailyManager(nil, nil, nil)
 		_, err := mgr.Update(context.Background(), userID, dailyID, UpdateInput{Difficulty: &invalidDiff})
 		if !errors.Is(err, ErrInvalidDifficulty) {
 			t.Errorf("error = %v, want ErrInvalidDifficulty", err)
@@ -413,7 +404,7 @@ func TestDailyManager_Delete(t *testing.T) {
 				return 1, nil
 			},
 		}
-		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil)
 		err := mgr.Delete(context.Background(), userID, dailyID)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -433,7 +424,7 @@ func TestDailyManager_Delete(t *testing.T) {
 				return database.Daily{}, pgx.ErrNoRows
 			},
 		}
-		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil)
 		err := mgr.Delete(context.Background(), userID, dailyID)
 		if !errors.Is(err, ErrDailyNotFound) {
 			t.Errorf("error = %v, want ErrDailyNotFound", err)
@@ -448,7 +439,7 @@ func TestDailyManager_Delete(t *testing.T) {
 				return 1, nil
 			},
 		}
-		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil)
 		err := mgr.Delete(context.Background(), userID, dailyID)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -463,10 +454,10 @@ func TestDailyManager_Complete(t *testing.T) {
 	userID := uuid.New()
 	dailyID := uuid.New()
 
-	t.Run("happy path completes daily, creates history, and publishes event", func(t *testing.T) {
+	t.Run("happy path completes daily, creates history, and stages outbox event", func(t *testing.T) {
 		tx := &fakeTx{}
 		txStarter := &fakeTxStarter{tx: tx}
-		pub := &mockPublisher{}
+		var outbox *database.InsertOutboxParams
 		var createdHistory *database.CreateDailyHistoryParams
 		now := time.Now().UTC()
 		store := &mockStore{
@@ -489,9 +480,13 @@ func TestDailyManager_Complete(t *testing.T) {
 				createdHistory = &arg
 				return nil
 			},
+			insertOutbox: func(ctx context.Context, arg database.InsertOutboxParams) error {
+				outbox = &arg
+				return nil
+			},
 		}
 
-		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, pub)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil)
 		item, err := mgr.Complete(context.Background(), userID, dailyID)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -520,18 +515,27 @@ func TestDailyManager_Complete(t *testing.T) {
 		if createdHistory.MissedAt.Valid {
 			t.Errorf("createdHistory.MissedAt should NOT be valid")
 		}
-		if len(pub.published) != 1 {
-			t.Fatalf("len(published) = %d, want 1", len(pub.published))
+		if outbox == nil {
+			t.Fatalf("InsertOutbox was not called")
 		}
-		if pub.published[0].RewardMaterials != 25 {
-			t.Errorf("reward = %d, want 25", pub.published[0].RewardMaterials)
+		if outbox.EventType != "daily.completed" {
+			t.Errorf("outbox event_type = %q, want daily.completed", outbox.EventType)
+		}
+		if !outbox.EventID.Valid {
+			t.Errorf("outbox event_id should be valid")
+		}
+		var published events.DailyCompleted
+		if err := json.Unmarshal(outbox.Payload, &published); err != nil {
+			t.Fatalf("decode outbox payload: %v", err)
+		}
+		if published.RewardMaterials != 25 {
+			t.Errorf("reward = %d, want 25", published.RewardMaterials)
 		}
 	})
 
 	t.Run("returns error and rolls back if createDailyHistory fails", func(t *testing.T) {
 		tx := &fakeTx{}
 		txStarter := &fakeTxStarter{tx: tx}
-		pub := &mockPublisher{}
 		store := &mockStore{
 			markDailyComplete: func(ctx context.Context, arg database.MarkDailyCompleteParams) (database.Daily, error) {
 				return database.Daily{
@@ -549,16 +553,13 @@ func TestDailyManager_Complete(t *testing.T) {
 			},
 		}
 
-		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, pub)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil)
 		_, err := mgr.Complete(context.Background(), userID, dailyID)
 		if err == nil {
 			t.Fatalf("expected error when createDailyHistory fails")
 		}
 		if !tx.rolledBack {
 			t.Errorf("tx was not rolled back")
-		}
-		if len(pub.published) != 0 {
-			t.Errorf("published events = %d, want 0", len(pub.published))
 		}
 	})
 
@@ -573,7 +574,7 @@ func TestDailyManager_Complete(t *testing.T) {
 			},
 		}
 
-		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil)
 		_, err := mgr.Complete(context.Background(), userID, dailyID)
 		if !errors.Is(err, ErrDailyNotFound) {
 			t.Errorf("error = %v, want ErrDailyNotFound", err)
@@ -591,7 +592,7 @@ func TestDailyManager_Complete(t *testing.T) {
 			},
 		}
 
-		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil)
 		_, err := mgr.Complete(context.Background(), userID, dailyID)
 		if !errors.Is(err, ErrDailyAlreadyCompleted) {
 			t.Errorf("error = %v, want ErrDailyAlreadyCompleted", err)
@@ -609,17 +610,18 @@ func TestDailyManager_Complete(t *testing.T) {
 			},
 		}
 
-		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, nil)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil)
 		_, err := mgr.Complete(context.Background(), userID, dailyID)
 		if !errors.Is(err, ErrDailyNotPending) {
 			t.Errorf("error = %v, want ErrDailyNotPending", err)
 		}
 	})
 
-	t.Run("does not publish event if commit fails", func(t *testing.T) {
-		failTx := &fakeTxWithCommitError{err: errors.New("commit failed")}
+	t.Run("returns commit error and rolls back the staged outbox event", func(t *testing.T) {
+		commitErr := errors.New("commit failed")
+		failTx := &fakeTxWithCommitError{err: commitErr}
 		txStarter := &fakeTxStarter{tx: failTx}
-		pub := &mockPublisher{}
+		var outboxStaged bool
 		store := &mockStore{
 			markDailyComplete: func(ctx context.Context, arg database.MarkDailyCompleteParams) (database.Daily, error) {
 				return database.Daily{
@@ -635,21 +637,28 @@ func TestDailyManager_Complete(t *testing.T) {
 			createDailyHistory: func(ctx context.Context, arg database.CreateDailyHistoryParams) error {
 				return nil
 			},
+			insertOutbox: func(ctx context.Context, arg database.InsertOutboxParams) error {
+				outboxStaged = true
+				return nil
+			},
 		}
 
-		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, pub)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil)
 		_, err := mgr.Complete(context.Background(), userID, dailyID)
-		if err == nil {
-			t.Fatalf("expected commit error")
+		if !errors.Is(err, commitErr) {
+			t.Fatalf("error = %v, want commit error", err)
 		}
-		if len(pub.published) != 0 {
-			t.Errorf("published events = %d, want 0", len(pub.published))
+		if !outboxStaged {
+			t.Errorf("outbox event was not staged before commit")
+		}
+		if !failTx.rolledBack {
+			t.Errorf("tx was not rolled back")
 		}
 	})
 
 	t.Run("concurrent Complete requests allow only one winner and return ErrDailyAlreadyCompleted for losers", func(t *testing.T) {
 		txStarter := &threadSafeTxStarter{}
-		pub := &mockPublisher{}
+		var outboxCount int64
 
 		var mu sync.Mutex
 		taskStatus := string(StatusPending)
@@ -684,9 +693,13 @@ func TestDailyManager_Complete(t *testing.T) {
 			createDailyHistory: func(ctx context.Context, arg database.CreateDailyHistoryParams) error {
 				return nil
 			},
+			insertOutbox: func(ctx context.Context, arg database.InsertOutboxParams) error {
+				atomic.AddInt64(&outboxCount, 1)
+				return nil
+			},
 		}
 
-		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil, pub)
+		mgr := NewDailyManager(txStarter, func(t pgx.Tx) Store { return store }, nil)
 
 		const concurrency = 10
 		var wg sync.WaitGroup
@@ -714,10 +727,8 @@ func TestDailyManager_Complete(t *testing.T) {
 		if alreadyCompletedCount != concurrency-1 {
 			t.Errorf("alreadyCompletedCount = %d, want %d", alreadyCompletedCount, concurrency-1)
 		}
-		pub.mu.Lock()
-		defer pub.mu.Unlock()
-		if len(pub.published) != 1 {
-			t.Errorf("published events = %d, want 1", len(pub.published))
+		if got := atomic.LoadInt64(&outboxCount); got != 1 {
+			t.Errorf("staged outbox events = %d, want 1", got)
 		}
 	})
 }
@@ -752,7 +763,7 @@ func TestDailyManager_ListHistory(t *testing.T) {
 			},
 		}
 
-		mgr := NewDailyManager(nil, nil, store, nil)
+		mgr := NewDailyManager(nil, nil, store)
 		items, err := mgr.ListHistory(context.Background(), userID)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -794,7 +805,7 @@ func TestDailyManager_ListHistory(t *testing.T) {
 			},
 		}
 
-		mgr := NewDailyManager(nil, nil, store, nil)
+		mgr := NewDailyManager(nil, nil, store)
 		_, err := mgr.ListHistory(context.Background(), userID)
 		if err == nil {
 			t.Fatalf("expected error from ListHistory")

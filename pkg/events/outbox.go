@@ -8,6 +8,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
@@ -21,6 +25,19 @@ type OutboxRecord struct {
 	OccurredAt time.Time
 }
 
+// NewOutboxRecord maps the common outbox columns shared by every service's
+// sqlc-generated Outbox row into the transport-neutral OutboxRecord.
+func NewOutboxRecord(id int64, eventID pgtype.UUID, eventType string, payload []byte, requestID string, createdAt time.Time) OutboxRecord {
+	return OutboxRecord{
+		ID:         id,
+		EventID:    uuid.UUID(eventID.Bytes).String(),
+		EventType:  eventType,
+		Payload:    append(json.RawMessage(nil), payload...),
+		RequestID:  requestID,
+		OccurredAt: createdAt,
+	}
+}
+
 // OutboxBatch owns the transaction and locked rows for one bounded drain.
 type OutboxBatch interface {
 	ListPending(context.Context, int32) ([]OutboxRecord, error)
@@ -28,6 +45,45 @@ type OutboxBatch interface {
 	Commit(context.Context) error
 	Rollback(context.Context) error
 }
+
+// OutboxQueries is the sqlc-generated outbox surface of a service database.
+// T is that service's outbox row type.
+type OutboxQueries[T any] interface {
+	ListPendingOutbox(ctx context.Context, limit int32) ([]T, error)
+	MarkOutboxPublished(ctx context.Context, id int64) error
+}
+
+// NewOutboxBatch adapts a service transaction and its sqlc-generated outbox
+// queries to the shared drainer. toRecord maps the service-specific row type to
+// the transport-neutral OutboxRecord (see NewOutboxRecord).
+func NewOutboxBatch[T any](tx pgx.Tx, queries OutboxQueries[T], toRecord func(T) OutboxRecord) OutboxBatch {
+	return &sqlOutboxBatch[T]{tx: tx, queries: queries, toRecord: toRecord}
+}
+
+type sqlOutboxBatch[T any] struct {
+	tx       pgx.Tx
+	queries  OutboxQueries[T]
+	toRecord func(T) OutboxRecord
+}
+
+func (batch *sqlOutboxBatch[T]) ListPending(ctx context.Context, maxRows int32) ([]OutboxRecord, error) {
+	rows, err := batch.queries.ListPendingOutbox(ctx, maxRows)
+	if err != nil {
+		return nil, err
+	}
+	records := make([]OutboxRecord, 0, len(rows))
+	for _, row := range rows {
+		records = append(records, batch.toRecord(row))
+	}
+	return records, nil
+}
+
+func (batch *sqlOutboxBatch[T]) MarkPublished(ctx context.Context, id int64) error {
+	return batch.queries.MarkOutboxPublished(ctx, id)
+}
+
+func (batch *sqlOutboxBatch[T]) Commit(ctx context.Context) error   { return batch.tx.Commit(ctx) }
+func (batch *sqlOutboxBatch[T]) Rollback(ctx context.Context) error { return batch.tx.Rollback(ctx) }
 
 // OutboxBatchStarter begins a transaction used to claim an outbox batch.
 type OutboxBatchStarter func(context.Context) (OutboxBatch, error)

@@ -2,10 +2,12 @@ package cron
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
@@ -13,35 +15,34 @@ import (
 	"github.com/thalesraymond/galaxify-monorepo/workers/daily-cron/internal/database"
 )
 
-// Publisher publishes domain events to the event bus.
-type Publisher interface {
-	Publish(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error
+const (
+	dailyMissedEventType = "daily.missed"
+	drainBatchSize       = 50
+)
+
+// Drainer publishes bounded batches of staged outbox events.
+type Drainer interface {
+	Drain(ctx context.Context, maxRows int32)
 }
 
 // Worker scans for pending dailies whose due_date has passed, marks them
-// MISSED, and publishes a daily.missed event for each one.
-//
-// NOTE: publishing is best-effort here (naive publish, no outbox). The daily is
-// already committed as MISSED before the publish call, so a broker failure will
-// cause the event to be dropped without rolling back the status change. Full
-// at-least-once delivery via the transactional outbox is tracked in
-// https://github.com/thalesraymond/galaxify-monorepo/issues/20 — once that
-// lands the publisher field and post-commit publish loop will be replaced by
-// outbox inserts inside the transaction.
+// MISSED, and stages a daily.missed event in the same transaction. The staged
+// events are published by the shared outbox drainer, giving at-least-once
+// delivery (ADR-0004).
 type Worker struct {
 	store     Store
-	publisher Publisher
+	drainer   Drainer
 	batchSize int32
 	logger    *slog.Logger
 	now       func() time.Time
 }
 
-// NewMissedDailyWorker creates a Worker that marks expired pending dailies as MISSED
-// and publishes daily.missed events.
-func NewMissedDailyWorker(store Store, publisher Publisher, opts ...WorkerOption) *Worker {
+// NewMissedDailyWorker creates a Worker that marks expired pending dailies as
+// MISSED and stages daily.missed events in the outbox.
+func NewMissedDailyWorker(store Store, drainer Drainer, opts ...WorkerOption) *Worker {
 	w := &Worker{
 		store:     store,
-		publisher: publisher,
+		drainer:   drainer,
 		batchSize: 500,
 		logger:    slog.Default(),
 		now:       time.Now,
@@ -79,7 +80,7 @@ func WithClock(now func() time.Time) WorkerOption {
 
 // Tick runs one full mark and rollover cycle:
 // 1. Missed Pending Sweep: finds expired PENDING dailies, records them in daily_history as MISSED,
-// snaps due_date forward to the next cycle, and publishes a daily.missed event.
+// snaps due_date forward to the next cycle, and stages a daily.missed event.
 // 2. Completed Reset Sweep: finds expired COMPLETED dailies, resets status to PENDING, and advances due_date by 1 day.
 func (w *Worker) Tick(ctx context.Context) error {
 	now := w.now().UTC()
@@ -88,11 +89,11 @@ func (w *Worker) Tick(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("mark missed batch: %w", err)
 		}
-		if len(marked) == 0 {
+		if marked == 0 {
 			break
 		}
-		w.logger.Info("marked dailies missed", "count", len(marked))
-		w.publishBatch(ctx, marked)
+		w.logger.Info("marked dailies missed", "count", marked)
+		w.drainer.Drain(ctx, drainBatchSize)
 	}
 
 	for {
@@ -109,10 +110,12 @@ func (w *Worker) Tick(ctx context.Context) error {
 	return nil
 }
 
-// markBatch atomically logs up to batchSize pending expired dailies to daily_history
-// as MISSED and snaps their due_date forward inside a single transaction.
-func (w *Worker) markBatch(ctx context.Context, now time.Time) ([]database.ListPendingExpiredDailiesRow, error) {
-	var marked []database.ListPendingExpiredDailiesRow
+// markBatch atomically logs up to batchSize pending expired dailies to
+// daily_history as MISSED, snaps their due_date forward, and stages a
+// daily.missed outbox event for each inside a single transaction. It returns
+// the number of dailies processed.
+func (w *Worker) markBatch(ctx context.Context, now time.Time) (int, error) {
+	var marked int
 	err := w.store.WithTx(ctx, func(tx Tx) error {
 		dailies, err := tx.ListPendingExpiredDailies(ctx, now, w.batchSize)
 		if err != nil {
@@ -123,16 +126,36 @@ func (w *Worker) markBatch(ctx context.Context, now time.Time) ([]database.ListP
 		}
 
 		for _, daily := range dailies {
+			damage, err := tx.GetDamageAmount(ctx, daily.Difficulty)
+			if err != nil {
+				return err
+			}
 			if err := tx.RollOverPendingDaily(ctx, daily, now); err != nil {
+				return err
+			}
+			payload, err := json.Marshal(events.DailyMissed{
+				Version:      1,
+				UserID:       sharedhttp.UUIDToString(daily.UserID),
+				DailyID:      sharedhttp.UUIDToString(daily.ID),
+				DamageAmount: int(damage),
+			})
+			if err != nil {
+				return fmt.Errorf("marshal daily.missed event: %w", err)
+			}
+			if err := tx.InsertOutbox(ctx, database.InsertOutboxParams{
+				EventID:   pgtype.UUID{Bytes: uuid.New(), Valid: true},
+				EventType: dailyMissedEventType,
+				Payload:   payload,
+			}); err != nil {
 				return err
 			}
 		}
 
-		marked = dailies
+		marked = len(dailies)
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	return marked, nil
 }
@@ -163,51 +186,6 @@ func (w *Worker) resetCompletedBatch(ctx context.Context, now time.Time) (int, e
 		return 0, err
 	}
 	return count, nil
-}
-
-// publishBatch publishes a daily.missed event for each row in marked.
-// Publishing is best-effort: a broker failure logs a warning but does not roll
-// back the MISSED status already committed to the database.
-// Full at-least-once delivery is tracked in issue #20 (outbox pattern).
-func (w *Worker) publishBatch(ctx context.Context, marked []database.ListPendingExpiredDailiesRow) {
-	for _, daily := range marked {
-		damage, err := w.getDamageAmount(ctx, daily.Difficulty)
-		if err != nil {
-			w.logger.Warn("could not look up damage amount for daily.missed publish; skipping",
-				"daily_id", sharedhttp.UUIDToString(daily.ID),
-				"difficulty", daily.Difficulty,
-				"error", err,
-			)
-			continue
-		}
-
-		if err := w.publisher.Publish(ctx, "daily.missed", events.DailyMissed{
-			Version:      1,
-			UserID:       sharedhttp.UUIDToString(daily.UserID),
-			DailyID:      sharedhttp.UUIDToString(daily.ID),
-			DamageAmount: int(damage),
-		}); err != nil {
-			w.logger.Warn("daily.missed publish failed; event dropped (no outbox yet, see #20)",
-				"daily_id", sharedhttp.UUIDToString(daily.ID),
-				"error", err,
-			)
-		}
-	}
-}
-
-// getDamageAmount fetches the damage amount for a given difficulty in a
-// read-only transaction.
-func (w *Worker) getDamageAmount(ctx context.Context, difficulty string) (int32, error) {
-	var damage int32
-	err := w.store.WithTx(ctx, func(tx Tx) error {
-		d, err := tx.GetDamageAmount(ctx, difficulty)
-		if err != nil {
-			return err
-		}
-		damage = d
-		return nil
-	})
-	return damage, err
 }
 
 // toTimestamptz converts a time.Time to pgtype.Timestamptz (used in store.go).

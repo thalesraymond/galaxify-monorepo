@@ -13,12 +13,15 @@ import (
 type Querier interface {
 	CreateDailyHistory(ctx context.Context, arg CreateDailyHistoryParams) error
 	GetDamageAmount(ctx context.Context, difficulty string) (int32, error)
+	InsertOutbox(ctx context.Context, arg InsertOutboxParams) error
 	// Selects up to `batch_size` COMPLETED dailies whose due_date has passed,
 	// locking them with SKIP LOCKED so concurrent worker instances don't collide.
 	ListCompletedExpiredDailies(ctx context.Context, arg ListCompletedExpiredDailiesParams) ([]pgtype.UUID, error)
 	// Selects up to `batch_size` PENDING dailies whose due_date has passed,
 	// locking them with SKIP LOCKED so concurrent worker instances don't collide.
 	ListPendingExpiredDailies(ctx context.Context, arg ListPendingExpiredDailiesParams) ([]ListPendingExpiredDailiesRow, error)
+	ListPendingOutbox(ctx context.Context, limit int32) ([]Outbox, error)
+	MarkOutboxPublished(ctx context.Context, id int64) error
 	// Resets COMPLETED daily back to PENDING and advances due_date by 1 day.
 	ResetCompletedDaily(ctx context.Context, arg ResetCompletedDailyParams) error
 	// Snaps due_date forward in 24-hour increments until due_date > now while remaining PENDING.

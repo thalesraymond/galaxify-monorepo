@@ -38,3 +38,18 @@ CREATE TABLE daily_history (
     archived_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Mirrors apps/daily-service/sql/schema/004_outbox.sql. Staged here only so
+-- sqlc can generate the outbox queries the daily-cron worker needs.
+CREATE TABLE outbox (
+    id           BIGSERIAL PRIMARY KEY,
+    event_id     UUID NOT NULL UNIQUE,
+    event_type   TEXT NOT NULL,
+    payload      JSONB NOT NULL,
+    request_id   TEXT,
+    status       TEXT NOT NULL DEFAULT 'PENDING'
+                 CHECK (status IN ('PENDING', 'PUBLISHED')),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    published_at TIMESTAMPTZ
+);
+
+

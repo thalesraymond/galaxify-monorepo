@@ -141,16 +141,23 @@ func run(logger *slog.Logger) error {
 		pool,
 		func(tx pgx.Tx) daily.Store { return database.New(tx) },
 		db,
-		publisher,
 		daily.WithDailyManagerLogger(logger),
 	)
 
 	dailyHandler := handler.NewDailyHandler(dailyManager, authHandshake, logger)
 	dailyHandler.RegisterDailyRoutes(mux)
 
+	outboxDrainer := events.NewOutboxDrainer(func(ctx context.Context) (events.OutboxBatch, error) {
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return daily.NewOutboxBatch(tx), nil
+	}, publisher, logger)
+
 	srv := &http.Server{
 		Addr:    httpAddr,
-		Handler: sharedhttp.RequestIDMiddleware(mux),
+		Handler: sharedhttp.RequestIDMiddleware(outboxDrainer.DrainAfterRequest(mux, 50)),
 	}
 
 	serveErr := make(chan error, 1)

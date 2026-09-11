@@ -2,6 +2,7 @@ package cron
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -33,6 +34,7 @@ type mockTx struct {
 	rollOverPendingDaily        func(ctx context.Context, daily database.ListPendingExpiredDailiesRow, now time.Time) error
 	listCompletedExpiredDailies func(ctx context.Context, before time.Time, limit int32) ([]pgtype.UUID, error)
 	resetCompletedDaily         func(ctx context.Context, id pgtype.UUID, now time.Time) error
+	insertOutbox                func(ctx context.Context, arg database.InsertOutboxParams) error
 }
 
 func (m *mockTx) ListPendingExpiredDailies(ctx context.Context, before time.Time, limit int32) ([]database.ListPendingExpiredDailiesRow, error) {
@@ -70,6 +72,13 @@ func (m *mockTx) ResetCompletedDaily(ctx context.Context, id pgtype.UUID, now ti
 	return errors.New("unexpected ResetCompletedDaily call")
 }
 
+func (m *mockTx) InsertOutbox(ctx context.Context, arg database.InsertOutboxParams) error {
+	if m.insertOutbox != nil {
+		return m.insertOutbox(ctx, arg)
+	}
+	return errors.New("unexpected InsertOutbox call")
+}
+
 type mockStore struct {
 	withTx func(ctx context.Context, fn func(Tx) error) error
 }
@@ -81,15 +90,16 @@ func (m *mockStore) WithTx(ctx context.Context, fn func(Tx) error) error {
 	return errors.New("unexpected WithTx call")
 }
 
-type mockPublisher struct {
-	publish func(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error
+type mockDrainer struct {
+	drain func(ctx context.Context, maxRows int32)
+	calls int
 }
 
-func (m *mockPublisher) Publish(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error {
-	if m.publish != nil {
-		return m.publish(ctx, eventType, payload, opts...)
+func (m *mockDrainer) Drain(ctx context.Context, maxRows int32) {
+	m.calls++
+	if m.drain != nil {
+		m.drain(ctx, maxRows)
 	}
-	return errors.New("unexpected Publish call")
 }
 
 // newSilentLogger discards all log output (keeps test output clean).
@@ -124,22 +134,22 @@ func TestWorkerTickNoExpiredDailies(t *testing.T) {
 			})
 		},
 	}
-	publisher := &mockPublisher{publish: func(_ context.Context, _ string, _ any, _ ...events.PublishOption) error {
-		t.Error("Publish should not be called when there are no expired dailies")
-		return nil
+	drainer := &mockDrainer{drain: func(_ context.Context, _ int32) {
+		t.Error("Drain should not be called when there are no expired dailies")
 	}}
-	worker := NewMissedDailyWorker(store, publisher, WithClock(func() time.Time { return fixedNow }))
+	worker := NewMissedDailyWorker(store, drainer, WithClock(func() time.Time { return fixedNow }))
 
 	if err := worker.Tick(context.Background()); err != nil {
 		t.Fatalf("Tick returned error: %v", err)
 	}
 }
 
-func TestWorkerTickRollsOverExpiredPendingDailyAndPublishes(t *testing.T) {
+func TestWorkerTickRollsOverExpiredPendingDailyAndStagesEvent(t *testing.T) {
 	var (
 		capturedEventType    string
 		capturedDailyID      string
 		capturedDamageAmount float64
+		outboxCalls          int
 		markCalls            int
 		rolledOverDaily      *database.ListPendingExpiredDailiesRow
 		rolledOverTime       time.Time
@@ -173,20 +183,22 @@ func TestWorkerTickRollsOverExpiredPendingDailyAndPublishes(t *testing.T) {
 					rolledOverTime = now
 					return nil
 				},
+				insertOutbox: func(_ context.Context, arg database.InsertOutboxParams) error {
+					outboxCalls++
+					capturedEventType = arg.EventType
+					var payload events.DailyMissed
+					if err := json.Unmarshal(arg.Payload, &payload); err != nil {
+						return err
+					}
+					capturedDailyID = payload.DailyID
+					capturedDamageAmount = float64(payload.DamageAmount)
+					return nil
+				},
 			})
 		},
 	}
-	publisher := &mockPublisher{
-		publish: func(_ context.Context, eventType string, payload any, _ ...events.PublishOption) error {
-			capturedEventType = eventType
-			if p, ok := payload.(events.DailyMissed); ok {
-				capturedDailyID = p.DailyID
-				capturedDamageAmount = float64(p.DamageAmount)
-			}
-			return nil
-		},
-	}
-	worker := NewMissedDailyWorker(store, publisher, WithClock(func() time.Time { return fixedNow }))
+	drainer := &mockDrainer{}
+	worker := NewMissedDailyWorker(store, drainer, WithClock(func() time.Time { return fixedNow }))
 
 	if err := worker.Tick(context.Background()); err != nil {
 		t.Fatalf("Tick returned error: %v", err)
@@ -204,6 +216,9 @@ func TestWorkerTickRollsOverExpiredPendingDailyAndPublishes(t *testing.T) {
 	if !rolledOverTime.Equal(fixedNow) {
 		t.Errorf("rolledOverTime = %v, want %v", rolledOverTime, fixedNow)
 	}
+	if outboxCalls != 1 {
+		t.Fatalf("outbox insert calls = %d, want 1", outboxCalls)
+	}
 	if capturedEventType != "daily.missed" {
 		t.Errorf("event_type = %q, want daily.missed", capturedEventType)
 	}
@@ -212,6 +227,9 @@ func TestWorkerTickRollsOverExpiredPendingDailyAndPublishes(t *testing.T) {
 	}
 	if capturedDamageAmount != 10 {
 		t.Errorf("payload.damage_amount = %v, want 10", capturedDamageAmount)
+	}
+	if drainer.calls != 1 {
+		t.Errorf("Drain calls = %d, want 1", drainer.calls)
 	}
 }
 
@@ -240,13 +258,10 @@ func TestWorkerTickResetsExpiredCompletedDaily(t *testing.T) {
 			})
 		},
 	}
-	publisher := &mockPublisher{
-		publish: func(_ context.Context, _ string, _ any, _ ...events.PublishOption) error {
-			t.Error("Publish should NOT be called during completed reset sweep")
-			return nil
-		},
-	}
-	worker := NewMissedDailyWorker(store, publisher, WithClock(func() time.Time { return fixedNow }))
+	drainer := &mockDrainer{drain: func(_ context.Context, _ int32) {
+		t.Error("Drain should NOT be called during completed reset sweep")
+	}}
+	worker := NewMissedDailyWorker(store, drainer, WithClock(func() time.Time { return fixedNow }))
 
 	if err := worker.Tick(context.Background()); err != nil {
 		t.Fatalf("Tick returned error: %v", err)
@@ -287,6 +302,7 @@ func TestWorkerTickRunsBothSweeps(t *testing.T) {
 					pendingProcessed = true
 					return nil
 				},
+				insertOutbox: func(_ context.Context, _ database.InsertOutboxParams) error { return nil },
 				listCompletedExpiredDailies: func(ctx context.Context, before time.Time, limit int32) ([]pgtype.UUID, error) {
 					completedCalls++
 					if completedCalls == 1 {
@@ -301,8 +317,8 @@ func TestWorkerTickRunsBothSweeps(t *testing.T) {
 			})
 		},
 	}
-	publisher := &mockPublisher{publish: func(_ context.Context, _ string, _ any, _ ...events.PublishOption) error { return nil }}
-	worker := NewMissedDailyWorker(store, publisher, WithClock(func() time.Time { return fixedNow }))
+	drainer := &mockDrainer{}
+	worker := NewMissedDailyWorker(store, drainer, WithClock(func() time.Time { return fixedNow }))
 
 	if err := worker.Tick(context.Background()); err != nil {
 		t.Fatalf("Tick returned error: %v", err)
@@ -335,6 +351,7 @@ func TestWorkerTickProcessesMultipleBatches(t *testing.T) {
 				rollOverPendingDaily: func(_ context.Context, _ database.ListPendingExpiredDailiesRow, _ time.Time) error {
 					return nil
 				},
+				insertOutbox: func(_ context.Context, _ database.InsertOutboxParams) error { return nil },
 				listCompletedExpiredDailies: func(ctx context.Context, before time.Time, limit int32) ([]pgtype.UUID, error) {
 					completedCalls++
 					if completedCalls == 1 {
@@ -348,8 +365,8 @@ func TestWorkerTickProcessesMultipleBatches(t *testing.T) {
 			})
 		},
 	}
-	publisher := &mockPublisher{publish: func(_ context.Context, _ string, _ any, _ ...events.PublishOption) error { return nil }}
-	worker := NewMissedDailyWorker(store, publisher,
+	drainer := &mockDrainer{}
+	worker := NewMissedDailyWorker(store, drainer,
 		WithClock(func() time.Time { return fixedNow }),
 		WithBatchSize(1),
 	)
@@ -368,7 +385,7 @@ func TestWorkerTickProcessesMultipleBatches(t *testing.T) {
 	}
 }
 
-func TestWorkerTickPublishFailureIsLogged(t *testing.T) {
+func TestWorkerTickOutboxFailureReturnsError(t *testing.T) {
 	var markCalls int
 	store := &mockStore{
 		withTx: func(ctx context.Context, fn func(Tx) error) error {
@@ -388,19 +405,23 @@ func TestWorkerTickPublishFailureIsLogged(t *testing.T) {
 				rollOverPendingDaily: func(_ context.Context, _ database.ListPendingExpiredDailiesRow, _ time.Time) error {
 					return nil
 				},
+				insertOutbox: func(_ context.Context, _ database.InsertOutboxParams) error {
+					return errors.New("outbox write failed")
+				},
 			})
 		},
 	}
-	publisher := &mockPublisher{publish: func(_ context.Context, _ string, _ any, _ ...events.PublishOption) error {
-		return errors.New("broker unavailable")
-	}}
-	worker := NewMissedDailyWorker(store, publisher,
+	drainer := &mockDrainer{}
+	worker := NewMissedDailyWorker(store, drainer,
 		WithLogger(newSilentLogger()),
 		WithClock(func() time.Time { return fixedNow }),
 	)
 
-	if err := worker.Tick(context.Background()); err != nil {
-		t.Fatalf("Tick must not return error on publish failure, got: %v", err)
+	if err := worker.Tick(context.Background()); err == nil {
+		t.Fatal("expected Tick to return error when outbox staging fails")
+	}
+	if drainer.calls != 0 {
+		t.Errorf("Drain calls = %d, want 0", drainer.calls)
 	}
 }
 
@@ -413,17 +434,17 @@ func TestWorkerTickRollOverPendingDailyError(t *testing.T) {
 						{ID: pgUUID(dailyID), UserID: pgUUID(userID), Difficulty: "HARD"},
 					}, nil
 				},
+				getDamageAmount: func(_ context.Context, _ string) (int32, error) { return 5, nil },
 				rollOverPendingDaily: func(_ context.Context, _ database.ListPendingExpiredDailiesRow, _ time.Time) error {
 					return errors.New("db write failed")
 				},
 			})
 		},
 	}
-	publisher := &mockPublisher{publish: func(_ context.Context, _ string, _ any, _ ...events.PublishOption) error {
-		t.Error("Publish must not be called when RollOverPendingDaily fails")
-		return nil
+	drainer := &mockDrainer{drain: func(_ context.Context, _ int32) {
+		t.Error("Drain must not be called when RollOverPendingDaily fails")
 	}}
-	worker := NewMissedDailyWorker(store, publisher, WithClock(func() time.Time { return fixedNow }))
+	worker := NewMissedDailyWorker(store, drainer, WithClock(func() time.Time { return fixedNow }))
 
 	if err := worker.Tick(context.Background()); err == nil {
 		t.Fatal("expected Tick to return error when RollOverPendingDaily fails")
@@ -443,10 +464,8 @@ func TestWorkerTickResetCompletedDailyError(t *testing.T) {
 			})
 		},
 	}
-	publisher := &mockPublisher{publish: func(_ context.Context, _ string, _ any, _ ...events.PublishOption) error {
-		return nil
-	}}
-	worker := NewMissedDailyWorker(store, publisher, WithClock(func() time.Time { return fixedNow }))
+	drainer := &mockDrainer{}
+	worker := NewMissedDailyWorker(store, drainer, WithClock(func() time.Time { return fixedNow }))
 
 	if err := worker.Tick(context.Background()); err == nil {
 		t.Fatal("expected Tick to return error when ResetCompletedDaily fails")

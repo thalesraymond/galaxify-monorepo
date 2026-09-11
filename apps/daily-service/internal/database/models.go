@@ -40,6 +40,17 @@ type DifficultyReward struct {
 	DamageAmount    int32
 }
 
+type Outbox struct {
+	ID          int64
+	EventID     pgtype.UUID
+	EventType   string
+	Payload     []byte
+	RequestID   pgtype.Text
+	Status      string
+	CreatedAt   pgtype.Timestamptz
+	PublishedAt pgtype.Timestamptz
+}
+
 type ProcessedEvent struct {
 	EventID     pgtype.UUID
 	ProcessedAt pgtype.Timestamptz
