@@ -27,10 +27,9 @@ const (
 	defaultInterval    = 5 * time.Minute
 )
 
-// NOTE: Publishing is best-effort (naive publish — no outbox). The daily.missed
-// status is committed to the DB before the publish call; if the broker is
-// unavailable the event is dropped with a warning log. Full at-least-once
-// delivery via the transactional outbox is tracked in issue #20.
+// The daily.missed status change and its outbox row are committed in the same
+// transaction; the shared outbox drainer then publishes pending rows after each
+// tick, giving at-least-once delivery (ADR-0004).
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -80,7 +79,14 @@ func run(logger *slog.Logger) error {
 	}
 
 	store := cron.NewPgStore(pool)
-	worker := cron.NewMissedDailyWorker(store, publisher, cron.WithLogger(logger))
+	outboxDrainer := events.NewOutboxDrainer(func(ctx context.Context) (events.OutboxBatch, error) {
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return cron.NewOutboxBatch(tx), nil
+	}, publisher, logger)
+	worker := cron.NewMissedDailyWorker(store, outboxDrainer, cron.WithLogger(logger))
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()

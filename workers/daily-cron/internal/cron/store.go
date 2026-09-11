@@ -18,6 +18,7 @@ type Tx interface {
 	RollOverPendingDaily(ctx context.Context, daily database.ListPendingExpiredDailiesRow, now time.Time) error
 	ListCompletedExpiredDailies(ctx context.Context, before time.Time, limit int32) ([]pgtype.UUID, error)
 	ResetCompletedDaily(ctx context.Context, id pgtype.UUID, now time.Time) error
+	InsertOutbox(ctx context.Context, arg database.InsertOutboxParams) error
 }
 
 // Store abstracts transaction management for the worker.
@@ -120,6 +121,13 @@ func (t *pgTx) ResetCompletedDaily(ctx context.Context, id pgtype.UUID, now time
 		ID:  id,
 	}); err != nil {
 		return fmt.Errorf("reset completed daily %v: %w", id, err)
+	}
+	return nil
+}
+
+func (t *pgTx) InsertOutbox(ctx context.Context, arg database.InsertOutboxParams) error {
+	if err := t.q.InsertOutbox(ctx, arg); err != nil {
+		return fmt.Errorf("insert %q outbox event: %w", arg.EventType, err)
 	}
 	return nil
 }
