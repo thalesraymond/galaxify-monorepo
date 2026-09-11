@@ -10,6 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
@@ -94,6 +98,104 @@ func TestOutboxDrainerDrain(t *testing.T) {
 				t.Errorf("occurred_at = %s, want %s", publisher.occurredAt, wantOccurredAt)
 			}
 		})
+	}
+}
+
+type fakeOutboxRow struct {
+	ID        int64
+	EventID   pgtype.UUID
+	EventType string
+	Payload   []byte
+	CreatedAt time.Time
+}
+
+type fakeOutboxQueries struct {
+	rows   []fakeOutboxRow
+	limit  int32
+	marked []int64
+}
+
+func (q *fakeOutboxQueries) ListPendingOutbox(_ context.Context, limit int32) ([]fakeOutboxRow, error) {
+	q.limit = limit
+	return q.rows, nil
+}
+
+func (q *fakeOutboxQueries) MarkOutboxPublished(_ context.Context, id int64) error {
+	q.marked = append(q.marked, id)
+	return nil
+}
+
+type fakeOutboxTx struct {
+	pgx.Tx
+	committed  bool
+	rolledBack bool
+}
+
+func (tx *fakeOutboxTx) Commit(context.Context) error   { tx.committed = true; return nil }
+func (tx *fakeOutboxTx) Rollback(context.Context) error { tx.rolledBack = true; return nil }
+
+func TestNewOutboxBatch(t *testing.T) {
+	eventID := uuid.MustParse("7e850eae-c44e-45f8-9392-492e7b6b3c10")
+	createdAt := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	queries := &fakeOutboxQueries{rows: []fakeOutboxRow{{
+		ID: 7, EventID: pgtype.UUID{Bytes: eventID, Valid: true},
+		EventType: "daily.completed", Payload: []byte(`{"version":1}`), CreatedAt: createdAt,
+	}}}
+	tx := &fakeOutboxTx{}
+	batch := NewOutboxBatch(tx, queries, func(row fakeOutboxRow) OutboxRecord {
+		return NewOutboxRecord(row.ID, row.EventID, row.EventType, row.Payload, "req-1", row.CreatedAt)
+	})
+
+	records, err := batch.ListPending(t.Context(), 25)
+	if err != nil {
+		t.Fatalf("ListPending() error = %v", err)
+	}
+	if queries.limit != 25 {
+		t.Errorf("limit = %d, want 25", queries.limit)
+	}
+	if len(records) != 1 {
+		t.Fatalf("records = %d, want 1", len(records))
+	}
+	if records[0].ID != 7 || records[0].EventID != eventID.String() || records[0].EventType != "daily.completed" {
+		t.Errorf("record = %+v", records[0])
+	}
+	if records[0].RequestID != "req-1" || !records[0].OccurredAt.Equal(createdAt) {
+		t.Errorf("record metadata = %+v", records[0])
+	}
+
+	if err := batch.MarkPublished(t.Context(), 7); err != nil {
+		t.Fatalf("MarkPublished() error = %v", err)
+	}
+	if len(queries.marked) != 1 || queries.marked[0] != 7 {
+		t.Errorf("marked = %v, want [7]", queries.marked)
+	}
+
+	if err := batch.Commit(t.Context()); err != nil {
+		t.Fatalf("Commit() error = %v", err)
+	}
+	if !tx.committed {
+		t.Error("transaction was not committed")
+	}
+	if err := batch.Rollback(t.Context()); err != nil {
+		t.Fatalf("Rollback() error = %v", err)
+	}
+	if !tx.rolledBack {
+		t.Error("transaction was not rolled back")
+	}
+}
+
+func TestNewOutboxRecordCopiesPayload(t *testing.T) {
+	eventID := uuid.MustParse("7e850eae-c44e-45f8-9392-492e7b6b3c10")
+	payload := []byte(`{"version":1}`)
+
+	record := NewOutboxRecord(1, pgtype.UUID{Bytes: eventID, Valid: true}, "user.created", payload, "", time.Time{})
+	payload[0] = 'X'
+
+	if string(record.Payload) != `{"version":1}` {
+		t.Errorf("payload = %q, want an independent copy", record.Payload)
+	}
+	if record.EventID != eventID.String() {
+		t.Errorf("event id = %q, want %q", record.EventID, eventID.String())
 	}
 }
 
