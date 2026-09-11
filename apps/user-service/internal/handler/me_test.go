@@ -74,8 +74,9 @@ func newTestMeHandler(t *testing.T, store MeStore) (*MeHandler, *fakeTxStarter) 
 // Used in unit tests where auth middleware is bypassed by calling handlers directly.
 type noopJWKSCache struct{}
 
-func (c *noopJWKSCache) GetKey(ctx context.Context, kid string) (crypto.PublicKey, error) { return nil, auth.ErrUnknownKeyID }
-
+func (c *noopJWKSCache) GetKey(ctx context.Context, kid string) (crypto.PublicKey, error) {
+	return nil, auth.ErrUnknownKeyID
+}
 
 func TestGetMe(t *testing.T) {
 	userID := uuid.New()

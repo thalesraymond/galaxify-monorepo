@@ -14,7 +14,7 @@ Location: `apps/ship-service/sql/schema/`
 
 Tables:
 1. `ships`: Stores ship state for users.
-2. `outbox` and `processed_events`: Managed per cross-cutting specs (outbox schema lives in `pkg/events` per #20; `processed_events` is per-service).
+2. `outbox` and `processed_events`: Managed per cross-cutting specs (the `outbox` table, sqlc queries, and drainer wiring live in this service; `processed_events` is per-service).
 
 Required sqlc queries:
 - `get_by_user`: Retrieve a ship by user ID.

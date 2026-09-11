@@ -116,14 +116,14 @@ deferred.
 
 ### 2.4 Outbox table
 
-Deferred to [#20 — Implement pkg/events outbox drain](https://github.com/thalesraymond/galaxify-monorepo/issues/20).
-
-Phase 1 User Service uses **naive publish**: call `publisher.Publish()`
-directly after the DB commit. The dual-write risk (DB committed but publish
-fails → lost event) is accepted. When #20 lands, handlers swap the direct
-publish for `InsertOutboxRow` inside the transaction + fire-and-forget
-`Drain`. Consumer-side idempotency (`pkg/events.ProcessedEvents`) is already
-in place.
+The service owns an `outbox` table (migration `007_outbox.sql`) plus the shared
+sqlc queries (`InsertOutbox`, `ListPendingOutbox`, `MarkOutboxPublished`).
+Registration and account deletion stage their `user.created` / `user.deleted`
+events **inside the same transaction** as the domain mutation, capturing the
+originating request ID. `main.go` wraps the mux with
+`pkg/events.OutboxDrainer.DrainAfterRequest(mux, 50)` so pending rows are
+published after each handled request (ADR-0004, cross-cutting §6). Consumer-side
+idempotency (`pkg/events.ProcessedEvents`) handles duplicate delivery.
 
 ---
 
@@ -361,8 +361,8 @@ type UserCreated struct {
 }
 ```
 
-Routing key: `user.created`. Published via `publisher.Publish(ctx,
-"user.created", payload)` (naive, no outbox).
+Routing key: `user.created`. Staged in the `outbox` table inside the signup
+transaction; the shared outbox drainer publishes it to `galaxify.events`.
 
 ### 5.2 `user.deleted`
 
@@ -406,7 +406,7 @@ Each is independently shippable.
 | Order | Ticket                                                      | Depends on | Slice                                                                                             |
 |-------|-------------------------------------------------------------|------------|---------------------------------------------------------------------------------------------------|
 | 1     | User schema + sqlc queries                                  | —          | Migrations 003–005, sqlc queries for users/refresh_tokens/signing_keys, generated Go code.         |
-| 2     | Signup handler + keypair bootstrap + JWKS endpoint          | 1          | `POST /users`, `GET /.well-known/jwks.json`, keypair load/generate, naive publish `user.created`.  |
+| 2     | Signup handler + keypair bootstrap + JWKS endpoint          | 1          | `POST /users`, `GET /.well-known/jwks.json`, keypair load/generate, stage `user.created` in the outbox. |
 | 3     | Login handler                                               | 2          | `POST /auth/login`.                                                                               |
 | 4     | Refresh handler                                             | 3          | `POST /auth/refresh`, family-based rotation.                                                      |
 | 5     | Me handlers (GET / PATCH / DELETE)                          | 2          | Auth-protected routes, `user.deleted` event, `UserDeleted` type in `pkg/events`.                  |
@@ -423,4 +423,3 @@ Each is independently shippable.
 - Audit log.
 - Email and password change via `PATCH /users/me`.
 - Key rotation (multiple active kids).
-- Outbox-based event publishing (deferred to #20).
