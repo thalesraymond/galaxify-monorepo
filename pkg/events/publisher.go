@@ -3,8 +3,10 @@ package events
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,6 +21,9 @@ type PublisherChannel interface {
 	ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp091.Table) error
 	QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp091.Table) (amqp091.Queue, error)
 	QueueBind(name, key, exchange string, noWait bool, args amqp091.Table) error
+	Confirm(noWait bool) error
+	GetNextPublishSeqNo() uint64
+	NotifyPublish(confirm chan amqp091.Confirmation) chan amqp091.Confirmation
 	Publish(exchange, key string, mandatory, immediate bool, msg amqp091.Publishing) error
 	Close() error
 }
@@ -27,8 +32,10 @@ type PublisherChannel interface {
 var _ PublisherChannel = (*amqp091.Channel)(nil)
 
 type Publisher struct {
-	channel PublisherChannel
-	logger  *slog.Logger
+	mu            sync.Mutex
+	channel       PublisherChannel
+	confirmations <-chan amqp091.Confirmation
+	logger        *slog.Logger
 }
 
 // EventPublisher publishes domain events using the Galaxify event envelope.
@@ -44,7 +51,15 @@ var _ EventPublisher = (*Publisher)(nil)
 type PublishOption func(*publishOptions)
 
 type publishOptions struct {
-	eventID string
+	eventID    string
+	occurredAt time.Time
+}
+
+// WithOccurredAt preserves the event's original occurrence time across outbox retries.
+func WithOccurredAt(occurredAt time.Time) PublishOption {
+	return func(o *publishOptions) {
+		o.occurredAt = occurredAt
+	}
 }
 
 // WithEventID uses the provided event ID in the envelope instead of generating
@@ -124,15 +139,26 @@ func NewPublisher(channel PublisherChannel, opts ...Option) (*Publisher, error) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to declare exchange: %w", err)
 	}
+	if err := channel.Confirm(false); err != nil {
+		return nil, fmt.Errorf("enable publisher confirms: %w", err)
+	}
+	confirmations := channel.NotifyPublish(make(chan amqp091.Confirmation, 1))
 
-	return &Publisher{channel: channel, logger: o.logger}, nil
+	return &Publisher{channel: channel, confirmations: confirmations, logger: o.logger}, nil
 }
 
 func (p *Publisher) Publish(ctx context.Context, eventType string, payload any, opts ...PublishOption) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	o := applyPublishOptions(opts)
 	eventID := o.eventID
 	if eventID == "" {
 		eventID = uuid.New().String()
+	}
+	occurredAt := o.occurredAt
+	if occurredAt.IsZero() {
+		occurredAt = time.Now()
 	}
 
 	payloadBytes, err := json.Marshal(payload)
@@ -143,7 +169,7 @@ func (p *Publisher) Publish(ctx context.Context, eventType string, payload any, 
 	envelope := Envelope{
 		EventId:    eventID,
 		EventType:  eventType,
-		OccurredAt: time.Now(),
+		OccurredAt: occurredAt,
 		Version:    1,
 		Payload:    payloadBytes,
 	}
@@ -163,9 +189,10 @@ func (p *Publisher) Publish(ctx context.Context, eventType string, payload any, 
 		if props.Headers == nil {
 			props.Headers = amqp091.Table{}
 		}
-		props.Headers["X-Request-ID"] = requestID
+		props.Headers["x-request-id"] = requestID
 	}
 
+	expectedDeliveryTag := p.channel.GetNextPublishSeqNo()
 	err = p.channel.Publish(
 		"galaxify.events", // exchange
 		eventType,         // routing key
@@ -175,6 +202,26 @@ func (p *Publisher) Publish(ctx context.Context, eventType string, payload any, 
 	)
 	if err != nil {
 		return fmt.Errorf("failed to publish event: %w", err)
+	}
+	for {
+		select {
+		case confirmation, ok := <-p.confirmations:
+			if !ok {
+				return errors.New("publisher confirmation channel closed")
+			}
+			if confirmation.DeliveryTag < expectedDeliveryTag {
+				continue
+			}
+			if confirmation.DeliveryTag != expectedDeliveryTag {
+				return fmt.Errorf("unexpected publisher confirmation tag: got %d, want %d", confirmation.DeliveryTag, expectedDeliveryTag)
+			}
+			if !confirmation.Ack {
+				return errors.New("broker rejected event")
+			}
+		case <-ctx.Done():
+			return fmt.Errorf("wait for publisher confirmation: %w", ctx.Err())
+		}
+		break
 	}
 
 	p.logger.Debug("event published",
@@ -186,5 +233,7 @@ func (p *Publisher) Publish(ctx context.Context, eventType string, payload any, 
 }
 
 func (p *Publisher) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.channel.Close()
 }

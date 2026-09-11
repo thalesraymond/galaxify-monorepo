@@ -80,18 +80,27 @@ func run(logger *slog.Logger) error {
 	}
 	defer conn.Close()
 
-	ch, err := conn.Channel()
+	publisherChannel, err := conn.Channel()
 	if err != nil {
-		return fmt.Errorf("create channel: %w", err)
+		return fmt.Errorf("create publisher channel: %w", err)
 	}
 
 	// NewPublisher declares galaxify.events and its alternate-exchange safety net.
-	// The returned publisher is intentionally unused until Expedition emits lifecycle events.
-	if _, err := events.NewPublisher(ch, events.WithLogger(logger)); err != nil {
+	publisher, err := events.NewPublisher(publisherChannel, events.WithLogger(logger))
+	if err != nil {
 		return fmt.Errorf("declare event topology: %w", err)
 	}
+	defer func() {
+		if err := publisher.Close(); err != nil {
+			logger.Error("close event publisher", "error", err)
+		}
+	}()
 
-	subscriber, err := events.NewSubscriber(ch, serviceName, events.WithLogger(logger))
+	subscriberChannel, err := conn.Channel()
+	if err != nil {
+		return fmt.Errorf("create subscriber channel: %w", err)
+	}
+	subscriber, err := events.NewSubscriber(subscriberChannel, serviceName, events.WithLogger(logger))
 	if err != nil {
 		return fmt.Errorf("create subscriber: %w", err)
 	}
@@ -126,11 +135,22 @@ func run(logger *slog.Logger) error {
 
 	mux := http.NewServeMux()
 	handler.NewHealthHandler(serviceName).RegisterHealthRoutes(mux)
-	handler.NewExpeditionReadHandler(expedition.NewManager(database.New(pool)), authHandshake, logger).RegisterExpeditionReadRoutes(mux)
+	queries := database.New(pool)
+	launchStoreFactory := func(tx pgx.Tx) expedition.LaunchStore { return database.New(tx) }
+	expeditionManager := expedition.NewManager(queries, pool, launchStoreFactory)
+	handler.NewExpeditionReadHandler(expeditionManager, authHandshake, logger).RegisterExpeditionReadRoutes(mux)
+	outboxDrainer := events.NewOutboxDrainer(func(ctx context.Context) (events.OutboxBatch, error) {
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return expedition.NewOutboxBatch(tx), nil
+	}, publisher, logger)
+	handler.NewExpeditionLaunchHandler(expeditionManager, authHandshake, logger).RegisterExpeditionLaunchRoutes(mux)
 
 	srv := &http.Server{
 		Addr:    httpAddr,
-		Handler: sharedhttp.RequestIDMiddleware(mux),
+		Handler: sharedhttp.RequestIDMiddleware(outboxDrainer.DrainAfterRequest(mux, 50)),
 	}
 
 	serveErr := make(chan error, 1)

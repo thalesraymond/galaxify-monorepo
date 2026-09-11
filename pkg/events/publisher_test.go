@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rabbitmq/amqp091-go"
 
@@ -43,6 +44,7 @@ type fakePublisherChannel struct {
 	eventsDeclareErr error
 	queueDeclareErr  error
 	queueBindErr     error
+	confirmErr       error
 	publishErr       error
 	closeErr         error
 
@@ -52,6 +54,9 @@ type fakePublisherChannel struct {
 	routingKeys      []string
 	published        []amqp091.Publishing
 	closed           bool
+	confirmations    chan amqp091.Confirmation
+	nextPublishSeqNo uint64
+	skipConfirmation bool
 }
 
 // Compile-time assertion that the fake still satisfies the real interface.
@@ -102,9 +107,32 @@ func (f *fakePublisherChannel) QueueBind(name, key, exchange string, noWait bool
 	return f.queueBindErr
 }
 
+func (f *fakePublisherChannel) Confirm(bool) error { return f.confirmErr }
+
+func (f *fakePublisherChannel) GetNextPublishSeqNo() uint64 {
+	if f.nextPublishSeqNo == 0 {
+		f.nextPublishSeqNo = 1
+	}
+	return f.nextPublishSeqNo
+}
+
+func (f *fakePublisherChannel) NotifyPublish(confirm chan amqp091.Confirmation) chan amqp091.Confirmation {
+	f.confirmations = confirm
+	return confirm
+}
+
 func (f *fakePublisherChannel) Publish(exchange, key string, mandatory, immediate bool, msg amqp091.Publishing) error {
 	f.routingKeys = append(f.routingKeys, key)
 	f.published = append(f.published, msg)
+	if f.publishErr == nil {
+		deliveryTag := f.GetNextPublishSeqNo()
+		f.nextPublishSeqNo++
+		if !f.skipConfirmation {
+			go func() {
+				f.confirmations <- amqp091.Confirmation{DeliveryTag: deliveryTag, Ack: true}
+			}()
+		}
+	}
 	return f.publishErr
 }
 
@@ -436,9 +464,9 @@ func TestPublisherPublish(t *testing.T) {
 			t.Fatalf("Publish returned error: %v", err)
 		}
 
-		got, ok := ch.published[0].Headers["X-Request-ID"]
+		got, ok := ch.published[0].Headers["x-request-id"]
 		if !ok {
-			t.Fatal("expected X-Request-ID header")
+			t.Fatal("expected x-request-id header")
 		}
 		if got != "req-123" {
 			t.Errorf("X-Request-ID = %v, want %q", got, "req-123")
@@ -455,8 +483,8 @@ func TestPublisherPublish(t *testing.T) {
 		if err := p.Publish(context.Background(), "user.created", nil); err != nil {
 			t.Fatalf("Publish returned error: %v", err)
 		}
-		if _, ok := ch.published[0].Headers["X-Request-ID"]; ok {
-			t.Error("expected no X-Request-ID header")
+		if _, ok := ch.published[0].Headers["x-request-id"]; ok {
+			t.Error("expected no x-request-id header")
 		}
 	})
 
@@ -481,6 +509,25 @@ func TestPublisherPublish(t *testing.T) {
 		}
 	})
 
+	t.Run("uses explicit occurrence time for outbox retries", func(t *testing.T) {
+		ch := &fakePublisherChannel{}
+		p, err := NewPublisher(ch)
+		if err != nil {
+			t.Fatalf("NewPublisher returned error: %v", err)
+		}
+		wantTime := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+		if err := p.Publish(context.Background(), "expedition.launched", nil, WithOccurredAt(wantTime)); err != nil {
+			t.Fatalf("Publish returned error: %v", err)
+		}
+		var env Envelope
+		if err := json.Unmarshal(ch.published[0].Body, &env); err != nil {
+			t.Fatalf("unmarshal envelope: %v", err)
+		}
+		if !env.OccurredAt.Equal(wantTime) {
+			t.Errorf("occurred_at = %s, want %s", env.OccurredAt, wantTime)
+		}
+	})
+
 	t.Run("returns error when publish fails", func(t *testing.T) {
 		wantErr := errors.New("publish failed")
 		ch := &fakePublisherChannel{publishErr: wantErr}
@@ -491,6 +538,28 @@ func TestPublisherPublish(t *testing.T) {
 
 		if err := p.Publish(context.Background(), "user.created", nil); !errors.Is(err, wantErr) {
 			t.Fatalf("expected publish error %v, got %v", wantErr, err)
+		}
+	})
+
+	t.Run("does not apply a stale confirmation to the next publish", func(t *testing.T) {
+		ch := &fakePublisherChannel{skipConfirmation: true}
+		p, err := NewPublisher(ch)
+		if err != nil {
+			t.Fatalf("NewPublisher returned error: %v", err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if err := p.Publish(ctx, "user.created", nil); !errors.Is(err, context.Canceled) {
+			t.Fatalf("first Publish error = %v, want context canceled", err)
+		}
+
+		ch.skipConfirmation = false
+		ch.confirmations <- amqp091.Confirmation{DeliveryTag: 1, Ack: true}
+		if err := p.Publish(context.Background(), "user.created", nil); err != nil {
+			t.Fatalf("second Publish returned error: %v", err)
+		}
+		if ch.nextPublishSeqNo != 3 {
+			t.Errorf("next publish sequence = %d, want 3", ch.nextPublishSeqNo)
 		}
 	})
 }

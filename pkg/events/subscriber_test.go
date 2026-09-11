@@ -647,7 +647,7 @@ func TestSubscriberDispatch(t *testing.T) {
 		ch.deliveries <- amqp091.Delivery{
 			RoutingKey:   "user.created",
 			Body:         []byte(`{}`),
-			Headers:      amqp091.Table{"X-Request-ID": "req-456"},
+			Headers:      amqp091.Table{"x-request-id": "req-456"},
 			Acknowledger: rec,
 		}
 

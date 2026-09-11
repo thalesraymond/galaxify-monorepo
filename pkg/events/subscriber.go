@@ -148,7 +148,7 @@ func (s *Subscriber) Start(ctx context.Context) error {
 				handlerCtx := ctx
 
 				if msg.Headers != nil {
-					if requestID, ok := msg.Headers["X-Request-ID"].(string); ok {
+					if requestID, ok := msg.Headers["x-request-id"].(string); ok {
 						handlerCtx = sharedhttp.WithRequestID(handlerCtx, requestID)
 					}
 				}

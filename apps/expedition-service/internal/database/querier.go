@@ -23,9 +23,12 @@ type Querier interface {
 	GetTestTable(ctx context.Context, id int64) (TestTable, error)
 	InsertExpedition(ctx context.Context, arg InsertExpeditionParams) (Expedition, error)
 	InsertExpeditionResult(ctx context.Context, arg InsertExpeditionResultParams) (ExpeditionResult, error)
+	InsertOutbox(ctx context.Context, arg InsertOutboxParams) error
 	InsertProcessedEvent(ctx context.Context, eventID pgtype.UUID) (int64, error)
 	ListByUser(ctx context.Context, arg ListByUserParams) ([]Expedition, error)
+	ListPendingOutbox(ctx context.Context, limit int32) ([]Outbox, error)
 	ListTestTables(ctx context.Context) ([]TestTable, error)
+	MarkOutboxPublished(ctx context.Context, id int64) error
 	SeedShipCache(ctx context.Context, arg SeedShipCacheParams) error
 	UpdateTestTable(ctx context.Context, arg UpdateTestTableParams) (TestTable, error)
 	UpsertShipCache(ctx context.Context, arg UpsertShipCacheParams) (UserShipStateCache, error)

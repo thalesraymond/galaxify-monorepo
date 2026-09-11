@@ -70,7 +70,7 @@ func (s *expeditionTestTokenSigner) token(t *testing.T, userID string) string {
 	return token
 }
 
-func newTestExpeditionReadRouter(t *testing.T, manager expedition.Manager) (http.Handler, *expeditionTestTokenSigner) {
+func newTestExpeditionReadRouter(t *testing.T, manager expeditionManager) (http.Handler, *expeditionTestTokenSigner) {
 	t.Helper()
 	signer := newExpeditionTestTokenSigner(t)
 	readHandler := NewExpeditionReadHandler(

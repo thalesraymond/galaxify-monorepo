@@ -34,7 +34,7 @@ Use the **transactional outbox pattern** with an **HTTP-triggered drain** (no
 independent goroutine):
 
 - Every publishing service has an `outbox` table:
-  `(id, event_id, event_type, payload JSONB, status PENDING|PUBLISHED, created_at, published_at)`.
+  `(id, event_id, event_type, payload JSONB, request_id, status PENDING|PUBLISHED, created_at, published_at)`.
 - When a handler commits a state change that should produce an event, it
   writes the state change **and** the outbox row in the **same DB
   transaction**. Both commit together, or neither does.
@@ -43,6 +43,8 @@ independent goroutine):
   using `FOR UPDATE SKIP LOCKED` to avoid double-publish across replicas.
 - The drain publishes to RabbitMQ via `pkg/events.Publisher` and marks rows
   `PUBLISHED` after broker ack.
+- The outbox persists the originating HTTP `request_id` so delayed retries use
+  the original correlation ID rather than whichever request triggers the drain.
 - The service has **no background goroutine in `main()`**. When no HTTP
   traffic is present, ACA sees zero activity and scales to zero. On the next
   request, the new instance's drain picks up any accumulated `PENDING` rows.

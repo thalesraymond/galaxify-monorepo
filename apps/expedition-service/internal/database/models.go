@@ -35,6 +35,7 @@ type Outbox struct {
 	Status      string
 	CreatedAt   pgtype.Timestamptz
 	PublishedAt pgtype.Timestamptz
+	RequestID   pgtype.Text
 }
 
 type ProcessedEvent struct {
