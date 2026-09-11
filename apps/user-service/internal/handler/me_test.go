@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"crypto"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
@@ -25,6 +27,7 @@ type mockMeStore struct {
 	getUserByID        func(ctx context.Context, id pgtype.UUID) (database.User, error)
 	updateUserUsername func(ctx context.Context, arg database.UpdateUserUsernameParams) (database.User, error)
 	deleteUserByID     func(ctx context.Context, id pgtype.UUID) error
+	insertOutbox       func(ctx context.Context, arg database.InsertOutboxParams) error
 }
 
 func (m *mockMeStore) GetUserByID(ctx context.Context, id pgtype.UUID) (database.User, error) {
@@ -48,14 +51,23 @@ func (m *mockMeStore) DeleteUserByID(ctx context.Context, id pgtype.UUID) error 
 	return errors.New("unexpected DeleteUserByID call")
 }
 
-func newTestMeHandler(t *testing.T, store meStore, publisher EventPublisher) *MeHandler {
+func (m *mockMeStore) InsertOutbox(ctx context.Context, arg database.InsertOutboxParams) error {
+	if m.insertOutbox != nil {
+		return m.insertOutbox(ctx, arg)
+	}
+	return errors.New("unexpected InsertOutbox call")
+}
+
+func newTestMeHandler(t *testing.T, store MeStore) (*MeHandler, *fakeTxStarter) {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	// Use a static AuthHandshake with a no-op cache for unit tests —
 	// auth middleware is tested separately in pkg/sharedhttp.
 	cache := &noopJWKSCache{}
 	authHandshake := sharedhttp.NewAuthHandshake(cache)
-	return NewMeHandler(store, publisher, authHandshake, logger)
+	starter := &fakeTxStarter{}
+	handler := NewMeHandler(store, starter, func(pgx.Tx) MeStore { return store }, authHandshake, logger)
+	return handler, starter
 }
 
 // noopJWKSCache is a JWKSCache that always returns "not found".
@@ -146,7 +158,7 @@ func TestGetMe(t *testing.T) {
 				tt.setupStore(store)
 			}
 
-			handler := newTestMeHandler(t, store, &mockPublisher{})
+			handler, _ := newTestMeHandler(t, store)
 			rec := httptest.NewRecorder()
 			req := newTestRequest(t, http.MethodGet, "/users/me", "")
 
@@ -273,7 +285,7 @@ func TestUpdateMe(t *testing.T) {
 				tt.setupStore(store)
 			}
 
-			handler := newTestMeHandler(t, store, &mockPublisher{})
+			handler, _ := newTestMeHandler(t, store)
 			rec := httptest.NewRecorder()
 			req := newTestRequest(t, http.MethodPatch, "/users/me", tt.body)
 
@@ -308,18 +320,18 @@ func TestDeleteMe(t *testing.T) {
 	passwordHash, _ := auth.HashPassword("secret123")
 
 	tests := []struct {
-		name            string
-		userID          string
-		body            string
-		setupStore      func(m *mockMeStore)
-		setupPublisher  func(m *mockPublisher)
-		wantStatus      int
-		wantFieldError  map[string]string
-		wantErrorCode   string
-		assertPublished func(t *testing.T, calls []publishCall)
+		name           string
+		userID         string
+		body           string
+		setupStore     func(m *mockMeStore)
+		setupOutbox    func(m *mockMeStore)
+		wantStatus     int
+		wantFieldError map[string]string
+		wantErrorCode  string
+		assertOutbox   func(t *testing.T, arg *database.InsertOutboxParams)
 	}{
 		{
-			name:   "deletes user and publishes event",
+			name:   "deletes user and stages outbox event",
 			userID: userID.String(),
 			body:   `{"password":"secret123"}`,
 			setupStore: func(m *mockMeStore) {
@@ -342,12 +354,19 @@ func TestDeleteMe(t *testing.T) {
 				}
 			},
 			wantStatus: http.StatusNoContent,
-			assertPublished: func(t *testing.T, calls []publishCall) {
-				if len(calls) != 1 {
-					t.Fatalf("published events = %d, want 1", len(calls))
+			assertOutbox: func(t *testing.T, arg *database.InsertOutboxParams) {
+				if arg == nil {
+					t.Fatal("InsertOutbox was not called")
 				}
-				if calls[0].EventType != "user.deleted" {
-					t.Errorf("event type = %q, want user.deleted", calls[0].EventType)
+				if arg.EventType != "user.deleted" {
+					t.Errorf("event type = %q, want user.deleted", arg.EventType)
+				}
+				var payload events.UserDeleted
+				if err := json.Unmarshal(arg.Payload, &payload); err != nil {
+					t.Fatalf("decode outbox payload: %v", err)
+				}
+				if payload.UserID != userID.String() {
+					t.Errorf("payload user_id = %q, want %q", payload.UserID, userID.String())
 				}
 			},
 		},
@@ -424,7 +443,7 @@ func TestDeleteMe(t *testing.T) {
 			wantErrorCode: "INTERNAL_ERROR",
 		},
 		{
-			name:   "publisher failure returns 500",
+			name:   "outbox insert failure returns 500",
 			userID: userID.String(),
 			body:   `{"password":"secret123"}`,
 			setupStore: func(m *mockMeStore) {
@@ -438,8 +457,10 @@ func TestDeleteMe(t *testing.T) {
 					return nil
 				}
 			},
-			setupPublisher: func(m *mockPublisher) {
-				m.err = errors.New("broker unreachable")
+			setupOutbox: func(m *mockMeStore) {
+				m.insertOutbox = func(ctx context.Context, arg database.InsertOutboxParams) error {
+					return errors.New("database down")
+				}
 			},
 			wantStatus:    http.StatusInternalServerError,
 			wantErrorCode: "INTERNAL_ERROR",
@@ -448,16 +469,21 @@ func TestDeleteMe(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := &mockMeStore{}
-			publisher := &mockPublisher{}
+			var outboxArg *database.InsertOutboxParams
+			store := &mockMeStore{
+				insertOutbox: func(ctx context.Context, arg database.InsertOutboxParams) error {
+					outboxArg = &arg
+					return nil
+				},
+			}
 			if tt.setupStore != nil {
 				tt.setupStore(store)
 			}
-			if tt.setupPublisher != nil {
-				tt.setupPublisher(publisher)
+			if tt.setupOutbox != nil {
+				tt.setupOutbox(store)
 			}
 
-			handler := newTestMeHandler(t, store, publisher)
+			handler, starter := newTestMeHandler(t, store)
 			rec := httptest.NewRecorder()
 			req := newTestRequest(t, http.MethodDelete, "/users/me", tt.body)
 
@@ -473,12 +499,15 @@ func TestDeleteMe(t *testing.T) {
 			}
 
 			if tt.wantErrorCode != "" {
+				if starter.tx != nil && starter.tx.committed {
+					t.Errorf("transaction was committed on an error path")
+				}
 				wantErrorCode(t, rec, tt.wantErrorCode)
 				return
 			}
 
-			if tt.assertPublished != nil {
-				tt.assertPublished(t, publisher.published)
+			if tt.assertOutbox != nil {
+				tt.assertOutbox(t, outboxArg)
 			}
 		})
 	}

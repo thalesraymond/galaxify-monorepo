@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -13,15 +14,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
+	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 )
 
 type mockRegistrationStore struct {
-	insertUser func(ctx context.Context, arg database.InsertUserParams) (database.User, error)
+	insertUser   func(ctx context.Context, arg database.InsertUserParams) (database.User, error)
+	insertOutbox func(ctx context.Context, arg database.InsertOutboxParams) error
 }
 
 func (m *mockRegistrationStore) InsertUser(ctx context.Context, arg database.InsertUserParams) (database.User, error) {
@@ -31,7 +35,14 @@ func (m *mockRegistrationStore) InsertUser(ctx context.Context, arg database.Ins
 	return database.User{}, errors.New("unexpected InsertUser call")
 }
 
-func newTestRegistrationHandler(t *testing.T, store registrationStore, refreshStore refreshTokenStore, publisher EventPublisher) *RegistrationHandler {
+func (m *mockRegistrationStore) InsertOutbox(ctx context.Context, arg database.InsertOutboxParams) error {
+	if m.insertOutbox != nil {
+		return m.insertOutbox(ctx, arg)
+	}
+	return errors.New("unexpected InsertOutbox call")
+}
+
+func newTestRegistrationHandler(t *testing.T, store *mockRegistrationStore, refreshStore refreshTokenStore) (*RegistrationHandler, *fakeTxStarter) {
 	t.Helper()
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -39,7 +50,14 @@ func newTestRegistrationHandler(t *testing.T, store registrationStore, refreshSt
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	tokenIssuer := NewTokenIssuer(priv, "test-key", refreshStore)
-	return NewRegistrationHandler(store, tokenIssuer, publisher, logger)
+	starter := &fakeTxStarter{}
+	handler := NewRegistrationHandler(
+		starter,
+		func(pgx.Tx) RegistrationStore { return store },
+		tokenIssuer,
+		logger,
+	)
+	return handler, starter
 }
 
 func TestSignup(t *testing.T) {
@@ -52,12 +70,12 @@ func TestSignup(t *testing.T) {
 		body              string
 		setupStore        func(m *mockRegistrationStore)
 		setupRefreshStore func(m *mockRefreshTokenStore)
-		setupPublisher    func(m *mockPublisher)
+		setupOutbox       func(m *mockRegistrationStore)
 		wantStatus        int
 		wantFieldError    map[string]string
 		wantErrorCode     string
 		assertResponse    func(t *testing.T, resp signupResponse)
-		assertPublished   func(t *testing.T, calls []publishCall)
+		assertOutbox      func(t *testing.T, arg *database.InsertOutboxParams)
 	}{
 		{
 			name: "creates user",
@@ -115,12 +133,22 @@ func TestSignup(t *testing.T) {
 					t.Error("refresh_token is empty")
 				}
 			},
-			assertPublished: func(t *testing.T, calls []publishCall) {
-				if len(calls) != 1 {
-					t.Fatalf("published events = %d, want 1", len(calls))
+			assertOutbox: func(t *testing.T, arg *database.InsertOutboxParams) {
+				if arg == nil {
+					t.Fatal("InsertOutbox was not called")
 				}
-				if calls[0].EventType != "user.created" {
-					t.Errorf("event type = %q, want user.created", calls[0].EventType)
+				if arg.EventType != "user.created" {
+					t.Errorf("event type = %q, want user.created", arg.EventType)
+				}
+				if !arg.EventID.Valid {
+					t.Error("event_id is invalid")
+				}
+				var payload events.UserCreated
+				if err := json.Unmarshal(arg.Payload, &payload); err != nil {
+					t.Fatalf("decode outbox payload: %v", err)
+				}
+				if payload.Email != "user@example.com" || payload.Username != "spacecadet" {
+					t.Errorf("payload = %+v", payload)
 				}
 			},
 		},
@@ -177,7 +205,7 @@ func TestSignup(t *testing.T) {
 			wantErrorCode: "USER_USERNAME_TAKEN",
 		},
 		{
-			name: "publisher failure rolls back response to 500",
+			name: "outbox insert failure rolls back response to 500",
 			body: `{"email":"user@example.com","username":"spacecadet","password":"secret123"}`,
 			setupStore: func(m *mockRegistrationStore) {
 				m.insertUser = func(ctx context.Context, arg database.InsertUserParams) (database.User, error) {
@@ -189,8 +217,10 @@ func TestSignup(t *testing.T) {
 					return database.RefreshToken{}, nil
 				}
 			},
-			setupPublisher: func(m *mockPublisher) {
-				m.err = errors.New("broker unreachable")
+			setupOutbox: func(m *mockRegistrationStore) {
+				m.insertOutbox = func(ctx context.Context, arg database.InsertOutboxParams) error {
+					return errors.New("database down")
+				}
 			},
 			wantStatus:    http.StatusInternalServerError,
 			wantErrorCode: "INTERNAL_ERROR",
@@ -210,20 +240,25 @@ func TestSignup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := &mockRegistrationStore{}
+			var outboxArg *database.InsertOutboxParams
+			store := &mockRegistrationStore{
+				insertOutbox: func(ctx context.Context, arg database.InsertOutboxParams) error {
+					outboxArg = &arg
+					return nil
+				},
+			}
 			refreshStore := &mockRefreshTokenStore{}
-			publisher := &mockPublisher{}
 			if tt.setupStore != nil {
 				tt.setupStore(store)
 			}
 			if tt.setupRefreshStore != nil {
 				tt.setupRefreshStore(refreshStore)
 			}
-			if tt.setupPublisher != nil {
-				tt.setupPublisher(publisher)
+			if tt.setupOutbox != nil {
+				tt.setupOutbox(store)
 			}
 
-			handler := newTestRegistrationHandler(t, store, refreshStore, publisher)
+			handler, starter := newTestRegistrationHandler(t, store, refreshStore)
 			rec := httptest.NewRecorder()
 			req := newTestRequest(t, http.MethodPost, "/users", tt.body)
 
@@ -239,6 +274,9 @@ func TestSignup(t *testing.T) {
 			}
 
 			if tt.wantErrorCode != "" {
+				if starter.tx != nil && starter.tx.committed {
+					t.Errorf("transaction was committed on an error path")
+				}
 				wantErrorCode(t, rec, tt.wantErrorCode)
 				return
 			}
@@ -248,8 +286,8 @@ func TestSignup(t *testing.T) {
 			if tt.assertResponse != nil {
 				tt.assertResponse(t, resp)
 			}
-			if tt.assertPublished != nil {
-				tt.assertPublished(t, publisher.published)
+			if tt.assertOutbox != nil {
+				tt.assertOutbox(t, outboxArg)
 			}
 		})
 	}
@@ -261,13 +299,16 @@ func TestSignupAccessTokenIsValid(t *testing.T) {
 		insertUser: func(ctx context.Context, arg database.InsertUserParams) (database.User, error) {
 			return database.User{ID: userID, Email: arg.Email, Username: arg.Username}, nil
 		},
+		insertOutbox: func(ctx context.Context, arg database.InsertOutboxParams) error {
+			return nil
+		},
 	}
 	refreshStore := &mockRefreshTokenStore{
 		insertRefreshToken: func(ctx context.Context, arg database.InsertRefreshTokenParams) (database.RefreshToken, error) {
 			return database.RefreshToken{}, nil
 		},
 	}
-	handler := newTestRegistrationHandler(t, store, refreshStore, &mockPublisher{})
+	handler, _ := newTestRegistrationHandler(t, store, refreshStore)
 
 	rec := httptest.NewRecorder()
 	req := newTestRequest(t, http.MethodPost, "/users", `{"email":"user@example.com","username":"spacecadet","password":"secret123"}`)

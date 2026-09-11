@@ -9,23 +9,38 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
+	"github.com/jackc/pgx/v5"
+
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
-type mockPublisher struct {
-	published []publishCall
-	err       error
+// fakeTx records commit/rollback so handler tests can assert transaction use.
+type fakeTx struct {
+	pgx.Tx
+	committed  bool
+	rolledBack bool
 }
 
-type publishCall struct {
-	EventType string
-	Payload   any
+func (f *fakeTx) Commit(context.Context) error {
+	f.committed = true
+	return nil
 }
 
-func (m *mockPublisher) Publish(ctx context.Context, eventType string, payload any, opts ...events.PublishOption) error {
-	m.published = append(m.published, publishCall{EventType: eventType, Payload: payload})
-	return m.err
+func (f *fakeTx) Rollback(context.Context) error {
+	f.rolledBack = true
+	return nil
+}
+
+// fakeTxStarter hands out a single fakeTx so tests can inspect it.
+type fakeTxStarter struct {
+	tx *fakeTx
+}
+
+func (f *fakeTxStarter) Begin(context.Context) (pgx.Tx, error) {
+	if f.tx == nil {
+		f.tx = &fakeTx{}
+	}
+	return f.tx, nil
 }
 
 func newTestRequest(t *testing.T, method, target, body string) *http.Request {

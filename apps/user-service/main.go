@@ -17,6 +17,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/handler"
+	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/outbox"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/rabbitmq"
@@ -110,7 +111,12 @@ func run(logger *slog.Logger) error {
 
 	tokenIssuer := handler.NewTokenIssuer(priv, jwtKey.Kid, db)
 
-	registrationHandler := handler.NewRegistrationHandler(db, tokenIssuer, publisher, logger)
+	registrationHandler := handler.NewRegistrationHandler(
+		pool,
+		func(tx pgx.Tx) handler.RegistrationStore { return database.New(tx) },
+		tokenIssuer,
+		logger,
+	)
 	registrationHandler.RegisterRoutes(mux)
 
 	sessionHandler := handler.NewSessionHandler(db, tokenIssuer, logger)
@@ -125,12 +131,26 @@ func run(logger *slog.Logger) error {
 	staticCache := auth.NewStaticJWKSCache(jwtKey.Kid, priv.Public())
 	authHandshake := sharedhttp.NewAuthHandshake(staticCache)
 
-	meHandler := handler.NewMeHandler(db, publisher, authHandshake, logger)
+	meHandler := handler.NewMeHandler(
+		db,
+		pool,
+		func(tx pgx.Tx) handler.MeStore { return database.New(tx) },
+		authHandshake,
+		logger,
+	)
 	meHandler.RegisterMeRoutes(mux)
+
+	outboxDrainer := events.NewOutboxDrainer(func(ctx context.Context) (events.OutboxBatch, error) {
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return outbox.NewOutboxBatch(tx), nil
+	}, publisher, logger)
 
 	srv := &http.Server{
 		Addr:    httpAddr,
-		Handler: sharedhttp.RequestIDMiddleware(mux),
+		Handler: sharedhttp.RequestIDMiddleware(outboxDrainer.DrainAfterRequest(mux, 50)),
 	}
 
 	serveErr := make(chan error, 1)

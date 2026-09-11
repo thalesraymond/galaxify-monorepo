@@ -12,37 +12,43 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/google/uuid"
+
 	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
-// meStore is the narrow database surface used by MeHandler.
-type meStore interface {
+// MeStore is the database surface used by MeHandler.
+type MeStore interface {
 	GetUserByID(ctx context.Context, id pgtype.UUID) (database.User, error)
 	UpdateUserUsername(ctx context.Context, arg database.UpdateUserUsernameParams) (database.User, error)
 	DeleteUserByID(ctx context.Context, id pgtype.UUID) error
+	InsertOutbox(ctx context.Context, arg database.InsertOutboxParams) error
 }
 
 // MeHandler handles auth-protected /users/me endpoints (GET, PATCH, DELETE).
 type MeHandler struct {
-	store         meStore
-	publisher     EventPublisher
+	store         MeStore
+	txStarter     TxStarter
+	storeFactory  func(tx pgx.Tx) MeStore
 	authHandshake *sharedhttp.AuthHandshake
 	logger        *slog.Logger
 }
 
 // NewMeHandler creates a MeHandler.
 func NewMeHandler(
-	store meStore,
-	publisher EventPublisher,
+	store MeStore,
+	txStarter TxStarter,
+	storeFactory func(tx pgx.Tx) MeStore,
 	authHandshake *sharedhttp.AuthHandshake,
 	logger *slog.Logger,
 ) *MeHandler {
 	return &MeHandler{
 		store:         store,
-		publisher:     publisher,
+		txStarter:     txStarter,
+		storeFactory:  storeFactory,
 		authHandshake: authHandshake,
 		logger:        logger,
 	}
@@ -169,15 +175,39 @@ func (h *MeHandler) DeleteMe(w http.ResponseWriter, r *http.Request, userID stri
 		return
 	}
 
-	if err := h.store.DeleteUserByID(r.Context(), pgID); err != nil {
+	tx, err := h.txStarter.Begin(r.Context())
+	if err != nil {
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+
+	store := h.storeFactory(tx)
+	if err := store.DeleteUserByID(r.Context(), pgID); err != nil {
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return
 	}
 
-	if err := h.publisher.Publish(r.Context(), "user.deleted", events.UserDeleted{
+	eventPayload, err := json.Marshal(events.UserDeleted{
 		Version: 1,
 		UserID:  userID,
+	})
+	if err != nil {
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+		return
+	}
+	requestID := sharedhttp.RequestIDFromContext(r.Context())
+	if err := store.InsertOutbox(r.Context(), database.InsertOutboxParams{
+		EventID:   pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		EventType: "user.deleted",
+		Payload:   eventPayload,
+		RequestID: pgtype.Text{String: requestID, Valid: requestID != ""},
 	}); err != nil {
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return
 	}

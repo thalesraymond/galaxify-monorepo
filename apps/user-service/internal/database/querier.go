@@ -19,10 +19,13 @@ type Querier interface {
 	GetRefreshTokenByToken(ctx context.Context, token string) (RefreshToken, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
+	InsertOutbox(ctx context.Context, arg InsertOutboxParams) error
 	InsertProcessedEvent(ctx context.Context, eventID pgtype.UUID) (int64, error)
 	InsertRefreshToken(ctx context.Context, arg InsertRefreshTokenParams) (RefreshToken, error)
 	InsertSigningKey(ctx context.Context, arg InsertSigningKeyParams) (JwtKey, error)
 	InsertUser(ctx context.Context, arg InsertUserParams) (User, error)
+	ListPendingOutbox(ctx context.Context, limit int32) ([]Outbox, error)
+	MarkOutboxPublished(ctx context.Context, id int64) error
 	MarkRefreshTokenUsed(ctx context.Context, id int64) error
 	UpdateUserUsername(ctx context.Context, arg UpdateUserUsernameParams) (User, error)
 }
