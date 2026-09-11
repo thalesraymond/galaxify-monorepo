@@ -429,12 +429,16 @@ CREATE TABLE outbox (
     event_id      UUID        NOT NULL UNIQUE,
     event_type    TEXT        NOT NULL,
     payload       JSONB       NOT NULL,
+    request_id    TEXT,
     status        TEXT        NOT NULL DEFAULT 'PENDING',  -- PENDING | PUBLISHED
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     published_at  TIMESTAMPTZ
 );
 CREATE INDEX outbox_pending_idx ON outbox (created_at) WHERE status = 'PENDING';
 ```
+
+`request_id` stores the originating HTTP request ID for AMQP header propagation.
+It is nullable for events created outside an HTTP request.
 
 ### Handler pattern
 

@@ -80,21 +80,30 @@ func run(logger *slog.Logger) error {
 	}
 	defer conn.Close()
 
-	ch, err := conn.Channel()
+	subscriberChannel, err := conn.Channel()
 	if err != nil {
-		return fmt.Errorf("create channel: %w", err)
+		return fmt.Errorf("create subscriber channel: %w", err)
 	}
 
-	subscriber, err := events.NewSubscriber(ch, serviceName, events.WithLogger(logger))
+	subscriber, err := events.NewSubscriber(subscriberChannel, serviceName, events.WithLogger(logger))
 	if err != nil {
 		return fmt.Errorf("create subscriber: %w", err)
 	}
 
 	idempotencyStoreFactory := func(tx pgx.Tx) events.IdempotencyStore { return database.New(tx) }
-	eventPublisher, err := events.NewPublisher(ch, events.WithLogger(logger))
+	publisherChannel, err := conn.Channel()
+	if err != nil {
+		return fmt.Errorf("create publisher channel: %w", err)
+	}
+	eventPublisher, err := events.NewPublisher(publisherChannel, events.WithLogger(logger))
 	if err != nil {
 		return fmt.Errorf("create event publisher: %w", err)
 	}
+	defer func() {
+		if err := eventPublisher.Close(); err != nil {
+			logger.Error("close event publisher", "error", err)
+		}
+	}()
 
 	subscriber.On("user.created", consumer.NewUserCreatedHandler(
 		pool,

@@ -50,6 +50,7 @@ type Manager interface {
 	Current(ctx context.Context, userID uuid.UUID) (Record, error)
 	Get(ctx context.Context, userID, expeditionID uuid.UUID) (Record, error)
 	List(ctx context.Context, userID uuid.UUID, filter ListFilter) ([]Record, error)
+	Launch(ctx context.Context, userID uuid.UUID, input LaunchInput) (Record, error)
 }
 
 type readStore interface {
@@ -59,10 +60,25 @@ type readStore interface {
 	ListByUser(context.Context, database.ListByUserParams) ([]database.Expedition, error)
 }
 
-type manager struct{ store readStore }
+type manager struct {
+	store              readStore
+	txStarter          TxStarter
+	launchStoreFactory func(pgx.Tx) LaunchStore
+	now                func() time.Time
+	jitter             func() time.Duration
+}
 
-// NewManager creates an expedition read manager.
-func NewManager(store readStore) Manager { return &manager{store: store} }
+// NewManager creates the expedition lifecycle manager.
+func NewManager(store readStore, txStarter TxStarter, launchStoreFactory func(pgx.Tx) LaunchStore, opts ...ManagerOption) Manager {
+	manager := &manager{
+		store: store, txStarter: txStarter, launchStoreFactory: launchStoreFactory,
+		now: time.Now, jitter: defaultLaunchJitter,
+	}
+	for _, opt := range opts {
+		opt(manager)
+	}
+	return manager
+}
 
 func (m *manager) Current(ctx context.Context, userID uuid.UUID) (Record, error) {
 	expedition, err := m.store.GetCurrentByUser(ctx, pgUUID(userID))

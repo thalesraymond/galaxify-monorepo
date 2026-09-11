@@ -82,12 +82,12 @@ func run(logger *slog.Logger) error {
 	}
 	defer conn.Close()
 
-	ch, err := conn.Channel()
+	subscriberChannel, err := conn.Channel()
 	if err != nil {
-		return fmt.Errorf("create channel: %w", err)
+		return fmt.Errorf("create subscriber channel: %w", err)
 	}
 
-	subscriber, err := events.NewSubscriber(ch, "daily-service")
+	subscriber, err := events.NewSubscriber(subscriberChannel, "daily-service")
 	if err != nil {
 		return fmt.Errorf("create subscriber: %w", err)
 	}
@@ -123,10 +123,19 @@ func run(logger *slog.Logger) error {
 
 	authHandshake := sharedhttp.NewAuthHandshake(jwksCache)
 
-	publisher, err := events.NewPublisher(ch, events.WithLogger(logger))
+	publisherChannel, err := conn.Channel()
+	if err != nil {
+		return fmt.Errorf("create publisher channel: %w", err)
+	}
+	publisher, err := events.NewPublisher(publisherChannel, events.WithLogger(logger))
 	if err != nil {
 		return fmt.Errorf("create publisher: %w", err)
 	}
+	defer func() {
+		if err := publisher.Close(); err != nil {
+			logger.Error("close event publisher", "error", err)
+		}
+	}()
 
 	dailyManager := daily.NewDailyManager(
 		pool,
