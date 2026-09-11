@@ -8,11 +8,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-
-	"github.com/google/uuid"
 
 	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
