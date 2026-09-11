@@ -187,8 +187,3 @@ func (w *Worker) resetCompletedBatch(ctx context.Context, now time.Time) (int, e
 	}
 	return count, nil
 }
-
-// toTimestamptz converts a time.Time to pgtype.Timestamptz (used in store.go).
-func toTimestamptz(t time.Time) pgtype.Timestamptz {
-	return pgtype.Timestamptz{Time: t, Valid: true}
-}

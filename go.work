@@ -7,4 +7,5 @@ use (
 	./apps/user-service
 	./pkg
 	./workers/daily-cron
+	./workers/expedition-worker
 )

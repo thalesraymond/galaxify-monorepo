@@ -15,22 +15,23 @@ import (
 	"github.com/thalesraymond/galaxify-monorepo/pkg/env"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/rabbitmq"
-	"github.com/thalesraymond/galaxify-monorepo/workers/daily-cron/internal/cron"
+	"github.com/thalesraymond/galaxify-monorepo/workers/expedition-worker/internal/expedition"
 )
 
-const serviceName = "daily-cron"
+const serviceName = "expedition-worker"
 
 // Defaults match docker-compose.yml so the worker runs against local
 // infrastructure even without a .env file. .env overrides them.
 const (
-	defaultDatabaseURL = "postgres://postgres:password@localhost:5432/daily_db"
+	defaultDatabaseURL = "postgres://postgres:password@localhost:5434/expedition_db"
 	defaultRabbitMQURL = "amqp://guest:guest@localhost:5672/"
 	defaultInterval    = 5 * time.Minute
 )
 
-// The daily.missed status change and its outbox row are committed in the same
-// transaction; the shared outbox drainer then publishes pending rows after each
-// tick, giving at-least-once delivery (ADR-0004).
+// The expedition resolution, its result row, and the expedition.completed
+// outbox row are committed in the same transaction (ADR-0013); the shared
+// outbox drainer then publishes pending rows after each tick, giving
+// at-least-once delivery (ADR-0004).
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -79,21 +80,21 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("create publisher: %w", err)
 	}
 
-	store := cron.NewPgStore(pool)
+	store := expedition.NewPgStore(pool)
 	outboxDrainer := events.NewOutboxDrainer(func(ctx context.Context) (events.OutboxBatch, error) {
 		tx, err := pool.Begin(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return cron.NewOutboxBatch(tx), nil
+		return expedition.NewOutboxBatch(tx), nil
 	}, publisher, logger)
-	worker := cron.NewMissedDailyWorker(store, outboxDrainer, cron.WithLogger(logger))
+	worker := expedition.NewResolutionWorker(store, outboxDrainer, expedition.WithLogger(logger))
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	// Run immediately so a restarted worker catches up without waiting for the
-	// first tick.
+	// Run immediately so a restarted worker catches up on every expedition
+	// whose resolve_at already passed without waiting for the first tick.
 	if err := worker.Tick(startupCtx); err != nil {
 		return fmt.Errorf("initial tick: %w", err)
 	}

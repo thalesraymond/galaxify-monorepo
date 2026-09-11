@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/thalesraymond/galaxify-monorepo/pkg/timestamptz"
 	"github.com/thalesraymond/galaxify-monorepo/workers/daily-cron/internal/database"
 )
 
@@ -65,7 +66,7 @@ type pgTx struct {
 
 func (t *pgTx) ListPendingExpiredDailies(ctx context.Context, before time.Time, limit int32) ([]database.ListPendingExpiredDailiesRow, error) {
 	rows, err := t.q.ListPendingExpiredDailies(ctx, database.ListPendingExpiredDailiesParams{
-		Before:    toTimestamptz(before),
+		Before:    timestamptz.FromTime(before),
 		BatchSize: limit,
 	})
 	if err != nil {
@@ -83,7 +84,7 @@ func (t *pgTx) GetDamageAmount(ctx context.Context, difficulty string) (int32, e
 }
 
 func (t *pgTx) RollOverPendingDaily(ctx context.Context, daily database.ListPendingExpiredDailiesRow, now time.Time) error {
-	nowTz := toTimestamptz(now)
+	nowTz := timestamptz.FromTime(now)
 	if err := t.q.CreateDailyHistory(ctx, database.CreateDailyHistoryParams{
 		DailyID:     daily.ID,
 		UserID:      daily.UserID,
@@ -106,7 +107,7 @@ func (t *pgTx) RollOverPendingDaily(ctx context.Context, daily database.ListPend
 
 func (t *pgTx) ListCompletedExpiredDailies(ctx context.Context, before time.Time, limit int32) ([]pgtype.UUID, error) {
 	rows, err := t.q.ListCompletedExpiredDailies(ctx, database.ListCompletedExpiredDailiesParams{
-		Before:    toTimestamptz(before),
+		Before:    timestamptz.FromTime(before),
 		BatchSize: limit,
 	})
 	if err != nil {
@@ -117,7 +118,7 @@ func (t *pgTx) ListCompletedExpiredDailies(ctx context.Context, before time.Time
 
 func (t *pgTx) ResetCompletedDaily(ctx context.Context, id pgtype.UUID, now time.Time) error {
 	if err := t.q.ResetCompletedDaily(ctx, database.ResetCompletedDailyParams{
-		Now: toTimestamptz(now),
+		Now: timestamptz.FromTime(now),
 		ID:  id,
 	}); err != nil {
 		return fmt.Errorf("reset completed daily %v: %w", id, err)
