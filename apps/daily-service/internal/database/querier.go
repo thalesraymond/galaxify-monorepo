@@ -22,12 +22,15 @@ type Querier interface {
 	GetDaily(ctx context.Context, arg GetDailyParams) (Daily, error)
 	GetDifficultyReward(ctx context.Context, difficulty string) (DifficultyReward, error)
 	GetTestTable(ctx context.Context, id int64) (TestTable, error)
+	InsertOutbox(ctx context.Context, arg InsertOutboxParams) error
 	InsertProcessedEvent(ctx context.Context, eventID pgtype.UUID) (int64, error)
 	ListDailies(ctx context.Context, arg ListDailiesParams) ([]Daily, error)
 	ListDailyHistory(ctx context.Context, userID pgtype.UUID) ([]DailyHistory, error)
+	ListPendingOutbox(ctx context.Context, limit int32) ([]Outbox, error)
 	ListTestTables(ctx context.Context) ([]TestTable, error)
 	MarkDailyComplete(ctx context.Context, arg MarkDailyCompleteParams) (Daily, error)
 	MarkDailyMissed(ctx context.Context, id pgtype.UUID) (Daily, error)
+	MarkOutboxPublished(ctx context.Context, id int64) error
 	UpdateDaily(ctx context.Context, arg UpdateDailyParams) (Daily, error)
 	UpdateTestTable(ctx context.Context, arg UpdateTestTableParams) (TestTable, error)
 	UpsertUserCache(ctx context.Context, id pgtype.UUID) error
