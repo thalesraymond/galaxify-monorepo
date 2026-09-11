@@ -15,7 +15,10 @@ import (
 	"github.com/thalesraymond/galaxify-monorepo/workers/daily-cron/internal/database"
 )
 
-const dailyMissedEventType = "daily.missed"
+const (
+	dailyMissedEventType = "daily.missed"
+	drainBatchSize       = 50
+)
 
 // Drainer publishes bounded batches of staged outbox events.
 type Drainer interface {
@@ -90,7 +93,7 @@ func (w *Worker) Tick(ctx context.Context) error {
 			break
 		}
 		w.logger.Info("marked dailies missed", "count", marked)
-		w.drainer.Drain(ctx, 50)
+		w.drainer.Drain(ctx, drainBatchSize)
 	}
 
 	for {

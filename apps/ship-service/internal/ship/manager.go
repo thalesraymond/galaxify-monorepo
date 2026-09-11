@@ -41,12 +41,6 @@ type Manager interface {
 	Repair(ctx context.Context, userID uuid.UUID) (State, error)
 }
 
-// TxStarter abstracts opening the transaction that atomically repairs a ship
-// and stages its status event. *pgxpool.Pool satisfies it in production.
-type TxStarter interface {
-	Begin(ctx context.Context) (pgx.Tx, error)
-}
-
 // Store is the database surface required by the ship manager.
 // *database.Queries satisfies it directly.
 type Store interface {
@@ -59,17 +53,17 @@ type repairRoll func() int
 
 type manager struct {
 	store        Store
-	txStarter    TxStarter
+	txStarter    events.TxStarter
 	storeFactory func(tx pgx.Tx) Store
 	roll         repairRoll
 }
 
 // NewManager constructs the ship lifecycle manager.
-func NewManager(store Store, txStarter TxStarter, storeFactory func(tx pgx.Tx) Store) Manager {
+func NewManager(store Store, txStarter events.TxStarter, storeFactory func(tx pgx.Tx) Store) Manager {
 	return newManager(store, txStarter, storeFactory, func() int { return rand.IntN(6) - 2 })
 }
 
-func newManager(store Store, txStarter TxStarter, storeFactory func(tx pgx.Tx) Store, roll repairRoll) *manager {
+func newManager(store Store, txStarter events.TxStarter, storeFactory func(tx pgx.Tx) Store, roll repairRoll) *manager {
 	return &manager{store: store, txStarter: txStarter, storeFactory: storeFactory, roll: roll}
 }
 

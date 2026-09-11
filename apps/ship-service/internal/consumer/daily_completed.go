@@ -71,10 +71,12 @@ func stageShipStatus(ctx context.Context, tx pgx.Tx, userID string, ship databas
 	if err != nil {
 		return fmt.Errorf("marshal ship status: %w", err)
 	}
+	requestID := sharedhttp.RequestIDFromContext(ctx)
 	if err := database.New(tx).InsertOutbox(ctx, database.InsertOutboxParams{
 		EventID:   pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		EventType: shipStatusUpdatedEventType,
 		Payload:   payload,
+		RequestID: pgtype.Text{String: requestID, Valid: requestID != ""},
 	}); err != nil {
 		return fmt.Errorf("insert ship status outbox event: %w", err)
 	}

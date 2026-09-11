@@ -26,6 +26,8 @@ var (
 	usernameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,30}$`)
 )
 
+const userCreatedEventType = "user.created"
+
 // RegistrationStore is the narrow database surface used by RegistrationHandler.
 type RegistrationStore interface {
 	InsertUser(ctx context.Context, arg database.InsertUserParams) (database.User, error)
@@ -34,7 +36,7 @@ type RegistrationStore interface {
 
 // RegistrationHandler handles user registration.
 type RegistrationHandler struct {
-	txStarter    TxStarter
+	txStarter    events.TxStarter
 	storeFactory func(tx pgx.Tx) RegistrationStore
 	tokenIssuer  *TokenIssuer
 	logger       *slog.Logger
@@ -42,7 +44,7 @@ type RegistrationHandler struct {
 
 // NewRegistrationHandler creates a RegistrationHandler.
 func NewRegistrationHandler(
-	txStarter TxStarter,
+	txStarter events.TxStarter,
 	storeFactory func(tx pgx.Tx) RegistrationStore,
 	tokenIssuer *TokenIssuer,
 	logger *slog.Logger,
@@ -124,7 +126,7 @@ func (h *RegistrationHandler) Signup(w http.ResponseWriter, r *http.Request) {
 	requestID := sharedhttp.RequestIDFromContext(r.Context())
 	if err := store.InsertOutbox(r.Context(), database.InsertOutboxParams{
 		EventID:   pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		EventType: "user.created",
+		EventType: userCreatedEventType,
 		Payload:   eventPayload,
 		RequestID: pgtype.Text{String: requestID, Valid: requestID != ""},
 	}); err != nil {

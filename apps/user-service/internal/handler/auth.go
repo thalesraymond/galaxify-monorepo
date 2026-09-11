@@ -1,17 +1,5 @@
 package handler
 
-import (
-	"context"
-
-	"github.com/jackc/pgx/v5"
-)
-
-// TxStarter abstracts opening the database transaction a handler uses to stage
-// a domain mutation and its outbox event atomically. *pgxpool.Pool satisfies it.
-type TxStarter interface {
-	Begin(ctx context.Context) (pgx.Tx, error)
-}
-
 // userResponse is the shared on-the-wire shape for a user resource.
 type userResponse struct {
 	ID        string `json:"id"`

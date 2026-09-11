@@ -17,6 +17,8 @@ import (
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
+const dailyCompletedEventType = "daily.completed"
+
 // TxStarter abstracts opening database transactions.
 // *pgxpool.Pool satisfies TxStarter directly in production.
 type TxStarter interface {
@@ -295,7 +297,7 @@ func (m *DailyManager) Complete(ctx context.Context, userID, id uuid.UUID) (Dail
 	requestID := sharedhttp.RequestIDFromContext(ctx)
 	if err := s.InsertOutbox(ctx, database.InsertOutboxParams{
 		EventID:   pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		EventType: "daily.completed",
+		EventType: dailyCompletedEventType,
 		Payload:   payload,
 		RequestID: pgtype.Text{String: requestID, Valid: requestID != ""},
 	}); err != nil {

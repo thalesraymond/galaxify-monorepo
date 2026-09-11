@@ -19,6 +19,8 @@ import (
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
+const userDeletedEventType = "user.deleted"
+
 // MeStore is the database surface used by MeHandler.
 type MeStore interface {
 	GetUserByID(ctx context.Context, id pgtype.UUID) (database.User, error)
@@ -30,7 +32,7 @@ type MeStore interface {
 // MeHandler handles auth-protected /users/me endpoints (GET, PATCH, DELETE).
 type MeHandler struct {
 	store         MeStore
-	txStarter     TxStarter
+	txStarter     events.TxStarter
 	storeFactory  func(tx pgx.Tx) MeStore
 	authHandshake *sharedhttp.AuthHandshake
 	logger        *slog.Logger
@@ -39,7 +41,7 @@ type MeHandler struct {
 // NewMeHandler creates a MeHandler.
 func NewMeHandler(
 	store MeStore,
-	txStarter TxStarter,
+	txStarter events.TxStarter,
 	storeFactory func(tx pgx.Tx) MeStore,
 	authHandshake *sharedhttp.AuthHandshake,
 	logger *slog.Logger,
@@ -198,7 +200,7 @@ func (h *MeHandler) DeleteMe(w http.ResponseWriter, r *http.Request, userID stri
 	requestID := sharedhttp.RequestIDFromContext(r.Context())
 	if err := store.InsertOutbox(r.Context(), database.InsertOutboxParams{
 		EventID:   pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		EventType: "user.deleted",
+		EventType: userDeletedEventType,
 		Payload:   eventPayload,
 		RequestID: pgtype.Text{String: requestID, Valid: requestID != ""},
 	}); err != nil {

@@ -186,6 +186,38 @@ func assertShipMutationCall(t *testing.T, tx *shipMutationTx, expectedUserID pgt
 	}
 }
 
+func TestHandleDailyCompletedStagesRequestID(t *testing.T) {
+	userID := uuid.New().String()
+	parsedUserID, err := sharedhttp.ParseUUID(userID)
+	if err != nil {
+		t.Fatalf("parse user id: %v", err)
+	}
+	tx := &shipMutationTx{row: fakeRow{ship: fakeShipState{
+		userID: parsedUserID, hullHealth: 90, materialsBalance: 5, level: 1,
+	}}}
+	ctx := sharedhttp.WithRequestID(t.Context(), "req-123")
+
+	if err := consumer.HandleDailyCompleted(ctx, tx, newTestConsumerEnvelope("daily.completed"), events.DailyCompleted{
+		Version: 1, UserID: userID, RewardMaterials: 5,
+	}); err != nil {
+		t.Fatalf("HandleDailyCompleted() error = %v", err)
+	}
+
+	var outbox *execCall
+	for i, call := range tx.execCalls {
+		if strings.Contains(call.sql, "INSERT INTO outbox") {
+			outbox = &tx.execCalls[i]
+		}
+	}
+	if outbox == nil {
+		t.Fatal("ship status was not staged")
+	}
+	requestID, ok := outbox.args[3].(pgtype.Text)
+	if !ok || !requestID.Valid || requestID.String != "req-123" {
+		t.Fatalf("request_id arg = %#v, want valid req-123", outbox.args[3])
+	}
+}
+
 func assertStagedShipStatus(t *testing.T, tx *shipMutationTx, expectedUserID string, expectedHull, expectedMaterials int) {
 	t.Helper()
 	var outboxCalls []execCall
