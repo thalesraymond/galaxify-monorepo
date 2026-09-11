@@ -1,5 +1,5 @@
 SERVICES := user-service daily-service ship-service expedition-service
-WORKERS := daily-cron
+WORKERS := daily-cron expedition-worker
 GOOSE := ./goose.sh
 
 .PHONY: test coverage goose-up goose-down sqlc build vet fmt tidy help
