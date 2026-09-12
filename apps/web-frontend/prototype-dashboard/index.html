@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Galaxify dashboard directions — prototype</title>
+    <style>
+      /* PROTOTYPE: Three dashboard directions, switchable via ?variant=. */
+      * { box-sizing: border-box; }
+      html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+      body { margin: 0; min-width: 320px; }
+      button, a { font: inherit; }
+      button { cursor: pointer; }
+      button:focus-visible, a:focus-visible { outline: 3px solid var(--focus, #f4bd4f); outline-offset: 3px; }
+      button:active { transform: scale(.97); }
+      h1, h2, h3 { text-wrap: balance; }
+      p { text-wrap: pretty; }
+      .skip-link { position: fixed; left: 16px; top: -60px; z-index: 2000; padding: 12px 16px; color: #101928; background: #fff; border-radius: 8px; }
+      .skip-link:focus { top: 16px; }
+      .variant { min-height: 100vh; padding-bottom: 92px; }
+      .prototype-switcher { position: fixed; z-index: 1000; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 8px; color: #fff; background: #111827; border: 1px solid #4b5563; border-radius: 999px; box-shadow: 0 8px 30px #0006; font: 600 13px/1.2 ui-monospace, monospace; }
+      .prototype-switcher button { width: 44px; height: 44px; border: 0; border-radius: 50%; color: #fff; background: #374151; }
+      .prototype-label { min-width: 180px; text-align: center; }
+      .prototype-tag { display: block; color: #9ca3af; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+      .icon { width: 22px; height: 22px; display: inline-grid; place-items: center; flex: 0 0 auto; }
+      .avatar { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; font-weight: 800; }
+      .mobile-nav { display: none; }
+      .nav-item { min-height: 44px; display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; }
+      .eyebrow { margin: 0 0 8px; font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+      .muted { opacity: .72; }
+      .number { font-variant-numeric: tabular-nums; }
+
+      /* A — Captain's Log: warm editorial, task-first, asymmetric split. */
+      .a { --focus: #ffcb69; color: #f8f0dc; background: #142e35; font-family: "Avenir Next", "Trebuchet MS", sans-serif; }
+      .a .shell { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: calc(100vh - 92px); }
+      .a .sidebar { position: sticky; top: 0; height: 100vh; padding: 30px 22px; background: #0c2229; border-right: 1px solid #ffffff14; }
+      .a .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 48px; font: 700 23px Georgia, serif; letter-spacing: .02em; }
+      .a .brand-mark { display: grid; place-items: center; width: 40px; height: 40px; color: #18333a; background: #f2b84b; border-radius: 50% 50% 42% 58%; transform: rotate(-8deg); }
+      .a .brand-mark span { transform: rotate(8deg); }
+      .a .side-nav { display: grid; gap: 8px; }
+      .a .nav-item { padding: 0 14px; border-radius: 10px; color: #b9cbc9; font-weight: 700; }
+      .a .nav-item.active { color: #152c32; background: #f5c86a; }
+      .a .account { position: absolute; right: 22px; bottom: 28px; left: 22px; display: flex; align-items: center; gap: 12px; padding-top: 18px; border-top: 1px solid #ffffff1c; }
+      .a .avatar { color: #143037; background: #9dd3c9; }
+      .a main { padding: 44px clamp(24px, 5vw, 72px); background: radial-gradient(circle at 90% 0%, #28525b 0, transparent 34%), #17363e; }
+      .a .page-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 36px; }
+      .a h1 { margin: 0; max-width: 650px; font: 700 clamp(38px, 5vw, 68px)/.98 Georgia, serif; }
+      .a .date-seal { flex: 0 0 auto; width: 90px; height: 90px; display: grid; place-items: center; text-align: center; color: #17363e; background: #f4c967; border-radius: 50%; box-shadow: 0 0 0 6px #f4c96722; font-weight: 800; }
+      .a .date-seal strong { display: block; font: 700 30px/.8 Georgia, serif; }
+      .a .dashboard { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, .75fr); gap: 24px; align-items: start; }
+      .a .logbook { color: #173038; background: #f5eddc; border-radius: 4px 22px 22px 4px; box-shadow: -8px 0 #c79243, 0 18px 50px #07191e66; overflow: hidden; }
+      .a .logbook-head { padding: 26px 30px 18px; border-bottom: 1px solid #17303822; }
+      .a .logbook h2 { margin: 0; font: 700 30px Georgia, serif; }
+      .a .daily { display: grid; grid-template-columns: 48px 1fr auto; gap: 14px; align-items: center; min-height: 86px; padding: 14px 24px 14px 30px; border-bottom: 1px solid #17303818; }
+      .a .daily:last-child { border: 0; }
+      .a .check { width: 42px; height: 42px; border: 2px solid #2c665e; border-radius: 50%; color: #2c665e; background: transparent; font-weight: 900; }
+      .a .daily h3 { margin: 0 0 5px; font-size: 17px; }
+      .a .daily p { margin: 0; color: #62706c; font-size: 13px; }
+      .a .reward { padding: 7px 10px; color: #72501c; background: #ecd69f; border-radius: 999px; font-size: 12px; font-weight: 800; }
+      .a .side-stack { display: grid; gap: 18px; }
+      .a .status-panel { padding: 24px; background: #0c252c99; border: 1px solid #ffffff18; border-radius: 18px; box-shadow: 0 12px 30px #07191e55; }
+      .a .status-panel h2 { margin: 0 0 18px; font: 700 23px Georgia, serif; }
+      .a .ship-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      .a .ship-glyph { font-size: 48px; filter: grayscale(.15); }
+      .a .meter { height: 10px; margin: 16px 0 10px; background: #ffffff1c; border-radius: 99px; overflow: hidden; }
+      .a .meter span { display: block; width: 68%; height: 100%; background: #edb74d; border-radius: inherit; }
+      .a .panel-action { width: 100%; min-height: 44px; margin-top: 18px; border: 0; color: #173038; background: #9fd4c9; border-radius: 9px; font-weight: 800; }
+      .a .expedition-state { display: flex; gap: 12px; align-items: center; padding-top: 14px; border-top: 1px solid #ffffff1a; }
+
+      /* B — Orbital Console: dark, dense, status-first bento cockpit. */
+      .b { --focus: #70e4ff; color: #dbe9ef; background: #071118; font-family: "IBM Plex Sans", "Segoe UI", sans-serif; }
+      .b .shell { min-height: calc(100vh - 92px); }
+      .b .sidebar { position: fixed; inset: 0 auto 92px 0; z-index: 10; width: 92px; display: flex; flex-direction: column; align-items: center; padding: 24px 12px; background: #091820; border-right: 1px solid #15323d; }
+      .b .brand { display: grid; place-items: center; width: 52px; height: 52px; margin-bottom: 38px; color: #061116; background: #6eddf5; clip-path: polygon(50% 0, 95% 25%, 95% 75%, 50% 100%, 5% 75%, 5% 25%); font-weight: 900; }
+      .b .side-nav { display: grid; gap: 13px; }
+      .b .nav-item { width: 56px; height: 56px; min-height: 56px; justify-content: center; border-radius: 16px; color: #73909b; }
+      .b .nav-item span:last-child { position: absolute; width: 1px; height: 1px; overflow: hidden; }
+      .b .nav-item.active { color: #72e3fb; background: #153541; box-shadow: inset 3px 0 #72e3fb; }
+      .b .account { margin-top: auto; }
+      .b .avatar { color: #dbe9ef; background: #1b3540; }
+      .b main { margin-left: 92px; padding: 30px clamp(24px, 4vw, 64px); background: linear-gradient(#0b182066 1px, transparent 1px), linear-gradient(90deg, #0b182066 1px, transparent 1px), radial-gradient(circle at 82% 15%, #0e506444, transparent 28%); background-size: 32px 32px, 32px 32px, auto; }
+      .b .topbar { display: flex; justify-content: space-between; align-items: center; gap: 24px; margin-bottom: 28px; }
+      .b h1 { margin: 0; font: 500 clamp(28px, 4vw, 46px)/1.05 "Arial Narrow", sans-serif; letter-spacing: -.03em; }
+      .b .live-pill { display: flex; align-items: center; gap: 8px; padding: 8px 12px; color: #90e8ba; background: #0f2b24; border: 1px solid #235440; border-radius: 6px; font: 700 11px ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
+      .b .live-pill::before { content: ""; width: 7px; height: 7px; background: #5ce899; border-radius: 50%; box-shadow: 0 0 10px #5ce899; }
+      .b .dashboard { display: grid; grid-template-columns: 1.25fr .75fr; grid-template-areas: "loop ship" "loop expedition" "history history"; gap: 14px; }
+      .b .module { background: #0c1d25e8; border: 1px solid #1a3844; border-radius: 8px; box-shadow: 0 14px 35px #0004; }
+      .b .module-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 18px; border-bottom: 1px solid #1a3844; }
+      .b .module h2 { margin: 0; font: 700 13px ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; }
+      .b .loop { grid-area: loop; }
+      .b .ship { grid-area: ship; }
+      .b .expedition { grid-area: expedition; }
+      .b .history { grid-area: history; }
+      .b .daily { display: grid; grid-template-columns: 34px 1fr auto; gap: 12px; align-items: center; padding: 16px 18px; border-bottom: 1px solid #142e38; }
+      .b .daily:last-child { border: 0; }
+      .b .check { width: 30px; height: 30px; color: #65d9f2; background: transparent; border: 1px solid #347084; border-radius: 4px; }
+      .b .daily h3 { margin: 0 0 3px; font-size: 15px; }
+      .b .daily p { margin: 0; color: #74919d; font: 12px ui-monospace, monospace; }
+      .b .reward { color: #e9ba63; font: 700 12px ui-monospace, monospace; }
+      .b .module-body { padding: 18px; }
+      .b .readout { display: flex; justify-content: space-between; align-items: end; }
+      .b .readout strong { color: #f1f7f9; font: 500 36px/1 "Arial Narrow", sans-serif; }
+      .b .readout span { color: #78939e; font: 11px ui-monospace, monospace; text-transform: uppercase; }
+      .b .meter { height: 4px; margin: 14px 0; background: #17313c; }
+      .b .meter span { display: block; width: 68%; height: 100%; background: #e4aa4c; box-shadow: 0 0 8px #e4aa4c88; }
+      .b .panel-action { min-height: 44px; padding: 0 16px; border: 1px solid #347084; color: #79def4; background: #0f2b35; border-radius: 4px; font-weight: 800; }
+      .b .history .module-body { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+      .b .journey-line { flex: 1; display: flex; align-items: center; }
+      .b .journey-node { width: 11px; height: 11px; background: #68def7; border-radius: 50%; box-shadow: 0 0 10px #68def788; }
+      .b .journey-path { flex: 1; height: 1px; background: #30505b; }
+
+      /* C — Star Chart: airy, route-first, visual journey. */
+      .c { --focus: #1749b5; color: #1c2c44; background: #e8eef3; font-family: "Gill Sans", "Trebuchet MS", sans-serif; }
+      .c .shell { display: grid; grid-template-columns: 286px minmax(0, 1fr); min-height: calc(100vh - 92px); }
+      .c .sidebar { position: sticky; top: 0; height: 100vh; padding: 34px 28px; color: #dde8f1; background: #263a50; }
+      .c .brand { margin-bottom: 54px; font: 700 28px Georgia, serif; }
+      .c .brand small { display: block; margin-top: 4px; color: #90a9bb; font: 700 10px "Gill Sans", sans-serif; letter-spacing: .18em; text-transform: uppercase; }
+      .c .side-nav { display: grid; gap: 4px; }
+      .c .nav-item { position: relative; padding: 0 14px; color: #aebfcd; border-radius: 4px; font-weight: 700; }
+      .c .nav-item.active { color: #fff; }
+      .c .nav-item.active::before { content: ""; position: absolute; left: -28px; width: 5px; height: 28px; background: #f0a868; border-radius: 0 4px 4px 0; }
+      .c .account { position: absolute; left: 28px; bottom: 30px; display: flex; align-items: center; gap: 12px; }
+      .c .avatar { color: #263a50; background: #efaa6d; }
+      .c main { position: relative; overflow: hidden; padding: 42px clamp(24px, 5vw, 76px); background: radial-gradient(circle at 76% 5%, #fff 0, transparent 28%), #e9eff3; }
+      .c main::after { content: ""; position: absolute; right: -130px; top: 120px; width: 350px; height: 350px; border: 1px solid #8aa0b333; border-radius: 50%; box-shadow: 0 0 0 55px #8aa0b311, 0 0 0 110px #8aa0b30a; pointer-events: none; }
+      .c .page-head { position: relative; z-index: 1; display: flex; justify-content: space-between; gap: 24px; margin-bottom: 54px; }
+      .c h1 { margin: 0; max-width: 620px; font: 400 clamp(36px, 5vw, 64px)/1.03 Georgia, serif; letter-spacing: -.025em; }
+      .c .day-count { flex: 0 0 auto; text-align: right; }
+      .c .day-count strong { display: block; color: #d66f3e; font: 700 42px/1 Georgia, serif; }
+      .c .dashboard { position: relative; z-index: 1; max-width: 920px; }
+      .c .journey { position: relative; display: grid; gap: 22px; }
+      .c .journey::before { content: ""; position: absolute; top: 48px; bottom: 48px; left: 27px; width: 2px; background: repeating-linear-gradient(to bottom, #7891a4 0 6px, transparent 6px 12px); }
+      .c .stop { position: relative; display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 20px; align-items: start; }
+      .c .stop-number { z-index: 1; display: grid; place-items: center; width: 56px; height: 56px; color: #fff; background: #263f58; border: 7px solid #e9eff3; border-radius: 50%; font: 700 14px Georgia, serif; box-shadow: 0 0 0 1px #8499a8; }
+      .c .stop:first-child .stop-number { color: #402315; background: #efa86a; }
+      .c .stop-content { padding: 2px 0 18px; border-bottom: 1px solid #9aabb744; }
+      .c .stop-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; }
+      .c .stop h2 { margin: 0 0 7px; font: 700 25px Georgia, serif; }
+      .c .stop p { margin: 0; color: #637587; }
+      .c .daily-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+      .c .daily-chip { min-height: 44px; padding: 0 14px; color: #30465a; background: #fff9; border: 1px solid #aab9c4; border-radius: 99px; font-weight: 700; }
+      .c .panel-action { min-height: 44px; padding: 0 18px; color: #fff; background: #294a68; border: 0; border-radius: 4px; font-weight: 800; }
+      .c .ship-readout { display: flex; gap: 22px; margin-top: 14px; }
+      .c .ship-readout strong { display: block; font: 700 22px Georgia, serif; }
+
+      .toast { position: fixed; z-index: 900; top: 20px; right: 20px; max-width: 320px; padding: 14px 18px; color: #fff; background: #152333; border-radius: 8px; box-shadow: 0 10px 30px #0004; opacity: 0; transform: translateY(-12px); pointer-events: none; transition: opacity 180ms cubic-bezier(.23,1,.32,1), transform 180ms cubic-bezier(.23,1,.32,1); }
+      .toast.show { opacity: 1; transform: translateY(0); }
+
+      @media (max-width: 760px) {
+        .variant { padding-bottom: 156px; }
+        .a .shell, .c .shell { display: block; }
+        .sidebar { display: none !important; }
+        .mobile-nav { position: fixed; z-index: 500; right: 0; bottom: 86px; left: 0; display: grid; grid-template-columns: repeat(4, 1fr); min-height: 66px; padding: 6px 8px max(6px, env(safe-area-inset-bottom)); }
+        .mobile-nav .nav-item { flex-direction: column; justify-content: center; gap: 2px; min-width: 0; font-size: 11px; }
+        .a .mobile-nav { color: #b9cbc9; background: #0c2229; border-top: 1px solid #ffffff18; }
+        .a .mobile-nav .active { color: #173038; background: #f5c86a; border-radius: 10px; }
+        .b .mobile-nav { color: #78939e; background: #091820; border-top: 1px solid #15323d; }
+        .b .mobile-nav .active { color: #72e3fb; background: #153541; border-radius: 8px; }
+        .c .mobile-nav { color: #9db1c0; background: #263a50; }
+        .c .mobile-nav .active { color: #fff; border-top: 3px solid #efaa6d; }
+        .b main { margin-left: 0; }
+        .a main, .b main, .c main { padding: 24px 18px 36px; }
+        .a .page-head, .c .page-head { align-items: start; margin-bottom: 28px; }
+        .a .date-seal { width: 66px; height: 66px; font-size: 11px; }
+        .a .date-seal strong { font-size: 23px; }
+        .a .dashboard, .b .dashboard { display: grid; grid-template-columns: 1fr; grid-template-areas: none; }
+        .b .module { grid-area: auto; }
+        .b .ship { order: 2; }
+        .b .expedition { order: 3; }
+        .b .history { order: 4; }
+        .b .history .module-body { display: block; }
+        .b .journey-line { margin-bottom: 18px; }
+        .a .daily { grid-template-columns: 44px 1fr; padding: 14px 18px; }
+        .a .reward { grid-column: 2; justify-self: start; }
+        .c .day-count { display: none; }
+        .c .journey::before { left: 21px; }
+        .c .stop { grid-template-columns: 44px minmax(0, 1fr); gap: 13px; }
+        .c .stop-number { width: 44px; height: 44px; border-width: 5px; }
+        .c .stop-head { display: block; }
+        .c .stop-head .panel-action { margin-top: 12px; }
+        .prototype-switcher { bottom: 12px; }
+        .prototype-label { min-width: 142px; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <div id="app"></div>
+    <div class="toast" role="status" aria-live="polite"></div>
+    <script>
+      const variants = {
+        a: { name: "Captain's Log", render: renderA },
+        b: { name: "Orbital Console", render: renderB },
+        c: { name: "Star Chart", render: renderC },
+      };
+
+      const nav = (mobile = false) => `
+        <nav class="${mobile ? "mobile-nav" : "side-nav"}" aria-label="Primary navigation">
+          <a class="nav-item active" href="#"><span class="icon">⌂</span><span>Dashboard</span></a>
+          <a class="nav-item" href="#"><span class="icon">✓</span><span>Dailies</span></a>
+          <a class="nav-item" href="#"><span class="icon">△</span><span>Ship</span></a>
+          <a class="nav-item" href="#"><span class="icon">✦</span><span>Expeditions</span></a>
+        </nav>`;
+
+      const sidebarA = () => `<aside class="sidebar"><div class="brand"><span class="brand-mark"><span>✦</span></span>Galaxify</div>${nav()}<div class="account"><span class="avatar">AR</span><span><strong>Avery Reed</strong><br><small class="muted">View profile</small></span></div></aside>`;
+      const sidebarB = () => `<aside class="sidebar"><div class="brand" aria-label="Galaxify">G</div>${nav()}<div class="account"><span class="avatar">AR</span></div></aside>`;
+      const sidebarC = () => `<aside class="sidebar"><div class="brand">Galaxify<small>Player flight log</small></div>${nav()}<div class="account"><span class="avatar">AR</span><span><strong>Avery Reed</strong><br><small>Profile & logout</small></span></div></aside>`;
+
+      function renderA() {
+        return `<div class="variant a"><div class="shell">${sidebarA()}<main id="main-content"><header class="page-head"><div><p class="eyebrow">Captain's log · Tuesday</p><h1>Three small wins before launch.</h1></div><div class="date-seal"><span><strong>12</strong>SEP</span></div></header><div class="dashboard"><section class="logbook" aria-labelledby="a-dailies"><div class="logbook-head"><p class="eyebrow">First priority</p><h2 id="a-dailies">Today's Dailies</h2></div>${dailyRows("a")}</section><div class="side-stack"><section class="status-panel"><div class="ship-line"><div><p class="eyebrow">Your Ship</p><h2>Wayfarer</h2></div><span class="ship-glyph" aria-hidden="true">🚀</span></div><div class="meter" aria-label="Ship integrity 68 percent"><span></span></div><div class="ship-line"><span>Integrity</span><strong class="number">68%</strong></div><button class="panel-action" data-action="repair">Repair with 12 materials</button></section><section class="status-panel"><p class="eyebrow">Expedition</p><h2>Quiet Nebula</h2><div class="expedition-state"><span class="icon">◷</span><span><strong>Returns in 2h 14m</strong><br><small class="muted">Your Ship is underway</small></span></div></section></div></div></main></div>${nav(true)}</div>`;
+      }
+
+      function renderB() {
+        return `<div class="variant b"><div class="shell">${sidebarB()}<main id="main-content"><header class="topbar"><div><p class="eyebrow muted">Player control / Day 12</p><h1>Good morning, Avery.</h1></div><span class="live-pill">Systems linked</span></header><div class="dashboard"><section class="module loop"><div class="module-head"><h2>Daily loop</h2><span class="number muted">0 / 3</span></div>${dailyRows("b")}</section><section class="module ship"><div class="module-head"><h2>Ship integrity</h2><span class="muted">WAYFARER</span></div><div class="module-body"><div class="readout"><strong class="number">68%</strong><span>12 materials<br>available</span></div><div class="meter"><span></span></div><button class="panel-action" data-action="repair">Run repair</button></div></section><section class="module expedition"><div class="module-head"><h2>Expedition</h2><span class="muted">ACTIVE</span></div><div class="module-body"><div class="readout"><strong class="number">02:14</strong><span>Quiet Nebula<br>remaining</span></div></div></section><section class="module history"><div class="module-head"><h2>Momentum</h2><span class="muted">THIS WEEK</span></div><div class="module-body"><div class="journey-line"><span class="journey-node"></span><span class="journey-path"></span><span class="journey-node"></span><span class="journey-path"></span><span class="journey-node"></span><span class="journey-path"></span><span class="journey-node"></span></div><strong>4-day completion streak</strong></div></section></div></main></div>${nav(true)}</div>`;
+      }
+
+      function renderC() {
+        return `<div class="variant c"><div class="shell">${sidebarC()}<main id="main-content"><header class="page-head"><div><p class="eyebrow muted">Your route today</p><h1>Every habit moves the journey forward.</h1></div><div class="day-count"><strong class="number">12</strong><span>days in orbit</span></div></header><div class="dashboard"><div class="journey"><section class="stop"><span class="stop-number">01</span><div class="stop-content"><div class="stop-head"><div><p class="eyebrow">Start here</p><h2>Dailies</h2></div><button class="panel-action" data-action="daily">Complete next Daily</button></div><p>Three promises are waiting for you today.</p><div class="daily-list"><button class="daily-chip" data-action="daily">○ Morning walk</button><button class="daily-chip" data-action="daily">○ Read 20 pages</button><button class="daily-chip" data-action="daily">○ Plan tomorrow</button></div></div></section><section class="stop"><span class="stop-number">02</span><div class="stop-content"><div class="stop-head"><div><p class="eyebrow muted">Build readiness</p><h2>Ship</h2></div><button class="panel-action" data-action="repair">Repair Ship</button></div><div class="ship-readout"><span><strong class="number">68%</strong> integrity</span><span><strong class="number">12</strong> materials</span></div></div></section><section class="stop"><span class="stop-number">03</span><div class="stop-content"><div class="stop-head"><div><p class="eyebrow muted">Already underway</p><h2>Expedition</h2></div></div><p><strong>Quiet Nebula</strong> returns in <span class="number">2h 14m</span>. Keep building momentum while you wait.</p></div></section></div></div></main></div>${nav(true)}</div>`;
+      }
+
+      function dailyRows(kind) {
+        return [
+          ["Morning walk", "Build consistency · due today", "+4 materials"],
+          ["Read 20 pages", "Keep curiosity in motion · due today", "+6 materials"],
+          ["Plan tomorrow", "Clear the flight path · due today", "+3 materials"],
+        ].map(([title, detail, reward]) => `<article class="daily"><button class="check" aria-label="Complete ${title}" data-action="daily">○</button><div><h3>${title}</h3><p>${detail}</p></div><span class="reward">${reward}</span></article>`).join("");
+      }
+
+      function currentVariant() {
+        const value = new URLSearchParams(location.search).get("variant")?.toLowerCase();
+        return variants[value] ? value : "a";
+      }
+
+      function setVariant(key) {
+        const url = new URL(location.href);
+        url.searchParams.set("variant", key);
+        history.replaceState({}, "", url);
+        render();
+      }
+
+      function cycle(direction) {
+        const keys = Object.keys(variants);
+        const index = keys.indexOf(currentVariant());
+        setVariant(keys[(index + direction + keys.length) % keys.length]);
+      }
+
+      function render() {
+        const key = currentVariant();
+        document.getElementById("app").innerHTML = variants[key].render() + `<div class="prototype-switcher" aria-label="Prototype variants"><button data-cycle="-1" aria-label="Previous variant">←</button><div class="prototype-label"><span class="prototype-tag">Prototype direction</span>${key.toUpperCase()} · ${variants[key].name}</div><button data-cycle="1" aria-label="Next variant">→</button></div>`;
+        document.querySelectorAll("[data-cycle]").forEach(button => button.addEventListener("click", () => cycle(Number(button.dataset.cycle))));
+        document.querySelectorAll("a[href='#']").forEach(link => link.addEventListener("click", event => event.preventDefault()));
+        document.querySelectorAll("[data-action]").forEach(button => button.addEventListener("click", () => showToast(button.dataset.action === "repair" ? "Repair feedback would appear here." : "Daily completion feedback would appear here.")));
+      }
+
+      function showToast(message) {
+        const toast = document.querySelector(".toast");
+        toast.textContent = message + " (Prototype only)";
+        toast.classList.add("show");
+        clearTimeout(window.toastTimer);
+        window.toastTimer = setTimeout(() => toast.classList.remove("show"), 2200);
+      }
+
+      addEventListener("keydown", event => {
+        if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName) || document.activeElement?.isContentEditable) return;
+        if (event.key === "ArrowLeft") cycle(-1);
+        if (event.key === "ArrowRight") cycle(1);
+      });
+      addEventListener("popstate", render);
+      render();
+    </script>
+  </body>
+</html>
