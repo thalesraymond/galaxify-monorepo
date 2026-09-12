@@ -138,7 +138,7 @@ func (c *SimpleJWKSCache) GetKey(ctx context.Context, kid string) (crypto.Public
 	}
 
 	// Cache miss: coordinate fetch
-	_, err, _ := c.group.Do("jwks_refresh", func() (interface{}, error) {
+	_, err, _ := c.group.Do("jwks_refresh", func() (any, error) {
 		// Re-check after acquiring singleflight
 		c.mu.RLock()
 		_, ok := c.keys[kid]
