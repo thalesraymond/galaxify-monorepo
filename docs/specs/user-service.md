@@ -123,7 +123,7 @@ events **inside the same transaction** as the domain mutation, capturing the
 originating request ID. `main.go` wraps the mux with
 `pkg/events.OutboxDrainer.DrainAfterRequest(mux, 50)` so pending rows are
 published after each handled request (ADR-0004, cross-cutting §6). Consumer-side
-idempotency (`pkg/events.ProcessedEvents`) handles duplicate delivery.
+idempotency (`events.NewIdempotentHandler`) handles duplicate delivery.
 
 ---
 
