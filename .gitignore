@@ -29,4 +29,7 @@ bin/
 # Copy the committed .env.example per app instead.
 .env
 
+# OpenAPI generator output — a build artifact, never committed. The real
+# generated client lives with the frontend tooling (issue #142).
+.openapi-generated/
 .gocache/
