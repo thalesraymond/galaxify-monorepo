@@ -1,0 +1,29 @@
+.error {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: var(--space-8);
+  border-radius: var(--radius-panel);
+  background-color: var(--color-shell-raised);
+}
+
+.title {
+  margin-top: 0;
+  color: var(--color-danger);
+  font-size: 2rem;
+}
+
+.description {
+  color: var(--color-text-muted-dark);
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-control);
+  background-color: var(--color-amber);
+  color: var(--color-ink);
+  font-weight: 600;
+  text-decoration: none;
+}

@@ -28,8 +28,21 @@ bin/
 # Environment files — secrets and local overrides are never committed.
 # Copy the committed .env.example per app instead.
 .env
+.env.local
+.env.*.local
 
 # OpenAPI generator output — a build artifact, never committed. The real
 # generated client lives with the frontend tooling (issue #142).
 .openapi-generated/
 .gocache/
+
+# Node / frontend build and test output
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+blob-report/
+.vite/
+*.tsbuildinfo
+apps/web-frontend/.lighthouseci/

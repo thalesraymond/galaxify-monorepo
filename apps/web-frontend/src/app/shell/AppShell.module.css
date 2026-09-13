@@ -1,0 +1,78 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: var(--color-shell-deep);
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--color-shell);
+  border-bottom: 1px solid var(--color-shell-raised);
+}
+
+.brand {
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.5rem;
+}
+
+.brandLink {
+  display: inline-block;
+  min-height: 44px;
+  padding: var(--space-2);
+  color: var(--color-amber);
+  text-decoration: none;
+}
+
+.primaryNav {
+  flex: 1 1 auto;
+}
+
+.navList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.navLink,
+.accountLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  color: var(--color-text-on-dark);
+  text-decoration: none;
+}
+
+.navLink:hover,
+.accountLink:hover {
+  background-color: var(--color-shell-raised);
+}
+
+.navLinkActive {
+  background-color: var(--color-shell-raised);
+  color: var(--color-amber);
+  text-decoration: underline;
+}
+
+.main {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4) var(--space-16);
+}
+
+.main:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
