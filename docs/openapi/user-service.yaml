@@ -1,0 +1,599 @@
+openapi: 3.1.0
+info:
+  title: Galaxify User Service API
+  version: 0.1.0
+  description: |
+    HTTP wire contract for the Galaxify User Service (Phase 1).
+
+    The browser reaches this service through the Vite dev proxy at `/api/user`;
+    the local direct origin is `http://localhost:8081` (see `x-local-origin`).
+    Because the frontend always calls relative URLs, this document intentionally
+    omits `servers` so relative-path conformance checks do not depend on a host.
+
+    Error responses always use the shared envelope
+    (`sharedhttp.ErrorResponse`). Branch on `error.code`, not on the HTTP status.
+    `X-Request-Id` is present on every response (success and error).
+
+    Operations marked `x-implementation-status: planned` are locked Phase 1
+    contract changes that are not implemented by the Go handlers yet. Operations
+    marked `implemented` describe exactly what the service does today.
+  contact:
+    name: Galaxify
+x-service-name: user-service
+x-local-origin: http://localhost:8081
+tags:
+  - name: health
+    description: Liveness.
+  - name: auth
+    description: Signup, login, refresh, and logout.
+  - name: users
+    description: Authenticated Player identity.
+  - name: jwks
+    description: Public signing-key discovery.
+
+paths:
+  /health:
+    get:
+      operationId: userHealth
+      summary: Liveness check.
+      tags: [health]
+      x-implementation-status: implemented
+      responses:
+        "200":
+          description: The service is running.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /users:
+    post:
+      operationId: userSignup
+      summary: Create a new Player account and issue the first session.
+      tags: [auth]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignupRequest"
+      responses:
+        "201":
+          description: Account created and session issued.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionResponse"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /auth/login:
+    post:
+      operationId: userLogin
+      summary: Authenticate a Player and issue a new session.
+      tags: [auth]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Credentials accepted and session issued.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /auth/refresh:
+    post:
+      operationId: userRefresh
+      summary: Rotate a single-use refresh token and issue a new access token.
+      tags: [auth]
+      x-implementation-status: implemented
+      x-planned-changes: >-
+        Make refresh-token consume/replace atomic and concurrency-safe, and
+        surface database/infrastructure failures as retryable 5xx responses
+        instead of collapsing them into AUTH_INVALID_TOKEN. See
+        docs/specs/web-frontend.md §7.1 (User Service).
+      x-ticket: "#149"
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: The refresh token was consumed and a replacement issued.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/RefreshUnavailable"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /auth/logout:
+    post:
+      operationId: userLogout
+      summary: Revoke the token family that owns a refresh token.
+      description: |
+        **Planned (not implemented).** Idempotent family logout that accepts
+        only a `refresh_token` (no access token required) and always returns 204
+        once the family is revoked or was already absent.
+      tags: [auth]
+      x-implementation-status: planned
+      x-planned-changes: >-
+        Add idempotent POST /auth/logout accepting {refresh_token}, requiring no
+        access token, revoking only its token family, and returning 204.
+      x-ticket: "#149"
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogoutRequest"
+      responses:
+        "204":
+          description: The token family was revoked (idempotent).
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /.well-known/jwks.json:
+    get:
+      operationId: userJwks
+      summary: Return the active Ed25519 public signing key as a JWKS document.
+      tags: [jwks]
+      x-implementation-status: implemented
+      responses:
+        "200":
+          description: JWKS document containing the active key.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JWKSResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /users/me:
+    get:
+      operationId: userGetMe
+      summary: Return the authenticated Player's identity.
+      tags: [users]
+      x-implementation-status: implemented
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: The authenticated Player.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      operationId: userUpdateMe
+      summary: Update the authenticated Player's username.
+      tags: [users]
+      x-implementation-status: implemented
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMeRequest"
+      responses:
+        "200":
+          description: The updated Player.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: userDeleteMe
+      summary: Permanently delete the authenticated Player's account.
+      tags: [users]
+      x-implementation-status: implemented
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteMeRequest"
+      responses:
+        "204":
+          description: Account deleted. No body.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        default:
+          $ref: "#/components/responses/Error"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        EdDSA (Ed25519) access token issued by the User Service. The service
+        only re-verifies the signature against the JWKS; the token is a bearer
+        credential and must never be logged or persisted by the browser.
+
+  parameters:
+    XRequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: |
+        Optional client-supplied correlation ID. When absent the middleware
+        generates a UUID v4. Echoed back on the response.
+      schema:
+        type: string
+        format: uuid
+
+  headers:
+    XRequestId:
+      description: Correlation ID echoed on every response.
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, service]
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        service:
+          type: string
+          examples: [user-service]
+
+    SignupRequest:
+      type: object
+      required: [email, username, password]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+          description: Normalized to lower case by the service.
+        username:
+          type: string
+          minLength: 3
+          maxLength: 30
+          pattern: "^[a-zA-Z0-9_-]{3,30}$"
+        password:
+          type: string
+          minLength: 8
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      additionalProperties: false
+      properties:
+        refresh_token:
+          type: string
+          description: Opaque single-use refresh token.
+
+    LogoutRequest:
+      type: object
+      description: Planned request body for POST /auth/logout.
+      x-implementation-status: planned
+      required: [refresh_token]
+      additionalProperties: false
+      properties:
+        refresh_token:
+          type: string
+
+    UpdateMeRequest:
+      type: object
+      required: [username]
+      additionalProperties: false
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 30
+          pattern: "^[a-zA-Z0-9_-]{3,30}$"
+
+    DeleteMeRequest:
+      type: object
+      required: [password]
+      additionalProperties: false
+      properties:
+        password:
+          type: string
+
+    UserResponse:
+      type: object
+      required: [id, email, username, created_at, updated_at]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        username:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+          description: RFC3339 timestamp.
+        updated_at:
+          type: string
+          format: date-time
+          description: RFC3339 timestamp.
+
+    AuthSessionResponse:
+      type: object
+      required: [user, access_token, refresh_token]
+      additionalProperties: false
+      properties:
+        user:
+          $ref: "#/components/schemas/UserResponse"
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+
+    RefreshResponse:
+      type: object
+      required: [access_token, refresh_token]
+      additionalProperties: false
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+
+    JWK:
+      type: object
+      required: [kty, crv, x, kid]
+      additionalProperties: false
+      properties:
+        kty:
+          type: string
+          enum: [OKP]
+        crv:
+          type: string
+          enum: [Ed25519]
+        x:
+          type: string
+          description: Base64url-encoded Ed25519 public key.
+        kid:
+          type: string
+        use:
+          type: string
+          enum: [sig]
+        alg:
+          type: string
+          enum: [EdDSA]
+
+    JWKSResponse:
+      type: object
+      required: [keys]
+      additionalProperties: false
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/JWK"
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorBody"
+
+    ErrorBody:
+      type: object
+      required: [code, message]
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          description: Flat SCREAMING_SNAKE code; branch on this, not on status.
+        message:
+          type: string
+        details:
+          $ref: "#/components/schemas/ErrorDetails"
+
+    ErrorDetails:
+      type: object
+      required: [field_errors]
+      additionalProperties: false
+      properties:
+        field_errors:
+          type: object
+          description: "Flat {field: human_message} map."
+          additionalProperties:
+            type: string
+
+  responses:
+    Unauthorized:
+      description: >-
+        The request is not authenticated. Codes: AUTH_MISSING_HEADER,
+        AUTH_INVALID_TOKEN, AUTH_MISSING_KID, AUTH_UNKNOWN_KID,
+        USER_INVALID_CREDENTIALS.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    ValidationFailed:
+      description: >-
+        Request validation failed. `details.field_errors` is populated; the
+        malformed-JSON field is `body`.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Conflict:
+      description: >-
+        A uniqueness constraint failed. Codes: USER_EMAIL_TAKEN,
+        USER_USERNAME_TAKEN.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    InternalError:
+      description: Unexpected server error. Code INTERNAL_ERROR.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    RefreshUnavailable:
+      description: >-
+        **Planned.** Retryable infrastructure failure while refreshing. The
+        refresh token is preserved; code AUTH_SERVICE_UNAVAILABLE. Today a
+        database error is incorrectly reported as AUTH_INVALID_TOKEN.
+      x-implementation-status: planned
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Error:
+      description: Any error not covered by a more specific response.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"

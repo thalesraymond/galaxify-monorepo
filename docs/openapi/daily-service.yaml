@@ -1,0 +1,777 @@
+openapi: 3.1.0
+info:
+  title: Galaxify Daily Service API
+  version: 0.1.0
+  description: |
+    HTTP wire contract for the Galaxify Daily Service (Phase 1).
+
+    The browser reaches this service through the Vite dev proxy at
+    `/api/daily`; the local direct origin is `http://localhost:8082` (see
+    `x-local-origin`). `servers` is intentionally omitted so relative-path
+    conformance checks do not depend on a host.
+
+    Every `/dailies*` operation requires a bearer access token. Error responses
+    use the shared envelope; branch on `error.code`, not on HTTP status.
+    `X-Request-Id` is present on every response.
+
+    `x-implementation-status: planned` marks locked Phase 1 contract changes
+    that the Go handlers do not implement yet.
+  contact:
+    name: Galaxify
+x-service-name: daily-service
+x-local-origin: http://localhost:8082
+tags:
+  - name: health
+    description: Liveness.
+  - name: dailies
+    description: Recurring Player Dailies and their history.
+
+paths:
+  /health:
+    get:
+      operationId: dailyHealth
+      summary: Liveness check.
+      tags: [health]
+      x-implementation-status: implemented
+      responses:
+        "200":
+          description: The service is running.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /dailies:
+    post:
+      operationId: dailyCreate
+      summary: Create a new recurring Daily.
+      tags: [dailies]
+      x-implementation-status: implemented
+      x-planned-changes: >-
+        Enforce title <= 120 and description <= 1000, accept an IANA time_zone
+        plus local deadline, and return a typed awarded-material effect from
+        completion. See docs/specs/web-frontend.md §7.1 (Daily Service).
+      x-ticket: "#148, #151"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDailyRequest"
+      responses:
+        "201":
+          description: Daily created.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Daily"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DailyNotReady"
+        default:
+          $ref: "#/components/responses/Error"
+    get:
+      operationId: dailyList
+      summary: List the authenticated Player's current-cycle Dailies.
+      description: |
+        Current filter is `status` plus `date`/`due_date`. The planned
+        `from`/`to` query parameters select current Dailies by explicit RFC3339
+        instants.
+      tags: [dailies]
+      x-implementation-status: implemented
+      x-planned-changes: >-
+        Add explicit RFC3339 from/to instant filtering alongside the existing
+        date/due_date filter.
+      x-ticket: "#148"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/DailyStatus"
+        - name: date
+          in: query
+          required: false
+          description: A `YYYY-MM-DD` date or an RFC3339 instant.
+          schema:
+            $ref: "#/components/schemas/DateOrDateTime"
+        - name: due_date
+          in: query
+          required: false
+          description: Legacy alias for `date`; used only when `date` is absent.
+          schema:
+            $ref: "#/components/schemas/DateOrDateTime"
+        - name: from
+          in: query
+          required: false
+          description: Planned inclusive lower bound instant (RFC3339).
+          x-implementation-status: planned
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: Planned exclusive upper bound instant (RFC3339).
+          x-implementation-status: planned
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Current-cycle Dailies.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Daily"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DailyNotReady"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /dailies/history:
+    get:
+      operationId: dailyHistory
+      summary: List archived Daily outcomes, newest first.
+      description: |
+        Today this returns the full unbounded array. The planned response is a
+        stable descending cursor page `{items, next_cursor}`.
+      tags: [dailies]
+      x-implementation-status: implemented
+      x-planned-changes: >-
+        Replace the unbounded array with stable descending cursor pagination
+        returning items plus an optional next cursor.
+      x-ticket: "#150"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - name: cursor
+          in: query
+          required: false
+          description: Planned opaque cursor returned as `next_cursor`.
+          x-implementation-status: planned
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Planned page size for cursor pagination.
+          x-implementation-status: planned
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+      responses:
+        "200":
+          description: Archived Daily outcomes.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DailyHistory"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DailyNotReady"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /dailies/difficulties:
+    get:
+      operationId: dailyDifficulties
+      summary: Return typed reward and damage metadata for each difficulty.
+      description: |
+        **Planned (not implemented).** Backend-owned difficulty metadata so the
+        frontend never duplicates reward/damage rules.
+      tags: [dailies]
+      x-implementation-status: planned
+      x-planned-changes: >-
+        Add GET /dailies/difficulties with typed reward and damage metadata.
+      x-ticket: "#151"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Difficulty metadata.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DailyDifficulty"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /dailies/{id}:
+    parameters:
+      - $ref: "#/components/parameters/DailyId"
+    get:
+      operationId: dailyGet
+      summary: Return one Daily owned by the authenticated Player.
+      tags: [dailies]
+      x-implementation-status: implemented
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: The Daily.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Daily"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DailyNotReady"
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      operationId: dailyUpdate
+      summary: Edit a Daily.
+      tags: [dailies]
+      x-implementation-status: implemented
+      x-planned-changes: >-
+        Permit edit after today's completion while preserving history, and
+        accept an IANA time_zone plus local deadline.
+      x-ticket: "#147, #148"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDailyRequest"
+      responses:
+        "200":
+          description: The updated Daily.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Daily"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: dailyDelete
+      summary: Delete a recurring Daily.
+      tags: [dailies]
+      x-implementation-status: implemented
+      x-planned-changes: >-
+        Permit delete after today's completion while preserving past history.
+      x-ticket: "#147"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "204":
+          description: Daily deleted. No body.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /dailies/{id}/complete:
+    post:
+      operationId: dailyComplete
+      summary: Mark a Daily COMPLETED for today.
+      tags: [dailies]
+      x-implementation-status: implemented
+      x-planned-changes: >-
+        Return a typed awarded-material effect from completion, plus a
+        service-specific retryable not-ready error while player state provisions.
+      x-ticket: "#151"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/DailyId"
+      responses:
+        "200":
+          description: The completed Daily.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Daily"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DailyNotReady"
+        default:
+          $ref: "#/components/responses/Error"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: EdDSA (Ed25519) access token issued by the User Service.
+
+  parameters:
+    XRequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: Optional correlation ID; a UUID v4 is generated when absent.
+      schema:
+        type: string
+        format: uuid
+    DailyId:
+      name: id
+      in: path
+      required: true
+      description: Daily UUID.
+      schema:
+        type: string
+        format: uuid
+
+  headers:
+    XRequestId:
+      description: Correlation ID echoed on every response.
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, service]
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        service:
+          type: string
+          examples: [daily-service]
+
+    Difficulty:
+      type: string
+      enum: [EASY, MEDIUM, HARD]
+
+    DailyStatus:
+      type: string
+      enum: [PENDING, COMPLETED, MISSED]
+
+    DateOrDateTime:
+      description: A `YYYY-MM-DD` date or an RFC3339 date-time.
+      oneOf:
+        - type: string
+          format: date
+        - type: string
+          format: date-time
+
+    ClockTime:
+      type: string
+      pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+      description: Local wall-clock time in HH:MM.
+
+    CreateDailyRequest:
+      type: object
+      required: [title, difficulty, due_date]
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        difficulty:
+          $ref: "#/components/schemas/Difficulty"
+        due_date:
+          type: string
+          format: date-time
+          description: >-
+            RFC3339 instant today. Planned: a local deadline interpreted with
+            `time_zone`.
+        time_zone:
+          type: string
+          description: Planned IANA time zone, e.g. Europe/Paris.
+          x-implementation-status: planned
+        due_local_time:
+          allOf:
+            - $ref: "#/components/schemas/ClockTime"
+          description: Planned local due time paired with `time_zone`.
+          x-implementation-status: planned
+
+    UpdateDailyRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        difficulty:
+          $ref: "#/components/schemas/Difficulty"
+        due_date:
+          type: string
+          format: date-time
+        time_zone:
+          type: string
+          description: Planned IANA time zone.
+          x-implementation-status: planned
+        due_local_time:
+          allOf:
+            - $ref: "#/components/schemas/ClockTime"
+          description: Planned local due time paired with `time_zone`.
+          x-implementation-status: planned
+
+    Daily:
+      type: object
+      required:
+        [id, user_id, title, description, difficulty, due_date, status, created_at, updated_at]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        difficulty:
+          $ref: "#/components/schemas/Difficulty"
+        due_date:
+          type: string
+          format: date-time
+          description: RFC3339 timestamp (UTC).
+        status:
+          $ref: "#/components/schemas/DailyStatus"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        time_zone:
+          type: string
+          description: Planned IANA zone retained until edited.
+          x-implementation-status: planned
+
+    DailyHistory:
+      type: object
+      required:
+        [id, daily_id, user_id, title, description, difficulty, due_date, status, completed_at, missed_at, archived_at]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        daily_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        difficulty:
+          $ref: "#/components/schemas/Difficulty"
+        due_date:
+          type: string
+          format: date-time
+        status:
+          $ref: "#/components/schemas/DailyStatus"
+        completed_at:
+          type: [string, "null"]
+          format: date-time
+        missed_at:
+          type: [string, "null"]
+          format: date-time
+        archived_at:
+          type: string
+          format: date-time
+
+    DailyHistoryPage:
+      type: object
+      description: Planned cursor page shaping Daily history.
+      x-implementation-status: planned
+      required: [items]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DailyHistory"
+        next_cursor:
+          type: [string, "null"]
+          description: Opaque cursor for the next page; null at the end.
+
+    DailyDifficulty:
+      type: object
+      description: Planned typed difficulty metadata.
+      x-implementation-status: planned
+      required: [difficulty, reward_materials, damage_amount]
+      additionalProperties: false
+      properties:
+        difficulty:
+          $ref: "#/components/schemas/Difficulty"
+        reward_materials:
+          type: integer
+          format: int32
+        damage_amount:
+          type: integer
+          format: int32
+
+    MaterialEffect:
+      type: object
+      description: Planned typed awarded-material effect.
+      x-implementation-status: planned
+      required: [kind, materials]
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum: [MATERIALS]
+        materials:
+          type: integer
+          format: int32
+
+    DailyCompletion:
+      type: object
+      description: Planned completion response carrying the typed material award.
+      x-implementation-status: planned
+      required:
+        [id, user_id, title, description, difficulty, due_date, status, created_at, updated_at, awarded_materials]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        difficulty:
+          $ref: "#/components/schemas/Difficulty"
+        due_date:
+          type: string
+          format: date-time
+        status:
+          $ref: "#/components/schemas/DailyStatus"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        awarded_materials:
+          type: integer
+          format: int32
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorBody"
+
+    ErrorBody:
+      type: object
+      required: [code, message]
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          $ref: "#/components/schemas/ErrorDetails"
+
+    ErrorDetails:
+      type: object
+      required: [field_errors]
+      additionalProperties: false
+      properties:
+        field_errors:
+          type: object
+          additionalProperties:
+            type: string
+
+  responses:
+    Unauthorized:
+      description: >-
+        Request is not authenticated. Codes: AUTH_MISSING_HEADER,
+        AUTH_INVALID_TOKEN, AUTH_MISSING_KID, AUTH_UNKNOWN_KID.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    ValidationFailed:
+      description: >-
+        Request validation failed. `details.field_errors` is populated; the
+        malformed-JSON field is `body`.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    NotFound:
+      description: The Daily does not exist. Code DAILY_NOT_FOUND.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Conflict:
+      description: >-
+        The Daily is not mutable in its current state. Codes:
+        DAILY_NOT_EDITABLE, DAILY_ALREADY_COMPLETED.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    DailyNotReady:
+      description: >-
+        **Planned.** Service-specific retryable not-ready error while the
+        Player's Daily state provisions. Code DAILY_PLAYER_NOT_READY.
+      x-implementation-status: planned
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    InternalError:
+      description: Unexpected server error. Code INTERNAL_ERROR.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Error:
+      description: Any error not covered by a more specific response.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"

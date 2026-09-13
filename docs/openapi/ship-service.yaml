@@ -1,0 +1,277 @@
+openapi: 3.1.0
+info:
+  title: Galaxify Ship Service API
+  version: 0.1.0
+  description: |
+    HTTP wire contract for the Galaxify Ship Service (Phase 1).
+
+    The browser reaches this service through the Vite dev proxy at `/api/ship`;
+    the local direct origin is `http://localhost:8083` (see `x-local-origin`).
+    `servers` is intentionally omitted so relative-path conformance checks do
+    not depend on a host.
+
+    Both operations require a bearer access token. Error responses use the
+    shared envelope; branch on `error.code`, not on HTTP status. `X-Request-Id`
+    is present on every response.
+
+    A missing Ship immediately after signup is a typed provisioning outcome, not
+    a failure: `SHIP_NOT_FOUND` (404) becomes a "Preparing..." state in the
+    frontend. Ship status/repair are otherwise unchanged for Phase 1.
+  contact:
+    name: Galaxify
+x-service-name: ship-service
+x-local-origin: http://localhost:8083
+tags:
+  - name: health
+    description: Liveness.
+  - name: ship
+    description: The singleton Player Ship.
+
+paths:
+  /health:
+    get:
+      operationId: shipHealth
+      summary: Liveness check.
+      tags: [health]
+      x-implementation-status: implemented
+      responses:
+        "200":
+          description: The service is running.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /ships/me:
+    get:
+      operationId: shipGetMe
+      summary: Return the authenticated Player's Ship state.
+      description: |
+        `SHIP_NOT_FOUND` means the Ship row is still provisioning after
+        `user.created`; the frontend treats it as a typed provisioning state.
+      tags: [ship]
+      x-implementation-status: implemented
+      x-planned-changes: >-
+        Treat a missing Ship after signup as a typed provisioning outcome
+        (documented `SHIP_NOT_FOUND`); ship status and repair are otherwise
+        unchanged for Phase 1.
+      x-ticket: "#141"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: The Player's Ship.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ship"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/ShipNotProvisioned"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /ships/repair:
+    post:
+      operationId: shipRepair
+      summary: Spend materials to restore hull health.
+      description: |
+        Parameter-less endpoint: the request body MUST be empty. Any content is
+        rejected with 422 VALIDATION_FAILED and `details.field_errors = {body:
+        "must be empty"}`. Repair spends up to the hull deficit / available
+        balance; each material restores a variable amount.
+      tags: [ship]
+      x-implementation-status: implemented
+      x-empty-request-body: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: The Ship after repair.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ship"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/ShipNotProvisioned"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        default:
+          $ref: "#/components/responses/Error"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: EdDSA (Ed25519) access token issued by the User Service.
+
+  parameters:
+    XRequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: Optional correlation ID; a UUID v4 is generated when absent.
+      schema:
+        type: string
+        format: uuid
+
+  headers:
+    XRequestId:
+      description: Correlation ID echoed on every response.
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, service]
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        service:
+          type: string
+          examples: [ship-service]
+
+    Ship:
+      type: object
+      required: [user_id, hull_health, materials_balance, level, updated_at]
+      additionalProperties: false
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        hull_health:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 100
+        materials_balance:
+          type: integer
+          format: int32
+          minimum: 0
+        level:
+          type: integer
+          format: int32
+        updated_at:
+          type: string
+          format: date-time
+          description: RFC3339Nano timestamp.
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorBody"
+
+    ErrorBody:
+      type: object
+      required: [code, message]
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          $ref: "#/components/schemas/ErrorDetails"
+
+    ErrorDetails:
+      type: object
+      required: [field_errors]
+      additionalProperties: false
+      properties:
+        field_errors:
+          type: object
+          additionalProperties:
+            type: string
+
+  responses:
+    Unauthorized:
+      description: >-
+        Request is not authenticated. Codes: AUTH_MISSING_HEADER,
+        AUTH_INVALID_TOKEN, AUTH_MISSING_KID, AUTH_UNKNOWN_KID.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    ValidationFailed:
+      description: >-
+        Request validation failed. Codes SHIP_HULL_FULL and
+        SHIP_INSUFFICIENT_MATERIALS carry no field_errors; the empty-body
+        rejection uses `details.field_errors = {body: "must be empty"}`.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    ShipNotProvisioned:
+      description: >-
+        The Ship row does not exist yet (race with user.created consumption).
+        Code SHIP_NOT_FOUND; a typed provisioning outcome for the frontend.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    InternalError:
+      description: Unexpected server error. Code INTERNAL_ERROR.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Error:
+      description: Any error not covered by a more specific response.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"

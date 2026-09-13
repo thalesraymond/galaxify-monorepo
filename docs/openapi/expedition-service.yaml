@@ -1,0 +1,583 @@
+openapi: 3.1.0
+info:
+  title: Galaxify Expedition Service API
+  version: 0.1.0
+  description: |
+    HTTP wire contract for the Galaxify Expedition Service (Phase 1).
+
+    The browser reaches this service through the Vite dev proxy at
+    `/api/expedition`; the local direct origin is `http://localhost:8084` (see
+    `x-local-origin`). `servers` is intentionally omitted so relative-path
+    conformance checks do not depend on a host.
+
+    Every operation requires a bearer access token. Error responses use the
+    shared envelope; branch on `error.code`, not on HTTP status. `X-Request-Id`
+    is present on every response.
+
+    `x-implementation-status: planned` marks locked Phase 1 contract changes
+    that the Go handlers do not implement yet.
+  contact:
+    name: Galaxify
+x-service-name: expedition-service
+x-local-origin: http://localhost:8084
+tags:
+  - name: health
+    description: Liveness.
+  - name: expeditions
+    description: Expedition launch, current state, history, and quotes.
+
+paths:
+  /health:
+    get:
+      operationId: expeditionHealth
+      summary: Liveness check.
+      tags: [health]
+      x-implementation-status: implemented
+      responses:
+        "200":
+          description: The service is running.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /expeditions/current:
+    get:
+      operationId: expeditionCurrent
+      summary: Return the authenticated Player's active Expedition.
+      description: |
+        `EXPEDITION_NOT_FOUND` from this operation means the Player has no
+        active Expedition; the frontend maps it to a typed `none` state.
+      tags: [expeditions]
+      x-implementation-status: implemented
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: The active Expedition.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Expedition"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ShipStateNotReady"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /expeditions:
+    get:
+      operationId: expeditionList
+      summary: List the authenticated Player's Expedition history.
+      tags: [expeditions]
+      x-implementation-status: implemented
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - name: limit
+          in: query
+          required: false
+          description: Page size. Defaults to 20 and is capped at 100.
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+        - name: offset
+          in: query
+          required: false
+          description: Zero-based offset. Defaults to 0.
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+      responses:
+        "200":
+          description: Expedition history, newest first.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Expedition"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ShipStateNotReady"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /expeditions/quote:
+    get:
+      operationId: expeditionQuote
+      summary: Return a live launch quote for a proposed investment.
+      description: |
+        **Planned (not implemented).** Normalizes an investment, projects the
+        balance, computes success chance, reports eligibility/blocker and
+        cooldown, and estimates the resolve window.
+      tags: [expeditions]
+      x-implementation-status: planned
+      x-planned-changes: >-
+        Add authenticated GET /expeditions/quote?materials_invested=<n> with
+        normalized investment, projected balance, chance, eligibility/blocker,
+        cooldown timing, and estimated resolve window.
+      x-ticket: "#152"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - name: materials_invested
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+      responses:
+        "200":
+          description: The computed quote.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExpeditionQuote"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ShipStateNotReady"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /expeditions/{id}:
+    get:
+      operationId: expeditionGet
+      summary: Return one of the authenticated Player's Expeditions.
+      tags: [expeditions]
+      x-implementation-status: implemented
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/ExpeditionId"
+      responses:
+        "200":
+          description: The Expedition, including its result when resolved.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Expedition"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ShipStateNotReady"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /expeditions/launch:
+    post:
+      operationId: expeditionLaunch
+      summary: Invest materials and launch an Expedition.
+      tags: [expeditions]
+      x-implementation-status: implemented
+      x-planned-changes: >-
+        Replace arbitrary reward_summary JSON with a typed material reward for
+        Success and Failure, and return a service-specific retryable not-ready
+        error while Ship state provisions.
+      x-ticket: "#152"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LaunchExpeditionRequest"
+      responses:
+        "201":
+          description: Expedition launched.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Expedition"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ShipStateNotReady"
+        default:
+          $ref: "#/components/responses/Error"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: EdDSA (Ed25519) access token issued by the User Service.
+
+  parameters:
+    XRequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: Optional correlation ID; a UUID v4 is generated when absent.
+      schema:
+        type: string
+        format: uuid
+    ExpeditionId:
+      name: id
+      in: path
+      required: true
+      description: Expedition UUID.
+      schema:
+        type: string
+        format: uuid
+
+  headers:
+    XRequestId:
+      description: Correlation ID echoed on every response.
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, service]
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        service:
+          type: string
+          examples: [expedition-service]
+
+    ExpeditionStatus:
+      type: string
+      enum: [IN_FLIGHT, RESOLVED, FAILED]
+
+    Outcome:
+      type: string
+      enum: [SUCCESS, FAILURE]
+
+    LaunchExpeditionRequest:
+      type: object
+      required: [materials_invested]
+      additionalProperties: false
+      properties:
+        materials_invested:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 2147483647
+          description: >-
+            Decoded as int64 by the handler and bounded to the int32 storage
+            range; values above 2147483647 are rejected with 422.
+
+    ExpeditionResult:
+      type: object
+      required: [id, expedition_id, outcome, reward_summary, created_at]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        expedition_id:
+          type: string
+          format: uuid
+        outcome:
+          $ref: "#/components/schemas/Outcome"
+        reward_summary:
+          description: >-
+            Arbitrary JSON today. Planned: replaced by a typed material reward.
+          x-implementation-status: planned
+        created_at:
+          type: string
+          format: date-time
+
+    Expedition:
+      type: object
+      required:
+        [id, user_id, materials_invested, success_chance, resolve_at, status, created_at]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        materials_invested:
+          type: integer
+          format: int32
+        success_chance:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+        resolve_at:
+          type: string
+          format: date-time
+          description: RFC3339Nano timestamp.
+        status:
+          $ref: "#/components/schemas/ExpeditionStatus"
+        created_at:
+          type: string
+          format: date-time
+          description: RFC3339Nano timestamp.
+        resolved_at:
+          type: string
+          format: date-time
+          description: Present once resolved.
+        result:
+          $ref: "#/components/schemas/ExpeditionResult"
+
+    MaterialReward:
+      type: object
+      description: Planned typed material reward.
+      x-implementation-status: planned
+      required: [materials]
+      additionalProperties: false
+      properties:
+        materials:
+          type: integer
+          format: int32
+
+    ExpeditionResultTyped:
+      type: object
+      description: >-
+        Planned typed result for Success and Failure, replacing the arbitrary
+        reward_summary JSON.
+      x-implementation-status: planned
+      required: [id, expedition_id, outcome, material_reward, created_at]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        expedition_id:
+          type: string
+          format: uuid
+        outcome:
+          $ref: "#/components/schemas/Outcome"
+        material_reward:
+          $ref: "#/components/schemas/MaterialReward"
+        created_at:
+          type: string
+          format: date-time
+
+    ExpeditionQuote:
+      type: object
+      description: Planned live launch quote.
+      x-implementation-status: planned
+      required:
+        [materials_invested, normalized_investment, projected_balance, success_chance, eligible, estimated_resolve_at]
+      additionalProperties: false
+      properties:
+        materials_invested:
+          type: integer
+          format: int32
+        normalized_investment:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+        projected_balance:
+          type: integer
+          format: int32
+        success_chance:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+        eligible:
+          type: boolean
+        blocker:
+          type: [string, "null"]
+          description: >-
+            Null when eligible; otherwise the blocking error code, e.g.
+            EXPEDITION_ALREADY_ACTIVE, EXPEDITION_COOLDOWN, or
+            EXPEDITION_INSUFFICIENT_MATERIALS.
+        cooldown_until:
+          type: [string, "null"]
+          format: date-time
+        estimated_resolve_at:
+          type: string
+          format: date-time
+        estimated_resolve_window_seconds:
+          type: integer
+          format: int64
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorBody"
+
+    ErrorBody:
+      type: object
+      required: [code, message]
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          $ref: "#/components/schemas/ErrorDetails"
+
+    ErrorDetails:
+      type: object
+      required: [field_errors]
+      additionalProperties: false
+      properties:
+        field_errors:
+          type: object
+          additionalProperties:
+            type: string
+
+  responses:
+    Unauthorized:
+      description: >-
+        Request is not authenticated. Codes: AUTH_MISSING_HEADER,
+        AUTH_INVALID_TOKEN, AUTH_MISSING_KID, AUTH_UNKNOWN_KID.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    ValidationFailed:
+      description: >-
+        Request validation failed. `details.field_errors` is populated; the
+        malformed-JSON field is `body`.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    BadRequest:
+      description: >-
+        Malformed or trailing JSON in the request body. Code VALIDATION_FAILED
+        with field `body`.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    NotFound:
+      description: The Expedition does not exist. Code EXPEDITION_NOT_FOUND.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Conflict:
+      description: >-
+        The Player already has an active Expedition. Code
+        EXPEDITION_ALREADY_ACTIVE.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    ShipStateNotReady:
+      description: >-
+        **Planned.** Service-specific retryable not-ready error while Ship state
+        provisions. Code EXPEDITION_SHIP_STATE_NOT_READY.
+      x-implementation-status: planned
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    InternalError:
+      description: Unexpected server error. Code INTERNAL_ERROR.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Error:
+      description: Any error not covered by a more specific response.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
