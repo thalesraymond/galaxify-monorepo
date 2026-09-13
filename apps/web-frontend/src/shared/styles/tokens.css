@@ -1,0 +1,104 @@
+/*
+ * Global semantic design tokens for the Galaxify Phase 1 visual system.
+ * Values are owned by apps/web-frontend/DESIGN.md — keep the semantic names
+ * stable and record intentional changes there.
+ */
+:root {
+  --color-shell-deep: #0c2229;
+  --color-shell: #142e35;
+  --color-shell-raised: #17363e;
+  --color-logbook: #f5eddc;
+  --color-logbook-edge: #c79243;
+  --color-ink: #173038;
+  --color-text-on-dark: #f8f0dc;
+  --color-text-muted-dark: #b9cbc9;
+  --color-text-muted-light: #62706c;
+  --color-amber: #f5c86a;
+  --color-amber-strong: #edb74d;
+  --color-mint: #9fd4c9;
+  --color-danger: #c84f4f;
+  --color-focus: #ffcb69;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  --radius-control: 0.5rem;
+  --radius-panel: 1.125rem;
+  --radius-logbook: 0.25rem 1.375rem 1.375rem 0.25rem;
+
+  --z-base: 0;
+  --z-dropdown: 10;
+  --z-sticky: 20;
+  --z-overlay: 40;
+  --z-modal: 100;
+  --z-toast: 1000;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--color-shell-deep);
+  color: var(--color-text-on-dark);
+  font-family: 'Avenir Next', 'Trebuchet MS', sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: Georgia, 'Times New Roman', serif;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+p {
+  max-width: 65ch;
+  text-wrap: pretty;
+}
+
+a {
+  color: var(--color-amber);
+}
+
+a:hover {
+  color: var(--color-amber-strong);
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -4,7 +4,7 @@ GOOSE := ./goose.sh
 OPENAPI_GENERATOR := npx --yes -p typescript@5.6.3 -p @hey-api/openapi-ts@0.99.0 openapi-ts
 OPENAPI_GENERATED_DIR := $(CURDIR)/.openapi-generated
 
-.PHONY: test coverage goose-up goose-down sqlc build vet fmt tidy openapi-validate openapi-check openapi-generate help
+.PHONY: test coverage goose-up goose-down sqlc build vet fmt tidy openapi-validate openapi-check openapi-generate dev dev-infra dev-down dev-reset frontend-install frontend-verify help
 
 test: ## Run go test for every service, worker, and pkg
 	@for s in $(SERVICES); do \
@@ -121,3 +121,26 @@ openapi-generate: ## Generate frontend wire types + zod schemas from docs/openap
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+
+dev: ## Start the Vite dev server against real local services
+	npm --prefix apps/web-frontend run dev
+
+dev-infra: ## Start local infrastructure (docker compose up -d)
+	docker compose up -d
+
+dev-down: ## Stop local infrastructure, preserving data (docker compose down)
+	docker compose down
+
+dev-reset: ## Destroy local infrastructure volumes and data (requires confirmation)
+	@printf 'This permanently deletes all local infrastructure volumes and data. Continue? [y/N] '; \
+	read -r answer; \
+	case "$$answer" in \
+		[yY]|[yY][eE][sS]) docker compose down -v ;; \
+		*) echo 'Aborted.'; exit 1 ;; \
+	esac
+
+frontend-install: ## Install web-frontend dependencies from the committed lockfile
+	npm --prefix apps/web-frontend ci
+
+frontend-verify: ## Run the complete web-frontend verification gate
+	npm --prefix apps/web-frontend run verify
