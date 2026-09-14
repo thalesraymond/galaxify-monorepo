@@ -198,7 +198,7 @@ export function createResolvedExpedition(
       id: fixedUuid(4, 1),
       expedition_id: id,
       outcome,
-      reward_summary: { materials: outcome === 'SUCCESS' ? 80 : 0 },
+      material_reward: { materials: outcome === 'SUCCESS' ? 80 : 0 },
       created_at: resolvedAt,
     },
     ...expeditionOverrides,

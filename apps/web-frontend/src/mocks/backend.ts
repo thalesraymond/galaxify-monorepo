@@ -1,6 +1,11 @@
 import type { z } from 'zod'
 
-import type { Daily, DailyDifficulty, DailyHistory } from '@/api/generated/daily/types.gen'
+import type {
+  Daily,
+  DailyCompletion,
+  DailyDifficulty,
+  DailyHistoryPage,
+} from '@/api/generated/daily/types.gen'
 import type { zCreateDailyRequest, zUpdateDailyRequest } from '@/api/generated/daily/zod.gen'
 import type {
   Expedition,
@@ -334,13 +339,18 @@ export class MockBackend {
   public listDailyHistory(
     accessToken: string | undefined,
     query: MockHistoryQuery,
-  ): DailyHistory[] {
+  ): DailyHistoryPage {
     this.guardOutage('daily')
     this.requireSession(accessToken)
     this.guardDailyProvisioning()
     const limit = query.limit ?? this.state.dailyHistory.length
     const offset = query.cursor === undefined ? 0 : Number.parseInt(query.cursor, 10) || 0
-    return this.state.dailyHistory.slice(offset, offset + limit)
+    const items = this.state.dailyHistory.slice(offset, offset + limit)
+    const nextOffset = offset + items.length
+    return {
+      items,
+      next_cursor: nextOffset < this.state.dailyHistory.length ? String(nextOffset) : null,
+    }
   }
 
   public listDifficulties(accessToken: string | undefined): DailyDifficulty[] {
@@ -393,7 +403,7 @@ export class MockBackend {
     this.persist()
   }
 
-  public completeDaily(accessToken: string | undefined, id: string): Daily {
+  public completeDaily(accessToken: string | undefined, id: string): DailyCompletion {
     this.guardOutage('daily')
     this.requireSession(accessToken)
     this.guardDailyProvisioning()
@@ -407,6 +417,7 @@ export class MockBackend {
     this.state.mutations.dailyRewardMaterials =
       FIXED_DIFFICULTY_METADATA.find((meta) => meta.difficulty === daily.difficulty)
         ?.reward_materials ?? 0
+    const awardedMaterials = this.state.mutations.dailyRewardMaterials
     const completedAt = new Date(this.scheduler.now()).toISOString()
     this.state.dailyHistory = [
       {
@@ -428,7 +439,7 @@ export class MockBackend {
       ...this.state.dailyHistory,
     ]
     this.persist()
-    return daily
+    return { ...daily, awarded_materials: awardedMaterials }
   }
 
   // --- Ship ----------------------------------------------------------------
