@@ -69,7 +69,7 @@ func rollSequence(t *testing.T, values ...float64) func() float64 {
 type mockTx struct {
 	listPendingExpeditions func(ctx context.Context, before time.Time, limit int32) ([]database.ListPendingExpeditionsRow, error)
 	resolveExpedition      func(ctx context.Context, id pgtype.UUID, status string, now time.Time) error
-	insertExpeditionResult func(ctx context.Context, expeditionID pgtype.UUID, outcome string, rewardSummary []byte) error
+	insertExpeditionResult func(ctx context.Context, expeditionID pgtype.UUID, outcome string, materialsReward int32) error
 	insertOutbox           func(ctx context.Context, arg database.InsertOutboxParams) error
 }
 
@@ -87,9 +87,9 @@ func (m *mockTx) ResolveExpedition(ctx context.Context, id pgtype.UUID, status s
 	return errors.New("unexpected ResolveExpedition call")
 }
 
-func (m *mockTx) InsertExpeditionResult(ctx context.Context, expeditionID pgtype.UUID, outcome string, rewardSummary []byte) error {
+func (m *mockTx) InsertExpeditionResult(ctx context.Context, expeditionID pgtype.UUID, outcome string, materialsReward int32) error {
 	if m.insertExpeditionResult != nil {
-		return m.insertExpeditionResult(ctx, expeditionID, outcome, rewardSummary)
+		return m.insertExpeditionResult(ctx, expeditionID, outcome, materialsReward)
 	}
 	return errors.New("unexpected InsertExpeditionResult call")
 }
@@ -162,7 +162,7 @@ func TestWorkerTickResolvesSuccessfulExpedition(t *testing.T) {
 		resolvedStatus string
 		resolvedAt     time.Time
 		resultOutcome  string
-		resultSummary  rewardSummary
+		resultReward   int32
 		eventType      string
 		eventPayload   events.ExpeditionCompleted
 	)
@@ -184,14 +184,12 @@ func TestWorkerTickResolvesSuccessfulExpedition(t *testing.T) {
 					resolvedAt = now
 					return nil
 				},
-				insertExpeditionResult: func(_ context.Context, id pgtype.UUID, outcome string, summary []byte) error {
+				insertExpeditionResult: func(_ context.Context, id pgtype.UUID, outcome string, materialsReward int32) error {
 					if id != pgUUID(expeditionID) {
 						t.Errorf("result expedition_id = %v, want %v", id, pgUUID(expeditionID))
 					}
 					resultOutcome = outcome
-					if err := json.Unmarshal(summary, &resultSummary); err != nil {
-						return err
-					}
+					resultReward = materialsReward
 					return nil
 				},
 				insertOutbox: func(_ context.Context, arg database.InsertOutboxParams) error {
@@ -221,8 +219,8 @@ func TestWorkerTickResolvesSuccessfulExpedition(t *testing.T) {
 	if resultOutcome != OutcomeSuccess {
 		t.Errorf("result outcome = %q, want %q", resultOutcome, OutcomeSuccess)
 	}
-	if resultSummary.MaterialsReward != 175 {
-		t.Errorf("reward summary materials_reward = %d, want 175", resultSummary.MaterialsReward)
+	if resultReward != 175 {
+		t.Errorf("result materials_reward = %d, want 175", resultReward)
 	}
 	if eventType != EventTypeCompleted {
 		t.Errorf("event_type = %q, want %q", eventType, EventTypeCompleted)
@@ -251,7 +249,7 @@ func TestWorkerTickFailsExpedition(t *testing.T) {
 	var (
 		resolvedStatus string
 		resultOutcome  string
-		resultSummary  rewardSummary
+		resultReward   int32
 		eventPayload   events.ExpeditionCompleted
 		rollCalls      int
 	)
@@ -267,9 +265,10 @@ func TestWorkerTickFailsExpedition(t *testing.T) {
 					resolvedStatus = status
 					return nil
 				},
-				insertExpeditionResult: func(_ context.Context, _ pgtype.UUID, outcome string, summary []byte) error {
+				insertExpeditionResult: func(_ context.Context, _ pgtype.UUID, outcome string, materialsReward int32) error {
 					resultOutcome = outcome
-					return json.Unmarshal(summary, &resultSummary)
+					resultReward = materialsReward
+					return nil
 				},
 				insertOutbox: func(_ context.Context, arg database.InsertOutboxParams) error {
 					return json.Unmarshal(arg.Payload, &eventPayload)
@@ -300,8 +299,8 @@ func TestWorkerTickFailsExpedition(t *testing.T) {
 	if resultOutcome != OutcomeFailure {
 		t.Errorf("result outcome = %q, want %q", resultOutcome, OutcomeFailure)
 	}
-	if resultSummary.MaterialsReward != 0 {
-		t.Errorf("reward summary materials_reward = %d, want 0", resultSummary.MaterialsReward)
+	if resultReward != 0 {
+		t.Errorf("result materials_reward = %d, want 0", resultReward)
 	}
 	if eventPayload.Outcome != OutcomeFailure {
 		t.Errorf("payload outcome = %q, want %q", eventPayload.Outcome, OutcomeFailure)
@@ -333,7 +332,7 @@ func TestWorkerTickRewardMultiplierBounds(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var resultSummary rewardSummary
+			var resultReward int32
 			listPending := listOnce(pendingExpedition(tt.invested, 1))
 			store := &mockStore{
 				withTx: func(ctx context.Context, fn func(Tx) error) error {
@@ -342,8 +341,9 @@ func TestWorkerTickRewardMultiplierBounds(t *testing.T) {
 						resolveExpedition: func(_ context.Context, _ pgtype.UUID, _ string, _ time.Time) error {
 							return nil
 						},
-						insertExpeditionResult: func(_ context.Context, _ pgtype.UUID, _ string, summary []byte) error {
-							return json.Unmarshal(summary, &resultSummary)
+						insertExpeditionResult: func(_ context.Context, _ pgtype.UUID, _ string, materialsReward int32) error {
+							resultReward = materialsReward
+							return nil
 						},
 						insertOutbox: func(_ context.Context, _ database.InsertOutboxParams) error {
 							return nil
@@ -361,8 +361,8 @@ func TestWorkerTickRewardMultiplierBounds(t *testing.T) {
 			if err := worker.Tick(context.Background()); err != nil {
 				t.Fatalf("Tick returned error: %v", err)
 			}
-			if resultSummary.MaterialsReward != tt.wantReward {
-				t.Errorf("materials_reward = %d, want %d", resultSummary.MaterialsReward, tt.wantReward)
+			if resultReward != int32(tt.wantReward) {
+				t.Errorf("materials_reward = %d, want %d", resultReward, tt.wantReward)
 			}
 		})
 	}
@@ -383,7 +383,7 @@ func TestWorkerTickProcessesMultipleBatches(t *testing.T) {
 				resolveExpedition: func(_ context.Context, _ pgtype.UUID, _ string, _ time.Time) error {
 					return nil
 				},
-				insertExpeditionResult: func(_ context.Context, _ pgtype.UUID, _ string, _ []byte) error {
+				insertExpeditionResult: func(_ context.Context, _ pgtype.UUID, _ string, _ int32) error {
 					return nil
 				},
 				insertOutbox: func(_ context.Context, _ database.InsertOutboxParams) error {
@@ -469,7 +469,7 @@ func TestWorkerTickInsertResultErrorReturnsError(t *testing.T) {
 				resolveExpedition: func(_ context.Context, _ pgtype.UUID, _ string, _ time.Time) error {
 					return nil
 				},
-				insertExpeditionResult: func(_ context.Context, _ pgtype.UUID, _ string, _ []byte) error {
+				insertExpeditionResult: func(_ context.Context, _ pgtype.UUID, _ string, _ int32) error {
 					return errors.New("db write failed")
 				},
 			})
@@ -498,7 +498,7 @@ func TestWorkerTickOutboxFailureReturnsError(t *testing.T) {
 				resolveExpedition: func(_ context.Context, _ pgtype.UUID, _ string, _ time.Time) error {
 					return nil
 				},
-				insertExpeditionResult: func(_ context.Context, _ pgtype.UUID, _ string, _ []byte) error {
+				insertExpeditionResult: func(_ context.Context, _ pgtype.UUID, _ string, _ int32) error {
 					return nil
 				},
 				insertOutbox: func(_ context.Context, _ database.InsertOutboxParams) error {

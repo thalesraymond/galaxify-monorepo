@@ -29,7 +29,25 @@ var (
 	ErrInsufficientMaterials = errors.New("insufficient materials")
 	ErrAlreadyActive         = errors.New("expedition already active")
 	ErrCooldown              = errors.New("expedition cooldown active")
+	// ErrShipStateNotReady signals the player's ship cache has not been
+	// provisioned yet. It is a retryable, service-specific readiness outcome.
+	ErrShipStateNotReady = errors.New("ship state not ready")
 )
+
+// launchBlockerError maps a launch evaluation blocker onto the sentinel error
+// launch reports. BlockerNone maps to nil.
+func launchBlockerError(blocker Blocker) error {
+	switch blocker {
+	case BlockerInsufficientMaterials:
+		return ErrInsufficientMaterials
+	case BlockerAlreadyActive:
+		return ErrAlreadyActive
+	case BlockerCooldown:
+		return ErrCooldown
+	default:
+		return nil
+	}
+}
 
 // TxStarter abstracts opening the transaction that atomically creates an
 // expedition and its outbox event.
@@ -96,29 +114,37 @@ func (manager *manager) Launch(ctx context.Context, userID uuid.UUID, input Laun
 	store := manager.launchStoreFactory(tx)
 	pgUserID := pgUUID(userID)
 	ship, err := store.GetShipCache(ctx, pgUserID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Record{}, ErrShipStateNotReady
+	}
 	if err != nil {
 		return Record{}, fmt.Errorf("get ship cache: %w", err)
 	}
-	if input.MaterialsInvested > ship.MaterialsBalance {
-		return Record{}, ErrInsufficientMaterials
-	}
 
+	active := false
 	if _, err := store.GetCurrentByUser(ctx, pgUserID); err == nil {
-		return Record{}, ErrAlreadyActive
+		active = true
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return Record{}, fmt.Errorf("get current expedition: %w", err)
 	}
 
 	now := manager.now().UTC()
-	lastResolveAt, err := store.GetLastResolveAt(ctx, pgUserID)
-	if err == nil && !lastResolveAt.Time.Before(now.Add(-expeditionLength)) {
-		return Record{}, ErrCooldown
-	}
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	var lastResolveAt *time.Time
+	switch last, err := store.GetLastResolveAt(ctx, pgUserID); {
+	case err == nil:
+		resolvedAt := last.Time
+		lastResolveAt = &resolvedAt
+	case errors.Is(err, pgx.ErrNoRows):
+	default:
 		return Record{}, fmt.Errorf("get last expedition resolve time: %w", err)
 	}
 
-	successChance := (float64(input.MaterialsInvested) / (float64(input.MaterialsInvested) + 10)) * (float64(ship.HullHealth) / 100)
+	evaluation := evaluateLaunch(input.MaterialsInvested, ship, active, lastResolveAt, now)
+	if err := launchBlockerError(evaluation.blocker); err != nil {
+		return Record{}, err
+	}
+
+	successChance := evaluation.successChance
 	resolveAt := now.Add(expeditionLength + manager.jitter())
 	row, err := store.InsertExpedition(ctx, database.InsertExpeditionParams{
 		UserID:            pgUserID,

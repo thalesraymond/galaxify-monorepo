@@ -16,7 +16,7 @@ WHERE id = @id AND status = 'IN_FLIGHT';
 
 -- name: InsertExpeditionResult :exec
 INSERT INTO expedition_results (
-    expedition_id, outcome, reward_summary
+    expedition_id, outcome, materials_reward
 ) VALUES (
     $1, $2, $3
 );

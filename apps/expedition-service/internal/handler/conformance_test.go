@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -10,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -41,6 +41,7 @@ func TestOpenAPIConformance(t *testing.T) {
 		{Method: http.MethodGet, Path: "/health"},
 		{Method: http.MethodGet, Path: "/expeditions/current"},
 		{Method: http.MethodGet, Path: "/expeditions"},
+		{Method: http.MethodGet, Path: "/expeditions/quote"},
 		{Method: http.MethodGet, Path: "/expeditions/{id}"},
 		{Method: http.MethodPost, Path: "/expeditions/launch"},
 	}
@@ -58,8 +59,17 @@ func TestOpenAPIConformance(t *testing.T) {
 	withResult := record
 	withResult.Result = &expedition.Result{
 		ID: resultID, ExpeditionID: record.ID, Outcome: "SUCCESS",
-		RewardSummary: json.RawMessage(`{"materials_reward":20}`),
-		CreatedAt:     record.CreatedAt,
+		MaterialsReward: 20,
+		CreatedAt:       record.CreatedAt,
+	}
+	quote := expedition.Quote{
+		MaterialsInvested:      10,
+		NormalizedInvestment:   0.5,
+		ProjectedBalance:       15,
+		SuccessChance:          0.4,
+		Eligible:               true,
+		EstimatedResolveAt:     record.CreatedAt.Add(7 * 24 * time.Hour),
+		EstimatedResolveWindow: 24 * time.Hour,
 	}
 
 	tests := []struct {
@@ -100,6 +110,52 @@ func TestOpenAPIConformance(t *testing.T) {
 			wantStatus: http.StatusInternalServerError,
 		},
 		{name: "current missing auth", method: http.MethodGet, target: "/expeditions/current", noAuth: true, wantStatus: http.StatusUnauthorized},
+		{
+			name: "current ship state not ready", method: http.MethodGet, target: "/expeditions/current",
+			configureManager: func(m *mockExpeditionManager) {
+				m.current = func(context.Context, uuid.UUID) (expedition.Record, error) {
+					return expedition.Record{}, expedition.ErrShipStateNotReady
+				}
+			},
+			wantStatus: http.StatusServiceUnavailable,
+		},
+		{
+			name: "quote eligible", method: http.MethodGet, target: "/expeditions/quote?materials_invested=10",
+			configureManager: func(m *mockExpeditionManager) {
+				m.quote = func(context.Context, uuid.UUID, int32) (expedition.Quote, error) { return quote, nil }
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "quote blocked", method: http.MethodGet, target: "/expeditions/quote?materials_invested=10",
+			configureManager: func(m *mockExpeditionManager) {
+				m.quote = func(context.Context, uuid.UUID, int32) (expedition.Quote, error) {
+					blocked := quote
+					blocked.Eligible = false
+					blocked.Blocker = expedition.BlockerAlreadyActive
+					return blocked, nil
+				}
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "quote ship state not ready", method: http.MethodGet, target: "/expeditions/quote?materials_invested=10",
+			configureManager: func(m *mockExpeditionManager) {
+				m.quote = func(context.Context, uuid.UUID, int32) (expedition.Quote, error) {
+					return expedition.Quote{}, expedition.ErrShipStateNotReady
+				}
+			},
+			wantStatus: http.StatusServiceUnavailable,
+		},
+		{
+			name: "quote missing materials", method: http.MethodGet, target: "/expeditions/quote",
+			wantStatus: http.StatusUnprocessableEntity, responseOnly: true,
+		},
+		{
+			name: "quote invalid materials", method: http.MethodGet, target: "/expeditions/quote?materials_invested=0",
+			wantStatus: http.StatusUnprocessableEntity, responseOnly: true,
+		},
+		{name: "quote missing auth", method: http.MethodGet, target: "/expeditions/quote?materials_invested=10", noAuth: true, wantStatus: http.StatusUnauthorized},
 		{
 			name: "list expeditions", method: http.MethodGet, target: "/expeditions?limit=101&offset=3",
 			configureManager: func(m *mockExpeditionManager) {
@@ -203,6 +259,16 @@ func TestOpenAPIConformance(t *testing.T) {
 			wantStatus: http.StatusInternalServerError,
 		},
 		{name: "launch missing auth", method: http.MethodPost, target: "/expeditions/launch", body: `{"materials_invested":10}`, noAuth: true, wantStatus: http.StatusUnauthorized},
+		{
+			name: "launch ship state not ready", method: http.MethodPost, target: "/expeditions/launch",
+			body: `{"materials_invested":10}`,
+			configureLauncher: func(l *launchManagerMock) {
+				l.launch = func(context.Context, uuid.UUID, expedition.LaunchInput) (expedition.Record, error) {
+					return expedition.Record{}, expedition.ErrShipStateNotReady
+				}
+			},
+			wantStatus: http.StatusServiceUnavailable,
+		},
 	}
 
 	for _, tc := range tests {

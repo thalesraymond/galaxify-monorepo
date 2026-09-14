@@ -3,7 +3,6 @@ package expedition
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -17,13 +16,14 @@ import (
 
 var ErrNotFound = errors.New("expedition not found")
 
-// Result is the outcome recorded for a resolved expedition.
+// Result is the typed outcome recorded for a resolved expedition. A failure
+// records a zero material reward; a success records the awarded materials.
 type Result struct {
-	ID            uuid.UUID
-	ExpeditionID  uuid.UUID
-	Outcome       string
-	RewardSummary json.RawMessage
-	CreatedAt     time.Time
+	ID              uuid.UUID
+	ExpeditionID    uuid.UUID
+	Outcome         string
+	MaterialsReward int32
+	CreatedAt       time.Time
 }
 
 // Record is an expedition together with its result when one has been recorded.
@@ -45,18 +45,21 @@ type ListFilter struct {
 	Offset int32
 }
 
-// Manager provides authenticated expedition reads.
+// Manager provides authenticated expedition reads and lifecycle operations.
 type Manager interface {
 	Current(ctx context.Context, userID uuid.UUID) (Record, error)
 	Get(ctx context.Context, userID, expeditionID uuid.UUID) (Record, error)
 	List(ctx context.Context, userID uuid.UUID, filter ListFilter) ([]Record, error)
+	Quote(ctx context.Context, userID uuid.UUID, materialsInvested int32) (Quote, error)
 	Launch(ctx context.Context, userID uuid.UUID, input LaunchInput) (Record, error)
 }
 
 type readStore interface {
+	GetShipCache(context.Context, pgtype.UUID) (database.UserShipStateCache, error)
 	GetCurrentByUser(context.Context, pgtype.UUID) (database.Expedition, error)
 	GetByIDAndUser(context.Context, database.GetByIDAndUserParams) (database.Expedition, error)
 	GetResultByExpedition(context.Context, pgtype.UUID) (database.ExpeditionResult, error)
+	GetLastResolveAt(context.Context, pgtype.UUID) (pgtype.Timestamptz, error)
 	ListByUser(context.Context, database.ListByUserParams) ([]database.Expedition, error)
 }
 
@@ -81,7 +84,14 @@ func NewManager(store readStore, txStarter TxStarter, launchStoreFactory func(pg
 }
 
 func (m *manager) Current(ctx context.Context, userID uuid.UUID) (Record, error) {
-	expedition, err := m.store.GetCurrentByUser(ctx, pgUUID(userID))
+	pgUserID := pgUUID(userID)
+	if _, err := m.store.GetShipCache(ctx, pgUserID); errors.Is(err, pgx.ErrNoRows) {
+		return Record{}, ErrShipStateNotReady
+	} else if err != nil {
+		return Record{}, fmt.Errorf("get ship cache: %w", err)
+	}
+
+	expedition, err := m.store.GetCurrentByUser(ctx, pgUserID)
 	if err != nil {
 		return Record{}, mapReadError("get current expedition", err)
 	}
@@ -159,11 +169,11 @@ func recordFromDatabase(expedition database.Expedition) Record {
 
 func resultFromDatabase(result database.ExpeditionResult) *Result {
 	return &Result{
-		ID:            uuid.UUID(result.ID.Bytes),
-		ExpeditionID:  uuid.UUID(result.ExpeditionID.Bytes),
-		Outcome:       result.Outcome,
-		RewardSummary: append(json.RawMessage(nil), result.RewardSummary...),
-		CreatedAt:     result.CreatedAt.Time,
+		ID:              uuid.UUID(result.ID.Bytes),
+		ExpeditionID:    uuid.UUID(result.ExpeditionID.Bytes),
+		Outcome:         result.Outcome,
+		MaterialsReward: result.MaterialsReward,
+		CreatedAt:       result.CreatedAt.Time,
 	}
 }
 
