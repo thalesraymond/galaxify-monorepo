@@ -1,17 +1,17 @@
 module github.com/thalesraymond/galaxify-monorepo/pkg
 
-go 1.25.7
+go 1.26.0
 
 require (
 	github.com/alexedwards/argon2id v1.0.0
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/rabbitmq/amqp091-go v1.14.0
 )
 
 require (
 	github.com/getkin/kin-openapi v0.149.0
-	golang.org/x/sync v0.22.0
+	golang.org/x/sync v0.23.0
 )
 
 require (
