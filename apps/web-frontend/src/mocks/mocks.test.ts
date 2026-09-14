@@ -153,6 +153,54 @@ describe('mock backend and strict MSW handlers', () => {
     })
   })
 
+  it('gives resolved-expedition a distinct journey from established-player', async () => {
+    await withMockServer({ scenario: 'resolved-expedition' }, async () => {
+      const session = await login()
+
+      const dailies = await fetch(`${BASE}/api/daily/dailies`, auth(session.access_token))
+      expect(dailies.status).toBe(200)
+      expect(await readJson(dailies)).toHaveLength(0)
+
+      const expeditions = await fetch(
+        `${BASE}/api/expedition/expeditions`,
+        auth(session.access_token),
+      )
+      expect(expeditions.status).toBe(200)
+      expect(await readJson(expeditions)).toHaveLength(2)
+    })
+  })
+
+  it('continues Daily history with an opaque cursor and rejects forged tokens', async () => {
+    await withMockServer({ scenario: 'established-player' }, async () => {
+      const session = await login()
+
+      const first = await fetch(
+        `${BASE}/api/daily/dailies/history?limit=1`,
+        auth(session.access_token),
+      )
+      const firstPage = (await readJson(first)) as {
+        items: unknown[]
+        next_cursor: string | null
+      }
+      expect(firstPage.items).toHaveLength(1)
+      expect(firstPage.next_cursor).not.toBeNull()
+      expect(firstPage.next_cursor).not.toMatch(/^\d+$/u)
+
+      const second = await fetch(
+        `${BASE}/api/daily/dailies/history?limit=1&cursor=${encodeURIComponent(firstPage.next_cursor ?? '')}`,
+        auth(session.access_token),
+      )
+      const secondPage = (await readJson(second)) as { items: unknown[] }
+      expect(secondPage.items).toHaveLength(1)
+
+      const forged = await fetch(
+        `${BASE}/api/daily/dailies/history?cursor=not-a-cursor`,
+        auth(session.access_token),
+      )
+      expect(forged.status).toBe(422)
+    })
+  })
+
   it('echoes a caller request ID and fails unhandled /api/** requests loudly', async () => {
     await withMockServer({ scenario: 'established-player' }, async () => {
       const health = await fetch(`${BASE}/api/user/health`, {

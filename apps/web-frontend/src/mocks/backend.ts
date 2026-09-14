@@ -110,7 +110,10 @@ const SCENARIO_DEFINITIONS: Readonly<Record<MockScenarioName, ScenarioDefinition
   'damaged-ship': definition({ ship: 'damaged' }),
   'expedition-ready': definition({ history: false }),
   'active-expedition': definition({ currentExpedition: 'active' }),
-  'resolved-expedition': definition({}),
+  // An Expedition that has already resolved, with no Daily tasks yet, so the
+  // resolved result/history journey is exercised in isolation from the Daily
+  // lists that `established-player` also loads.
+  'resolved-expedition': definition({ dailies: 'none' }),
   'expired-session': definition({ expiredSession: true }),
   'service-outage': definition({ outage: true }),
   'delayed-propagation': definition({
@@ -133,6 +136,42 @@ function definition(overrides: Partial<ScenarioDefinition>): ScenarioDefinition 
     permanentlyStaleReconciliation: false,
     ...overrides,
   }
+}
+
+/**
+ * Mock History cursors are opaque base64url tokens, matching the service's
+ * `next_cursor` contract. A malformed or out-of-range token is a validation
+ * failure, never a silent fallback to the first page.
+ */
+function encodeHistoryCursor(offset: number): string {
+  return base64UrlEncode({ v: 1, o: offset })
+}
+
+function decodeHistoryCursor(token: string): number {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(base64UrlDecode(token))
+  } catch {
+    throw invalidHistoryCursor()
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    throw invalidHistoryCursor()
+  }
+  const { v, o } = parsed as { v?: unknown; o?: unknown }
+  if (v !== 1 || typeof o !== 'number' || !Number.isInteger(o) || o < 0) {
+    throw invalidHistoryCursor()
+  }
+  return o
+}
+
+function invalidHistoryCursor(): MockApiError {
+  return new MockApiError(422, 'VALIDATION_FAILED', 'The history cursor is invalid or expired.', {
+    cursor: 'is invalid or expired',
+  })
+}
+
+function base64UrlDecode(token: string): string {
+  return atob(token.replaceAll('-', '+').replaceAll('_', '/'))
 }
 
 export type MockDailyQuery = {
@@ -344,12 +383,13 @@ export class MockBackend {
     this.requireSession(accessToken)
     this.guardDailyProvisioning()
     const limit = query.limit ?? this.state.dailyHistory.length
-    const offset = query.cursor === undefined ? 0 : Number.parseInt(query.cursor, 10) || 0
+    const offset = query.cursor === undefined ? 0 : decodeHistoryCursor(query.cursor)
     const items = this.state.dailyHistory.slice(offset, offset + limit)
     const nextOffset = offset + items.length
     return {
       items,
-      next_cursor: nextOffset < this.state.dailyHistory.length ? String(nextOffset) : null,
+      next_cursor:
+        nextOffset < this.state.dailyHistory.length ? encodeHistoryCursor(nextOffset) : null,
     }
   }
 
