@@ -30,6 +30,9 @@ const daily = {
   status: 'PENDING',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
+  time_zone: 'UTC',
+  due_local_date: '2026-01-01',
+  due_local_time: '12:00',
 }
 
 function jsonResponse(body: unknown): Response {
