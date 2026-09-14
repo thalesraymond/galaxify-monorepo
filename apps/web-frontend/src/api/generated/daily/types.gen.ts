@@ -125,14 +125,14 @@ export type DailyHistory = {
 };
 
 /**
- * Planned cursor page shaping Daily history.
+ * One stable descending page of Daily history.
  */
 export type DailyHistoryPage = {
     items: Array<DailyHistory>;
     /**
-     * Opaque cursor for the next page; null at the end.
+     * Opaque cursor for the next page; null on the final page.
      */
-    next_cursor?: string | null;
+    next_cursor: string | null;
 };
 
 /**
@@ -365,11 +365,11 @@ export type DailyHistoryData = {
     path?: never;
     query?: {
         /**
-         * Planned opaque cursor returned as `next_cursor`.
+         * Opaque continuation token from a previous page's `next_cursor`.
          */
         cursor?: string;
         /**
-         * Planned page size for cursor pagination.
+         * Page size. Defaults to 20 and is capped at 100.
          */
         limit?: number;
     };
@@ -381,6 +381,10 @@ export type DailyHistoryErrors = {
      * Request is not authenticated. Codes: AUTH_MISSING_HEADER, AUTH_INVALID_TOKEN, AUTH_MISSING_KID, AUTH_UNKNOWN_KID.
      */
     401: ErrorResponse;
+    /**
+     * Request validation failed. `details.field_errors` is populated; the malformed-JSON field is `body`.
+     */
+    422: ErrorResponse;
     /**
      * Unexpected server error. Code INTERNAL_ERROR.
      */
@@ -399,9 +403,9 @@ export type DailyHistoryError = DailyHistoryErrors[keyof DailyHistoryErrors];
 
 export type DailyHistoryResponses = {
     /**
-     * Archived Daily outcomes.
+     * One stable descending page of archived Daily outcomes.
      */
-    200: Array<DailyHistory>;
+    200: DailyHistoryPage;
 };
 
 export type DailyHistoryResponse = DailyHistoryResponses[keyof DailyHistoryResponses];

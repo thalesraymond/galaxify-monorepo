@@ -85,11 +85,11 @@ export const zDailyHistory = z.object({
 });
 
 /**
- * Planned cursor page shaping Daily history.
+ * One stable descending page of Daily history.
  */
 export const zDailyHistoryPage = z.object({
     items: z.array(zDailyHistory),
-    next_cursor: z.string().nullish()
+    next_cursor: z.string().nullable()
 });
 
 /**
@@ -195,9 +195,9 @@ export const zDailyHistoryQuery = z.object({
 });
 
 /**
- * Archived Daily outcomes.
+ * One stable descending page of archived Daily outcomes.
  */
-export const zDailyHistoryResponse = z.array(zDailyHistory);
+export const zDailyHistoryResponse = zDailyHistoryPage;
 
 export const zDailyDifficultiesHeaders = z.object({
     'X-Request-Id': z.uuid().optional()
