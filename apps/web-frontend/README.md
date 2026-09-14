@@ -22,6 +22,7 @@ the `packageManager`/`engines` fields).
 ```text
 src/
 ├── app/            startup, providers, routes, shells, error boundary
+├── api/            generated OpenAPI wire contracts and domain-neutral transport
 ├── features/       auth, profile, dailies, ship, expeditions
 │                   each exposes one public entry point: index.ts
 ├── shared/         domain-neutral UI and styles only
@@ -42,6 +43,8 @@ npm ci                 # frozen, deterministic install
 npm run dev            # Vite dev server; proxies /api/* to local services
 npm run dev:mock       # distinct mock mode (no MSW yet)
 npm run build          # tsc -b && vite build into dist/
+npm run api:generate   # regenerate wire types and Zod schemas from docs/openapi
+npm run api:check      # fail when generated contracts drift from docs/openapi
 npm run preview        # serve the production build on 127.0.0.1:4173
 npm run format:check   # Prettier
 npm run typecheck      # strict project-reference type check
@@ -60,6 +63,18 @@ npm run verify         # the complete gate, in order
 Real mode is the default. Copy `.env.example` to `.env.local` to point the
 server-only proxy targets at non-default service ports. Targets are never
 `VITE_`-prefixed, so they are not inlined into the browser bundle.
+
+## API boundary
+
+`src/api/transport.ts` is the only browser transport. It accepts relative
+`/api/{service}` paths, injects a bearer token and request ID, handles JSON and
+no-content responses, validates success bodies with generated Zod schemas, and
+normalizes errors. Feature-local `api/` modules own operations, query keys, and
+typed mappings such as provisioning or no-current-expedition outcomes.
+
+OpenAPI generation produces types and Zod schemas only—never a generated SDK,
+hooks, or HTTP client. Generated output under `src/api/generated/` is committed
+and must be regenerated after changes under `docs/openapi/`.
 
 Root shortcuts: `make dev`, `make dev-infra`, `make dev-down`,
 `make dev-reset` (requires confirmation), `make frontend-install`, and

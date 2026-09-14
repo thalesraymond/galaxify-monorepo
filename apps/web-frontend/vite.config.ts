@@ -4,6 +4,8 @@ import react from '@vitejs/plugin-react'
 import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
 
+import { validateProxyTarget } from './src/api/proxyTarget'
+
 /**
  * Server-only proxy targets. These variables are intentionally NOT prefixed
  * with `VITE_` so Vite never inlines them into the browser bundle. See
@@ -36,7 +38,7 @@ export default defineConfig(({ mode }) => {
     proxyTargets.map((target) => [
       target.prefix,
       {
-        target: env[target.envKey] ?? target.fallback,
+        target: validateProxyTarget(env[target.envKey] ?? target.fallback, target.envKey),
         changeOrigin: true,
         // The services own their domain routes; the browser prefix is stripped
         // in real mode and replaced by MSW handlers in mock mode.
