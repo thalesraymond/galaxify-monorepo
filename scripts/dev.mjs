@@ -371,11 +371,21 @@ async function startInfrastructure() {
 
 async function runMigrations() {
   for (const service of serviceDefinitions) {
-    await runCommand(
-      'goose',
-      ['-dir', service.migrationDir, 'postgres', service.databaseUrl, 'up'],
-      { cwd: join(repoRoot, service.dir) },
-    )
+    await runCommand('goose', ['-dir', service.migrationDir, 'up'], {
+      cwd: join(repoRoot, service.dir),
+      // Goose v3 auto-loads `.env` from the working directory (the `-env` flag
+      // defaults to `.env`). A service-local `.env` sets GOOSE_DRIVER and
+      // GOOSE_DBSTRING, which switches goose into `[OPTIONS] COMMAND` mode and
+      // makes positional driver/connection arguments fail. Pass the connection
+      // explicitly through the environment instead — process env wins over
+      // `.env` — so migrations never depend on (or conflict with) a local
+      // `.env`.
+      env: {
+        ...process.env,
+        GOOSE_DRIVER: 'postgres',
+        GOOSE_DBSTRING: service.databaseUrl,
+      },
+    })
   }
 }
 

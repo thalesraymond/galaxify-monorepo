@@ -90,7 +90,7 @@ issued by User Service.
 
 ### Prerequisites
 
-- Go `1.25.7`
+- Go `1.26.0`
 - Node.js `^24` and npm `>=11`
 - Docker with Docker Compose
 - [Goose](https://github.com/pressly/goose) for migrations
