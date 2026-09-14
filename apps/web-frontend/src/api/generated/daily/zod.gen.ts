@@ -191,7 +191,7 @@ export const zDailyHistoryHeaders = z.object({
 
 export const zDailyHistoryQuery = z.object({
     cursor: z.string().optional(),
-    limit: z.int().gte(1).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }).optional()
+    limit: z.int().gte(1).lte(100).optional()
 });
 
 /**

@@ -369,7 +369,7 @@ export type DailyHistoryData = {
          */
         cursor?: string;
         /**
-         * Page size. Defaults to 20 and is capped at 100.
+         * Page size. Defaults to 20; values above 100 are rejected.
          */
         limit?: number;
     };

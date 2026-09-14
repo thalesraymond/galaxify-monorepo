@@ -61,6 +61,7 @@ type DailyManager struct {
 	storeFactory func(tx pgx.Tx) Store
 	baseStore    Store
 	logger       *slog.Logger
+	cursorCodec  historyCursorCodec
 }
 
 // DailyManagerOption configures DailyManager.
@@ -72,6 +73,15 @@ func WithDailyManagerLogger(logger *slog.Logger) DailyManagerOption {
 		if logger != nil {
 			m.logger = logger
 		}
+	}
+}
+
+// WithHistoryCursorSigningKey overrides the HMAC key used to sign and verify
+// Daily History continuation tokens. Pass the deployment's HISTORY_CURSOR_SECRET;
+// an empty key keeps the development fallback.
+func WithHistoryCursorSigningKey(key []byte) DailyManagerOption {
+	return func(m *DailyManager) {
+		m.cursorCodec = newHistoryCursorCodec(key)
 	}
 }
 
@@ -87,6 +97,7 @@ func NewDailyManager(
 		storeFactory: storeFactory,
 		baseStore:    baseStore,
 		logger:       slog.Default(),
+		cursorCodec:  defaultHistoryCursorCodec,
 	}
 	for _, opt := range opts {
 		opt(m)
@@ -199,7 +210,7 @@ func (m *DailyManager) ListHistory(ctx context.Context, userID uuid.UUID, query 
 		PageSize: int32(pageSize) + 1, // read one extra to detect a following page
 	}
 	if query.Cursor != "" {
-		cursor, err := decodeHistoryCursor(query.Cursor)
+		cursor, err := m.cursorCodec.decode(query.Cursor)
 		if err != nil {
 			return HistoryPage{}, err
 		}
@@ -217,7 +228,7 @@ func (m *DailyManager) ListHistory(ctx context.Context, userID uuid.UUID, query 
 	if len(rows) > pageSize {
 		rows = rows[:pageSize]
 		last := rows[len(rows)-1]
-		page.NextCursor = encodeHistoryCursor(HistoryCursor{
+		page.NextCursor = m.cursorCodec.encode(HistoryCursor{
 			DueDate:    last.DueDate.Time,
 			ArchivedAt: last.ArchivedAt.Time,
 			ID:         last.ID.Bytes,

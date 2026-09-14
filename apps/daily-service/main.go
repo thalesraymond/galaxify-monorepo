@@ -137,11 +137,15 @@ func run(logger *slog.Logger) error {
 		}
 	}()
 
+	managerOpts := []daily.DailyManagerOption{daily.WithDailyManagerLogger(logger)}
+	if secret := os.Getenv("HISTORY_CURSOR_SECRET"); secret != "" {
+		managerOpts = append(managerOpts, daily.WithHistoryCursorSigningKey([]byte(secret)))
+	}
 	dailyManager := daily.NewDailyManager(
 		pool,
 		func(tx pgx.Tx) daily.Store { return database.New(tx) },
 		db,
-		daily.WithDailyManagerLogger(logger),
+		managerOpts...,
 	)
 
 	dailyHandler := handler.NewDailyHandler(dailyManager, authHandshake, logger)

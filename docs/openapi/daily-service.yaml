@@ -186,11 +186,12 @@ paths:
         - name: limit
           in: query
           required: false
-          description: Page size. Defaults to 20 and is capped at 100.
+          description: Page size. Defaults to 20; values above 100 are rejected.
           schema:
             type: integer
             format: int32
             minimum: 1
+            maximum: 100
       responses:
         "200":
           description: One stable descending page of archived Daily outcomes.

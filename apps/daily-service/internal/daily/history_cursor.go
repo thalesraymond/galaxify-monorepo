@@ -2,9 +2,12 @@ package daily
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,9 +17,15 @@ import (
 // tokens are rejected as invalid rather than silently misread.
 const historyCursorVersion = 1
 
+// defaultHistoryCursorSigningKey is the development fallback used when the
+// service is not configured with HISTORY_CURSOR_SECRET. It keeps local runs and
+// tests working; deployments must set a private secret so a client cannot mint
+// valid cursors.
+var defaultHistoryCursorSigningKey = []byte("galaxify-daily-history-cursor-dev-key")
+
 // historyCursorPayload is the private representation of a HistoryCursor. It is
-// base64url-encoded so clients treat the token as opaque and cannot build one
-// by hand.
+// base64url-encoded and HMAC-signed so clients treat the token as opaque and
+// cannot build or edit one by hand.
 type historyCursorPayload struct {
 	Version    int    `json:"v"`
 	DueDate    string `json:"d"`
@@ -24,8 +33,27 @@ type historyCursorPayload struct {
 	ID         string `json:"i"`
 }
 
-// encodeHistoryCursor renders a cursor as an opaque, URL-safe token.
-func encodeHistoryCursor(cursor HistoryCursor) string {
+// historyCursorCodec encodes and verifies opaque continuation tokens. The
+// trailing MAC covers the encoded payload, so editing any field (or swapping in
+// a different payload) invalidates the token and it is rejected as invalid
+// rather than silently honouring a forged continuation point.
+type historyCursorCodec struct {
+	key []byte
+}
+
+func newHistoryCursorCodec(key []byte) historyCursorCodec {
+	if len(key) == 0 {
+		key = defaultHistoryCursorSigningKey
+	}
+	return historyCursorCodec{key: key}
+}
+
+// defaultHistoryCursorCodec backs the package-level helpers and any manager that
+// is not given an explicit signing key.
+var defaultHistoryCursorCodec = newHistoryCursorCodec(nil)
+
+// encode renders a cursor as an opaque, URL-safe, tamper-evident token.
+func (c historyCursorCodec) encode(cursor HistoryCursor) string {
 	payload := historyCursorPayload{
 		Version:    historyCursorVersion,
 		DueDate:    cursor.DueDate.UTC().Format(time.RFC3339Nano),
@@ -38,14 +66,23 @@ func encodeHistoryCursor(cursor HistoryCursor) string {
 		// unreachable; fall back to an empty token instead of panicking.
 		return ""
 	}
-	return base64.RawURLEncoding.EncodeToString(encoded)
+	payloadToken := base64.RawURLEncoding.EncodeToString(encoded)
+	return payloadToken + "." + c.sign(payloadToken)
 }
 
-// decodeHistoryCursor parses an opaque token produced by encodeHistoryCursor.
-// Every malformed, tampered, or unsupported token collapses to
-// ErrInvalidHistoryCursor so callers cannot distinguish encoding details.
-func decodeHistoryCursor(raw string) (HistoryCursor, error) {
-	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+// decode parses an opaque token produced by encode. Every malformed, tampered,
+// or unsupported token collapses to ErrInvalidHistoryCursor so callers cannot
+// distinguish encoding details.
+func (c historyCursorCodec) decode(raw string) (HistoryCursor, error) {
+	payloadToken, macToken, ok := strings.Cut(raw, ".")
+	if !ok || payloadToken == "" || macToken == "" {
+		return HistoryCursor{}, ErrInvalidHistoryCursor
+	}
+	if !hmac.Equal([]byte(c.sign(payloadToken)), []byte(macToken)) {
+		return HistoryCursor{}, ErrInvalidHistoryCursor
+	}
+
+	decoded, err := base64.RawURLEncoding.DecodeString(payloadToken)
 	if err != nil {
 		return HistoryCursor{}, ErrInvalidHistoryCursor
 	}
@@ -77,4 +114,21 @@ func decodeHistoryCursor(raw string) (HistoryCursor, error) {
 	}
 
 	return HistoryCursor{DueDate: dueDate, ArchivedAt: archivedAt, ID: id}, nil
+}
+
+// sign returns the URL-safe MAC for an already-encoded payload.
+func (c historyCursorCodec) sign(payloadToken string) string {
+	mac := hmac.New(sha256.New, c.key)
+	_, _ = mac.Write([]byte(payloadToken))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// encodeHistoryCursor renders a cursor with the default signing key.
+func encodeHistoryCursor(cursor HistoryCursor) string {
+	return defaultHistoryCursorCodec.encode(cursor)
+}
+
+// decodeHistoryCursor parses a cursor signed with the default signing key.
+func decodeHistoryCursor(raw string) (HistoryCursor, error) {
+	return defaultHistoryCursorCodec.decode(raw)
 }

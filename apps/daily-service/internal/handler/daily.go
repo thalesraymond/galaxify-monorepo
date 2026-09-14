@@ -314,6 +314,12 @@ func (h *DailyHandler) ListDailyHistory(w http.ResponseWriter, r *http.Request, 
 			sharedhttp.WriteValidationError(w, map[string]string{"limit": "must be a positive integer"})
 			return
 		}
+		if limit > int64(daily.MaxHistoryPageSize) {
+			sharedhttp.WriteValidationError(w, map[string]string{
+				"limit": fmt.Sprintf("must be at most %d", daily.MaxHistoryPageSize),
+			})
+			return
+		}
 		query.Limit = int(limit)
 	}
 

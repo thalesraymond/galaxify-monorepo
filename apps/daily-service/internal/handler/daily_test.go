@@ -1462,6 +1462,12 @@ func TestListDailyHistory(t *testing.T) {
 			wantFieldError: map[string]string{"limit": "must be a positive integer"},
 		},
 		{
+			name:           "rejects a limit above the maximum",
+			path:           "/dailies/history?limit=101",
+			wantStatus:     http.StatusUnprocessableEntity,
+			wantFieldError: map[string]string{"limit": "must be at most 100"},
+		},
+		{
 			name: "maps an invalid cursor to a field-scoped validation error",
 			path: "/dailies/history?cursor=tampered",
 			setupManager: func(m *mockDailyManager) {

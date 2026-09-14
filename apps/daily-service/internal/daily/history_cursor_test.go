@@ -42,15 +42,36 @@ func TestDecodeHistoryCursorRejectsTamperedTokens(t *testing.T) {
 	valid := encodeHistoryCursor(HistoryCursor{
 		DueDate:    time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC),
 		ArchivedAt: time.Date(2026, 9, 15, 11, 0, 0, 0, time.UTC),
-		ID:         uuid.New(),
+		ID:         uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8"),
 	})
 
-	encodeRaw := func(value any) string {
+	payloadOf := func(token string) string {
+		payload, _, _ := strings.Cut(token, ".")
+		return payload
+	}
+	macOf := func(token string) string {
+		_, mac, _ := strings.Cut(token, ".")
+		return mac
+	}
+	rawPayload := func(value any) string {
 		payload, err := json.Marshal(value)
 		if err != nil {
 			t.Fatalf("marshal payload: %v", err)
 		}
 		return base64.RawURLEncoding.EncodeToString(payload)
+	}
+	// signedPayload builds a correctly signed token for an arbitrary payload so
+	// the test exercises validation *after* the signature check, not the check
+	// itself.
+	signedPayload := func(value any) string {
+		payload := rawPayload(value)
+		return payload + "." + defaultHistoryCursorCodec.sign(payload)
+	}
+	validPayload := map[string]any{
+		"v": 1,
+		"d": "2026-09-15T10:00:00Z",
+		"a": "2026-09-15T11:00:00Z",
+		"i": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
 	}
 
 	tests := []struct {
@@ -59,13 +80,25 @@ func TestDecodeHistoryCursorRejectsTamperedTokens(t *testing.T) {
 	}{
 		{name: "empty", token: ""},
 		{name: "not base64", token: "!!!not-base64!!!"},
-		{name: "not json", token: base64.RawURLEncoding.EncodeToString([]byte("hello"))},
-		{name: "wrong version", token: encodeRaw(map[string]any{"v": 2, "d": "2026-09-15T10:00:00Z", "a": "2026-09-15T11:00:00Z", "i": uuid.New().String()})},
-		{name: "unknown field", token: encodeRaw(map[string]any{"v": 1, "d": "2026-09-15T10:00:00Z", "a": "2026-09-15T11:00:00Z", "i": uuid.New().String(), "x": "extra"})},
-		{name: "invalid due date", token: encodeRaw(map[string]any{"v": 1, "d": "not-a-time", "a": "2026-09-15T11:00:00Z", "i": uuid.New().String()})},
-		{name: "invalid archived at", token: encodeRaw(map[string]any{"v": 1, "d": "2026-09-15T10:00:00Z", "a": "not-a-time", "i": uuid.New().String()})},
-		{name: "invalid id", token: encodeRaw(map[string]any{"v": 1, "d": "2026-09-15T10:00:00Z", "a": "2026-09-15T11:00:00Z", "i": "not-a-uuid"})},
-		{name: "trailing data", token: base64.RawURLEncoding.EncodeToString([]byte(mustJSONString(t, valid) + "{}"))},
+		{name: "no signature", token: base64.RawURLEncoding.EncodeToString([]byte("hello"))},
+		{name: "payload without mac", token: payloadOf(valid)},
+		{name: "mac without payload", token: "." + macOf(valid)},
+		{name: "unsigned raw payload", token: rawPayload(validPayload)},
+		{
+			name:  "tampered payload keeps stale mac",
+			token: rawPayload(map[string]any{"v": 1, "d": validPayload["d"], "a": validPayload["a"], "i": uuid.New().String()}) + "." + macOf(valid),
+		},
+		{
+			name: "signed with a different key",
+			token: newHistoryCursorCodec([]byte("some-other-key")).
+				encode(HistoryCursor{DueDate: time.Now(), ArchivedAt: time.Now(), ID: uuid.New()}),
+		},
+		{name: "wrong version", token: signedPayload(map[string]any{"v": 2, "d": validPayload["d"], "a": validPayload["a"], "i": validPayload["i"]})},
+		{name: "unknown field", token: signedPayload(map[string]any{"v": 1, "d": validPayload["d"], "a": validPayload["a"], "i": validPayload["i"], "x": "extra"})},
+		{name: "invalid due date", token: signedPayload(map[string]any{"v": 1, "d": "not-a-time", "a": validPayload["a"], "i": validPayload["i"]})},
+		{name: "invalid archived at", token: signedPayload(map[string]any{"v": 1, "d": validPayload["d"], "a": "not-a-time", "i": validPayload["i"]})},
+		{name: "invalid id", token: signedPayload(map[string]any{"v": 1, "d": validPayload["d"], "a": validPayload["a"], "i": "not-a-uuid"})},
+		{name: "trailing data after payload", token: signedPayloadRaw(rawPayload(validPayload) + "{}")},
 	}
 
 	for _, tt := range tests {
@@ -75,6 +108,11 @@ func TestDecodeHistoryCursorRejectsTamperedTokens(t *testing.T) {
 			}
 		})
 	}
+}
+
+// signedPayloadRaw signs an already-encoded raw payload string.
+func signedPayloadRaw(payloadToken string) string {
+	return payloadToken + "." + defaultHistoryCursorCodec.sign(payloadToken)
 }
 
 func TestEncodeHistoryCursorIsOpaque(t *testing.T) {
@@ -90,13 +128,4 @@ func TestEncodeHistoryCursorIsOpaque(t *testing.T) {
 	if strings.ContainsAny(token, "+/=") {
 		t.Errorf("token %q is not URL-safe base64", token)
 	}
-}
-
-func mustJSONString(t *testing.T, token string) string {
-	t.Helper()
-	decoded, err := base64.RawURLEncoding.DecodeString(token)
-	if err != nil {
-		t.Fatalf("decode valid token: %v", err)
-	}
-	return string(decoded)
 }
