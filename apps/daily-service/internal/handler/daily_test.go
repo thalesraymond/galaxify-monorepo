@@ -661,16 +661,29 @@ func TestUpdateDaily(t *testing.T) {
 			wantErrorCode: "DAILY_NOT_FOUND",
 		},
 		{
-			name:    "daily not pending",
+			name:    "updates completed daily",
 			dailyID: dailyID.String(),
 			body:    `{"title":"Colonize Mars"}`,
 			setupManager: func(m *mockDailyManager) {
 				m.update = func(ctx context.Context, uID, dID uuid.UUID, input daily.UpdateInput) (daily.Daily, error) {
-					return daily.Daily{}, daily.ErrDailyNotPending
+					return daily.Daily{
+						ID:         dailyID,
+						UserID:     userID,
+						Title:      "Colonize Mars",
+						Difficulty: daily.DifficultyMedium,
+						DueDate:    dueDate,
+						Status:     daily.StatusCompleted,
+						CreatedAt:  createdAt,
+						UpdatedAt:  updatedAt,
+					}, nil
 				}
 			},
-			wantStatus:    http.StatusConflict,
-			wantErrorCode: "DAILY_NOT_EDITABLE",
+			wantStatus: http.StatusOK,
+			assertResponse: func(t *testing.T, resp dailyResponse) {
+				if resp.Status != string(daily.StatusCompleted) {
+					t.Errorf("status = %q, want COMPLETED", resp.Status)
+				}
+			},
 		},
 		{
 			name:    "manager invalid difficulty error",
@@ -769,15 +782,20 @@ func TestDeleteDaily(t *testing.T) {
 			wantErrorCode: "DAILY_NOT_FOUND",
 		},
 		{
-			name:    "daily not pending",
+			name:    "deletes completed daily",
 			dailyID: dailyID.String(),
 			setupManager: func(m *mockDailyManager) {
 				m.delete = func(ctx context.Context, uID, dID uuid.UUID) error {
-					return daily.ErrDailyNotPending
+					if dID != dailyID {
+						t.Errorf("daily_id = %v, want %v", dID, dailyID)
+					}
+					if uID != userID {
+						t.Errorf("user_id = %v, want %v", uID, userID)
+					}
+					return nil
 				}
 			},
-			wantStatus:    http.StatusConflict,
-			wantErrorCode: "DAILY_NOT_EDITABLE",
+			wantStatus: http.StatusNoContent,
 		},
 	}
 

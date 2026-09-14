@@ -450,6 +450,170 @@ func TestDailyManager_Delete(t *testing.T) {
 	})
 }
 
+// completedDailyTable is an in-memory model of the `dailies` and
+// `daily_history` tables. UpdateDaily and DeleteDaily mutate `dailies` only;
+// `daily_history` stays append-only, mirroring the real schema, so the manager
+// seam can prove that editing/deleting a COMPLETED daily never rewrites the
+// archived occurrence snapshots.
+type completedDailyTable struct {
+	dailies       map[uuid.UUID]database.Daily
+	history       []database.DailyHistory
+	historyWrites int
+}
+
+func (tbl *completedDailyTable) store() *mockStore {
+	return &mockStore{
+		updateDaily: func(_ context.Context, arg database.UpdateDailyParams) (database.Daily, error) {
+			row, ok := tbl.dailies[arg.ID.Bytes]
+			if !ok {
+				return database.Daily{}, pgx.ErrNoRows
+			}
+			if row.UserID != arg.UserID {
+				return database.Daily{}, pgx.ErrNoRows
+			}
+			if arg.Title.Valid {
+				row.Title = arg.Title.String
+			}
+			if arg.Description.Valid {
+				row.Description = arg.Description.String
+			}
+			if arg.Difficulty.Valid {
+				row.Difficulty = arg.Difficulty.String
+			}
+			if arg.DueDate.Valid {
+				row.DueDate = arg.DueDate
+			}
+			tbl.dailies[arg.ID.Bytes] = row
+			return row, nil
+		},
+		deleteDaily: func(_ context.Context, arg database.DeleteDailyParams) (int64, error) {
+			row, ok := tbl.dailies[arg.ID.Bytes]
+			if !ok || row.UserID != arg.UserID {
+				return 0, nil
+			}
+			delete(tbl.dailies, arg.ID.Bytes)
+			return 1, nil
+		},
+		listDailyHistory: func(context.Context, pgtype.UUID) ([]database.DailyHistory, error) {
+			return append([]database.DailyHistory(nil), tbl.history...), nil
+		},
+		createDailyHistory: func(context.Context, database.CreateDailyHistoryParams) error {
+			tbl.historyWrites++
+			return errors.New("editing or deleting a completed daily must not write daily_history")
+		},
+	}
+}
+
+// TestCompletedDailyMutationsPreserveHistoryContract drives the real
+// DailyManager (ADR-0011's domain seam) against a stateful store. It proves
+// that a COMPLETED recurring Daily can be edited and deleted — the behavior
+// the former `AND status = 'PENDING'` predicates rejected — while the archived
+// occurrence snapshots remain byte-for-byte unchanged for both operations.
+func TestCompletedDailyMutationsPreserveHistoryContract(t *testing.T) {
+	userID := uuid.New()
+	dailyID := uuid.New()
+	now := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	completedDaily := database.Daily{
+		ID:          pgtype.UUID{Bytes: dailyID, Valid: true},
+		UserID:      pgtype.UUID{Bytes: userID, Valid: true},
+		Title:       "Calibrate sensors",
+		Description: "before launch",
+		Difficulty:  "MEDIUM",
+		DueDate:     pgtype.Timestamptz{Time: now, Valid: true},
+		Status:      string(StatusCompleted),
+		CreatedAt:   pgtype.Timestamptz{Time: now, Valid: true},
+		UpdatedAt:   pgtype.Timestamptz{Time: now, Valid: true},
+	}
+	occurrence := database.DailyHistory{
+		ID:          pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		DailyID:     pgtype.UUID{Bytes: dailyID, Valid: true},
+		UserID:      pgtype.UUID{Bytes: userID, Valid: true},
+		Title:       "Calibrate sensors",
+		Description: "before launch",
+		Difficulty:  "MEDIUM",
+		DueDate:     pgtype.Timestamptz{Time: now, Valid: true},
+		Status:      string(StatusCompleted),
+		CompletedAt: pgtype.Timestamptz{Time: now, Valid: true},
+		ArchivedAt:  pgtype.Timestamptz{Time: now.Add(time.Minute), Valid: true},
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(t *testing.T, manager *DailyManager, table *completedDailyTable)
+	}{
+		{
+			name: "update completed daily",
+			mutate: func(t *testing.T, manager *DailyManager, table *completedDailyTable) {
+				t.Helper()
+				title := "Recalibrate sensors"
+				updated, err := manager.Update(context.Background(), userID, dailyID, UpdateInput{Title: &title})
+				if err != nil {
+					t.Fatalf("Update() error = %v; completed dailies must stay editable", err)
+				}
+				if updated.Status != StatusCompleted {
+					t.Errorf("Update() status = %q, want COMPLETED", updated.Status)
+				}
+				if got := table.dailies[dailyID].Title; got != title {
+					t.Errorf("persisted title = %q, want %q", got, title)
+				}
+			},
+		},
+		{
+			name: "delete completed daily",
+			mutate: func(t *testing.T, manager *DailyManager, table *completedDailyTable) {
+				t.Helper()
+				if err := manager.Delete(context.Background(), userID, dailyID); err != nil {
+					t.Fatalf("Delete() error = %v; completed dailies must stay deletable", err)
+				}
+				if _, ok := table.dailies[dailyID]; ok {
+					t.Error("daily still present after Delete()")
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			table := &completedDailyTable{
+				dailies: map[uuid.UUID]database.Daily{dailyID: completedDaily},
+				history: []database.DailyHistory{occurrence},
+			}
+			store := table.store()
+			tx := &fakeTx{}
+			manager := NewDailyManager(&fakeTxStarter{tx: tx}, func(pgx.Tx) Store { return store }, store)
+
+			before := encodedHistoryContract(t, manager, userID)
+			tt.mutate(t, manager, table)
+			after := encodedHistoryContract(t, manager, userID)
+
+			if string(after) != string(before) {
+				t.Errorf("daily history changed after %s:\n got %s\nwant %s", tt.name, after, before)
+			}
+			if table.historyWrites != 0 {
+				t.Errorf("history writes = %d, want 0", table.historyWrites)
+			}
+			if !tx.committed {
+				t.Error("mutation transaction was not committed")
+			}
+		})
+	}
+}
+
+// encodedHistoryContract renders the user's daily history as bytes so tests can
+// assert the occurrence snapshots are unchanged for the wire contract.
+func encodedHistoryContract(t *testing.T, manager *DailyManager, userID uuid.UUID) []byte {
+	t.Helper()
+	history, err := manager.ListHistory(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("ListHistory() error = %v", err)
+	}
+	encoded, err := json.Marshal(history)
+	if err != nil {
+		t.Fatalf("marshal daily history = %v", err)
+	}
+	return encoded
+}
+
 func TestDailyManager_Complete(t *testing.T) {
 	userID := uuid.New()
 	dailyID := uuid.New()

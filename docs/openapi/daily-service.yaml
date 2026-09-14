@@ -288,12 +288,14 @@ paths:
     patch:
       operationId: dailyUpdate
       summary: Edit a Daily.
+      description: >-
+        Updates the recurring Daily for future cycles even when today's
+        occurrence is COMPLETED. Existing Daily History records are unchanged.
       tags: [dailies]
       x-implementation-status: implemented
       x-planned-changes: >-
-        Permit edit after today's completion while preserving history, and
-        accept an IANA time_zone plus local deadline.
-      x-ticket: "#147, #148"
+        Accept an IANA time_zone plus local deadline.
+      x-ticket: "#148"
       security:
         - bearerAuth: []
       parameters:
@@ -318,8 +320,6 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/ValidationFailed"
         "500":
@@ -329,11 +329,11 @@ paths:
     delete:
       operationId: dailyDelete
       summary: Delete a recurring Daily.
+      description: >-
+        Deletes the recurring Daily even when today's occurrence is COMPLETED.
+        Existing Daily History records are unchanged.
       tags: [dailies]
       x-implementation-status: implemented
-      x-planned-changes: >-
-        Permit delete after today's completion while preserving past history.
-      x-ticket: "#147"
       security:
         - bearerAuth: []
       parameters:
@@ -348,8 +348,6 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/ValidationFailed"
         "500":
@@ -734,7 +732,7 @@ components:
     Conflict:
       description: >-
         The Daily is not mutable in its current state. Codes:
-        DAILY_NOT_EDITABLE, DAILY_ALREADY_COMPLETED.
+        DAILY_ALREADY_COMPLETED.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/XRequestId"
