@@ -23,25 +23,27 @@
   background: var(--color-amber);
   color: var(--color-ink);
 }
-.primary:hover:not(:disabled) {
-  background: var(--color-amber-strong);
-}
 .secondary {
   border-color: var(--color-shell-raised);
   background: var(--color-logbook);
   color: var(--color-ink);
 }
-.secondary:hover:not(:disabled) {
-  border-color: var(--color-logbook-edge);
-}
 .danger {
-  background: var(--color-danger);
-  color: var(--color-text-on-dark);
+  background: var(--color-danger-surface);
+  color: var(--color-text-on-danger);
 }
 .quiet {
   background: transparent;
   color: inherit;
 }
-.quiet:hover:not(:disabled) {
-  background: color-mix(in srgb, currentColor 12%, transparent);
+@media (hover: hover) and (pointer: fine) {
+  .primary:hover:not(:disabled) {
+    background: var(--color-amber-strong);
+  }
+  .secondary:hover:not(:disabled) {
+    border-color: var(--color-logbook-edge);
+  }
+  .quiet:hover:not(:disabled) {
+    background: color-mix(in srgb, currentColor 12%, transparent);
+  }
 }

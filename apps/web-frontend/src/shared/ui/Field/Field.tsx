@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, ReactNode } from 'react'
+import { useId, type InputHTMLAttributes, type ReactNode } from 'react'
 import styles from './Field.module.css'
 export type FieldProps = InputHTMLAttributes<HTMLInputElement> & {
   label: string
@@ -6,7 +6,8 @@ export type FieldProps = InputHTMLAttributes<HTMLInputElement> & {
   hint?: ReactNode
 }
 export function Field({ error, hint, id, label, ...input }: FieldProps) {
-  const inputId = id ?? `field-${label.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-')}`
+  const generatedId = useId()
+  const inputId = id ?? `field-${generatedId}`
   const errorId = `${inputId}-error`
   const hintId = `${inputId}-hint`
   const describedBy = [hint ? hintId : '', error ? errorId : '', input['aria-describedby'] ?? '']

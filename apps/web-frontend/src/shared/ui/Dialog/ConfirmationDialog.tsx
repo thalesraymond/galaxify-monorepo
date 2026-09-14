@@ -18,7 +18,7 @@ export function ConfirmationDialog({
   return (
     <Dialog title={title} onClose={onCancel}>
       <div className={styles.content}>{children}</div>
-      <footer>
+      <footer className={styles.actions}>
         <Button variant="quiet" onClick={onCancel}>
           Cancel
         </Button>

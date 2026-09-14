@@ -13,9 +13,6 @@
   font-weight: 700;
   cursor: pointer;
 }
-.trigger:hover {
-  background: var(--color-shell-raised);
-}
 .items {
   position: absolute;
   z-index: var(--z-dropdown);
@@ -43,7 +40,12 @@
   text-decoration: none;
   cursor: pointer;
 }
-.items :global(a:hover),
-.items :global(button:hover) {
-  background: var(--color-shell);
+@media (hover: hover) and (pointer: fine) {
+  .trigger:hover {
+    background: var(--color-shell-raised);
+  }
+  .items :global(a:hover),
+  .items :global(button:hover) {
+    background: var(--color-shell);
+  }
 }

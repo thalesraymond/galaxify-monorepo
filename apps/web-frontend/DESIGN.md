@@ -38,11 +38,15 @@ it necessary. Keep semantic names stable and record intentional changes.
   --color-ink: #173038;
   --color-text-on-dark: #f8f0dc;
   --color-text-muted-dark: #b9cbc9;
-  --color-text-muted-light: #62706c;
+  --color-text-muted-light: #5f6d69;
   --color-amber: #f5c86a;
   --color-amber-strong: #edb74d;
   --color-mint: #9fd4c9;
   --color-danger: #c84f4f;
+  --color-danger-strong: #8f2f2f;
+  --color-danger-on-dark: #e08585;
+  --color-danger-surface: #742f32;
+  --color-text-on-danger: #fff8f0;
   --color-focus: #ffcb69;
 
   --space-1: 0.25rem;
@@ -73,6 +77,13 @@ it necessary. Keep semantic names stable and record intentional changes.
 All component colors use semantic custom properties rather than local hex
 values. Additional semantic tokens must preserve AA contrast on both dark shell
 and warm content surfaces. Never communicate state by color alone.
+
+Recorded contrast tune-ups (issue #146 review): `--color-text-muted-light` moved
+to `#5f6d69` (4.65:1 on the logbook surface) and the danger roles were split
+into `--color-danger-strong` (danger text on warm surfaces, 6.89:1),
+`--color-danger-on-dark` (danger text on the dark shell, 4.81:1 on raised
+panels), and `--color-danger-surface` with `--color-text-on-danger` (danger
+fills, 9.08:1). `--color-danger` remains the base fill/edge value.
 
 ## Typography
 

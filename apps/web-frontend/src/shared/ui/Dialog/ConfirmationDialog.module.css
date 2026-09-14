@@ -4,7 +4,7 @@
 .content p {
   margin: 0;
 }
-footer {
+.actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-3);

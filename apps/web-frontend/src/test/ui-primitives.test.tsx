@@ -22,6 +22,22 @@ describe('shared UI primitives', () => {
     expect(input).toHaveAccessibleDescription('Enter a valid email address.')
   })
 
+  it('gives same-label fields distinct ids derived from useId', () => {
+    render(
+      <>
+        <Field label="Email" />
+        <Field label="Email" />
+      </>,
+    )
+
+    const inputs = screen.getAllByLabelText('Email')
+    expect(inputs).toHaveLength(2)
+    const [first, second] = inputs
+    expect(first?.id).toBeTruthy()
+    expect(second?.id).toBeTruthy()
+    expect(first?.id).not.toBe(second?.id)
+  })
+
   it('exposes a gauge with a textual value', () => {
     render(<Gauge label="Hull condition" value={62} />)
 

@@ -12,11 +12,15 @@
   --color-ink: #173038;
   --color-text-on-dark: #f8f0dc;
   --color-text-muted-dark: #b9cbc9;
-  --color-text-muted-light: #62706c;
+  --color-text-muted-light: #5f6d69;
   --color-amber: #f5c86a;
   --color-amber-strong: #edb74d;
   --color-mint: #9fd4c9;
   --color-danger: #c84f4f;
+  --color-danger-strong: #8f2f2f;
+  --color-danger-on-dark: #e08585;
+  --color-danger-surface: #742f32;
+  --color-text-on-danger: #fff8f0;
   --color-focus: #ffcb69;
 
   --space-1: 0.25rem;
@@ -83,10 +87,6 @@ a {
   color: var(--color-amber);
 }
 
-a:hover {
-  color: var(--color-amber-strong);
-}
-
 :focus-visible {
   outline: 3px solid var(--color-focus);
   outline-offset: 2px;
@@ -113,6 +113,7 @@ a:hover {
 }
 @media (hover: hover) and (pointer: fine) {
   a:hover {
+    color: var(--color-amber-strong);
     text-decoration-thickness: 2px;
   }
 }

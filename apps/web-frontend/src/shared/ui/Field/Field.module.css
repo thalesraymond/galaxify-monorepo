@@ -19,7 +19,7 @@
 }
 .error {
   margin: 0;
-  color: var(--color-danger);
+  color: var(--color-danger-strong);
   font-weight: 700;
 }
 .field input[aria-invalid='true'] {

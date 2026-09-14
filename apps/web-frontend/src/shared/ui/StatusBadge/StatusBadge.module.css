@@ -9,16 +9,16 @@
   font-weight: 700;
 }
 .ready {
-  background: color-mix(in srgb, var(--color-mint) 45%, transparent);
+  background: var(--color-mint);
   color: var(--color-ink);
 }
 .preparing,
 .updating {
-  background: color-mix(in srgb, var(--color-amber) 40%, transparent);
+  background: var(--color-amber);
   color: var(--color-ink);
 }
 .delayed,
 .error {
-  background: color-mix(in srgb, var(--color-danger) 25%, transparent);
-  color: inherit;
+  background: var(--color-danger-surface);
+  color: var(--color-text-on-danger);
 }
