@@ -91,11 +91,54 @@ issued by User Service.
 ### Prerequisites
 
 - Go `1.25.7`
+- Node.js `^24` and npm `>=11`
 - Docker with Docker Compose
 - [Goose](https://github.com/pressly/goose) for migrations
 - [sqlc](https://sqlc.dev/) only when regenerating query code
 
-### Start the backend
+### Quick start: the complete local product
+
+`make dev` starts everything in healthy order with a repository-owned
+supervisor: Docker infrastructure, idempotent migrations, User Service (waited
+on for its `/health`), the remaining services, the workers, then Vite.
+
+```sh
+make dev          # real services (default)
+```
+
+Open <http://127.0.0.1:5173>. Stop it with `Ctrl-C`, which cleans up the
+application processes and preserves Docker volumes and database data. From
+another terminal, `make dev-down` does the same and stops infrastructure.
+
+Prefer isolated frontend work with deterministic data? Run the MSW-backed mock
+stack, which defaults to the `established-player` scenario and never starts Go
+services:
+
+```sh
+npm --prefix apps/web-frontend run dev:mock
+```
+
+Frontend modes, environment variables, mock scenarios, reset behavior, and
+troubleshooting live in
+[`apps/web-frontend/README.md`](apps/web-frontend/README.md).
+
+### Canonical local commands
+
+| Command | Description |
+| --- | --- |
+| `make dev` | Start infrastructure, migrations, all services, workers, and Vite under one supervisor |
+| `make dev-infra` | Start PostgreSQL and RabbitMQ and wait until healthy |
+| `make dev-down` | Stop application processes and infrastructure, preserving data |
+| `make dev-reset` | Confirmation-gated: delete local volumes, restart infrastructure, and reapply migrations |
+| `npm --prefix apps/web-frontend run dev` | Run Vite against already-running real services |
+| `npm --prefix apps/web-frontend run dev:mock` | Run Vite with deterministic MSW handlers |
+
+The supervisor prefixes logs by process, redacts credentials and tokens, fails
+the stack if any application child exits unexpectedly, and detects occupied
+API ports before launch. `node scripts/dev.mjs --no-infra` attaches to
+infrastructure that is already healthy (for example, another worktree or CI).
+
+### Manual backend startup (fallback)
 
 From the repository root:
 
@@ -134,6 +177,18 @@ curl localhost:8084/health
 
 RabbitMQ's management UI is available at <http://localhost:15672> with the
 local credentials `guest` / `guest`.
+
+### Troubleshooting
+
+- **`make dev` reports an occupied port**: another stack owns it. Run
+  `make dev-down`, or, when infrastructure is already healthy, attach with
+  `node scripts/dev.mjs --no-infra`.
+- **A service exits during startup**: the supervisor stops every application
+  child and exits non-zero; scroll the prefixed logs for the failing process.
+- **`make dev-reset` is refused**: it requires an explicit `y`/`yes`; it
+  permanently deletes local database volumes before reapplying migrations.
+- **Unknown mock scenario**: `npm run dev:mock` fails at startup and lists the
+  valid scenario names. See the frontend README.
 
 ## Development commands
 
