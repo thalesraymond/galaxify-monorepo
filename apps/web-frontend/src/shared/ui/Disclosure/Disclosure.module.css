@@ -1,0 +1,10 @@
+.disclosure summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 700;
+}
+.disclosure > div {
+  padding: var(--space-3) 0;
+}

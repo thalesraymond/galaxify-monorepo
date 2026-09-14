@@ -1,0 +1,11 @@
+.content {
+  margin: var(--space-4) 0;
+}
+.content p {
+  margin: 0;
+}
+footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}

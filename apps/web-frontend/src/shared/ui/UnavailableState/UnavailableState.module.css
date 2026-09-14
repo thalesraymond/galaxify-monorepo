@@ -1,0 +1,10 @@
+.state {
+  padding: var(--space-6);
+  border-radius: var(--radius-panel);
+  background: var(--color-shell-raised);
+  color: var(--color-text-on-dark);
+}
+.state h2,
+.state p {
+  margin: var(--space-3) 0;
+}

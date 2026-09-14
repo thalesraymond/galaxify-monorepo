@@ -1,78 +1,138 @@
 .shell {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   min-height: 100vh;
-  background-color: var(--color-shell-deep);
+  background: var(--color-shell-deep);
 }
-
-.header {
+.sidebar {
+  display: none;
+}
+.mobileHeader {
+  position: sticky;
+  z-index: var(--z-sticky);
+  top: 0;
   display: flex;
-  flex-wrap: wrap;
+  min-height: 64px;
   align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  background-color: var(--color-shell);
-  border-bottom: 1px solid var(--color-shell-raised);
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-mint) 20%, transparent);
+  background: var(--color-shell);
 }
-
 .brand {
-  margin: 0;
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: 1.5rem;
-}
-
-.brandLink {
-  display: inline-block;
+  display: inline-flex;
   min-height: 44px;
-  padding: var(--space-2);
+  align-items: center;
+  gap: var(--space-2);
   color: var(--color-amber);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.25rem;
+  font-weight: 700;
   text-decoration: none;
 }
-
-.primaryNav {
-  flex: 1 1 auto;
+.main {
+  width: min(100%, 76rem);
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4)
+    calc(var(--space-16) + 4.5rem + env(safe-area-inset-bottom));
 }
-
-.navList {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+.primaryNav ul,
+.mobileNav ul {
   margin: 0;
   padding: 0;
   list-style: none;
 }
-
-.navLink,
-.accountLink {
-  display: inline-flex;
-  align-items: center;
+.primaryNav .navLink,
+.mobileNav .navLink {
+  display: flex;
+  min-width: 44px;
   min-height: 44px;
-  padding: var(--space-2) var(--space-3);
+  align-items: center;
+  gap: var(--space-2);
   border-radius: var(--radius-control);
   color: var(--color-text-on-dark);
+  font-weight: 700;
   text-decoration: none;
 }
-
-.navLink:hover,
-.accountLink:hover {
-  background-color: var(--color-shell-raised);
-}
-
 .navLinkActive {
-  background-color: var(--color-shell-raised);
-  color: var(--color-amber);
+  background: var(--color-shell-raised);
+  color: var(--color-amber) !important;
   text-decoration: underline;
+  text-underline-offset: 4px;
 }
-
-.main {
-  flex: 1 1 auto;
-  width: 100%;
-  max-width: 72rem;
-  margin: 0 auto;
-  padding: var(--space-6) var(--space-4) var(--space-16);
+.navMark {
+  width: 1.25rem;
+  text-align: center;
+  font-size: 1.125rem;
 }
-
-.main:focus-visible {
-  outline: 2px solid var(--color-focus);
-  outline-offset: 2px;
+.mobileNav {
+  position: fixed;
+  z-index: var(--z-sticky);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: max(var(--space-1), env(safe-area-inset-bottom)) var(--space-2);
+  border-top: 1px solid color-mix(in srgb, var(--color-mint) 20%, transparent);
+  background: var(--color-shell);
+}
+.mobileNav ul {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.mobileNav .navLink {
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+  padding: var(--space-1);
+  font-size: 0.75rem;
+  text-align: center;
+}
+.mobileNav .navMark {
+  font-size: 1rem;
+}
+.sidebarAccount {
+  margin-top: auto;
+}
+@media (min-width: 768px) {
+  .shell {
+    grid-template-columns: 13.5rem minmax(0, 1fr);
+  }
+  .sidebar {
+    position: sticky;
+    top: 0;
+    display: flex;
+    height: 100vh;
+    flex-direction: column;
+    gap: var(--space-6);
+    padding: var(--space-6) var(--space-3);
+    border-right: 1px solid color-mix(in srgb, var(--color-mint) 20%, transparent);
+    background: var(--color-shell);
+  }
+  .primaryNav ul {
+    display: grid;
+    gap: var(--space-2);
+  }
+  .primaryNav .navLink {
+    padding: var(--space-2) var(--space-3);
+  }
+  .mobileHeader,
+  .mobileNav {
+    display: none;
+  }
+  .main {
+    margin: 0;
+    padding: var(--space-8);
+  }
+}
+@media (min-width: 1024px) {
+  .shell {
+    grid-template-columns: 16rem minmax(0, 1fr);
+  }
+  .sidebar {
+    padding: var(--space-8) var(--space-4);
+  }
+  .main {
+    padding: var(--space-12);
+  }
 }

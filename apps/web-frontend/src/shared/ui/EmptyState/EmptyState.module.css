@@ -1,0 +1,10 @@
+.empty {
+  padding: var(--space-8);
+  border: 1px dashed currentColor;
+  border-radius: var(--radius-panel);
+  text-align: center;
+}
+.empty h2,
+.empty p {
+  margin: 0 auto var(--space-3);
+}
