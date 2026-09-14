@@ -5,35 +5,48 @@ import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
 
 import { parseProxyEnvironment } from './src/api/proxyTarget'
+import { parseMockScenario } from './src/mocks/scenarios'
 
 /**
  * Browser-visible relative prefixes owned by the domain-neutral transport.
  * Server-only origins are validated from the environment at Vite's trust
  * boundary; see `apps/web-frontend/.env.example` and
- * `docs/specs/web-frontend.md` §7.
+ * `docs/specs/web-frontend.md` §7. Mock mode skips the proxy entirely because
+ * MSW intercepts the same `/api/{service}` paths in the browser.
  */
 const proxyPrefixes = {
-  '/api/user': 'USER_SERVICE_URL',
-  '/api/daily': 'DAILY_SERVICE_URL',
-  '/api/ship': 'SHIP_SERVICE_URL',
-  '/api/expedition': 'EXPEDITION_SERVICE_URL',
+  '/api/user': 'USER_SERVICE_PROXY_TARGET',
+  '/api/daily': 'DAILY_SERVICE_PROXY_TARGET',
+  '/api/ship': 'SHIP_SERVICE_PROXY_TARGET',
+  '/api/expedition': 'EXPEDITION_SERVICE_PROXY_TARGET',
 } as const
 
 export default defineConfig(({ mode }) => {
-  const environment = parseProxyEnvironment(loadEnv(mode, process.cwd(), ''))
+  const environment = loadEnv(mode, process.cwd(), '')
 
-  const proxy = Object.fromEntries(
-    Object.entries(proxyPrefixes).map(([prefix, envKey]) => [
-      prefix,
-      {
-        target: environment[envKey],
-        changeOrigin: true,
-        // The services own their domain routes; the browser prefix is stripped
-        // in real mode and replaced by MSW handlers in mock mode.
-        rewrite: (requestPath: string) => requestPath.replace(prefix, ''),
-      },
-    ]),
-  )
+  // Invalid scenario names fail `npm run dev:mock` before the server starts and
+  // list the valid names (issue #136, "Environment contract").
+  if (mode === 'mock') {
+    parseMockScenario(environment.VITE_MOCK_SCENARIO)
+  }
+
+  const proxyEnvironment = mode === 'mock' ? undefined : parseProxyEnvironment(environment)
+
+  const proxy =
+    proxyEnvironment === undefined
+      ? undefined
+      : Object.fromEntries(
+          Object.entries(proxyPrefixes).map(([prefix, envKey]) => [
+            prefix,
+            {
+              target: proxyEnvironment[envKey],
+              changeOrigin: true,
+              // The services own their domain routes; the browser prefix is
+              // stripped in real mode and replaced by MSW handlers in mock mode.
+              rewrite: (requestPath: string) => requestPath.replace(prefix, ''),
+            },
+          ]),
+        )
 
   return {
     plugins: [react()],
@@ -44,7 +57,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5173,
-      proxy,
+      ...(proxy === undefined ? {} : { proxy }),
     },
     preview: {
       host: '127.0.0.1',

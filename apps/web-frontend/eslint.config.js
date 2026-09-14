@@ -35,6 +35,7 @@ export default tseslint.config(
       '.lighthouseci/**',
       'src/generated/**',
       'src/api/generated/**',
+      'public/mockServiceWorker.js',
     ],
   },
   js.configs.recommended,

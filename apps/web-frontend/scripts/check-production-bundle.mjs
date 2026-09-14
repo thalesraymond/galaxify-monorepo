@@ -2,10 +2,10 @@ import { readFile, readdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 const proxyEnvKeys = [
-  'USER_SERVICE_URL',
-  'DAILY_SERVICE_URL',
-  'SHIP_SERVICE_URL',
-  'EXPEDITION_SERVICE_URL',
+  'USER_SERVICE_PROXY_TARGET',
+  'DAILY_SERVICE_PROXY_TARGET',
+  'SHIP_SERVICE_PROXY_TARGET',
+  'EXPEDITION_SERVICE_PROXY_TARGET',
 ]
 const defaultProxyTargets = [
   'http://localhost:8081',
