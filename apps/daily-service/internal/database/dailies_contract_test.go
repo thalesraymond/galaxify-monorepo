@@ -53,6 +53,7 @@ func (r dailyRow) Scan(destinations ...any) error {
 		r.daily.Status,
 		r.daily.CreatedAt,
 		r.daily.UpdatedAt,
+		r.daily.TimeZone,
 	}
 	for i, destination := range destinations {
 		reflect.ValueOf(destination).Elem().Set(reflect.ValueOf(values[i]))
@@ -82,6 +83,7 @@ func TestCompletedDailyMutationQueryContract(t *testing.T) {
 		Status:      "COMPLETED",
 		CreatedAt:   pgtype.Timestamptz{Time: now, Valid: true},
 		UpdatedAt:   pgtype.Timestamptz{Time: now, Valid: true},
+		TimeZone:    "America/New_York",
 	}
 	db := &recordingDBTX{row: dailyRow{daily: completed}}
 	queries := New(db)
@@ -96,6 +98,9 @@ func TestCompletedDailyMutationQueryContract(t *testing.T) {
 	}
 	if updated.Status != "COMPLETED" {
 		t.Errorf("updated status = %q, want COMPLETED", updated.Status)
+	}
+	if updated.TimeZone != "America/New_York" {
+		t.Errorf("updated time zone = %q, want America/New_York", updated.TimeZone)
 	}
 
 	if _, err := queries.DeleteDaily(context.Background(), DeleteDailyParams{
