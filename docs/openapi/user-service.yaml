@@ -150,6 +150,8 @@ paths:
           $ref: "#/components/responses/ValidationFailed"
         "500":
           $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/RefreshUnavailable"
         default:
           $ref: "#/components/responses/Error"
 
@@ -554,6 +556,19 @@ components:
 
     InternalError:
       description: Unexpected server error. Code INTERNAL_ERROR.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    RefreshUnavailable:
+      description: >-
+        Refresh-token infrastructure is temporarily unavailable. The presented
+        refresh token was not consumed; retry with the same token. Code
+        AUTH_SERVICE_UNAVAILABLE.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/XRequestId"

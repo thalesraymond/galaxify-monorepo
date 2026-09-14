@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -85,7 +86,7 @@ func newUserConformance(t *testing.T) *userConformanceHarness {
 	}
 	sessionManager := &mockSessionManager{
 		rotate: func(context.Context, string) (usersession.Rotation, error) {
-			return usersession.Rotation{RefreshToken: "replacement-token", UserID: pgID, Email: user.Email}, nil
+			return usersession.Rotation{RefreshToken: "replacement-token", UserID: userID, Email: user.Email}, nil
 		},
 		logout: func(context.Context, string) error { return nil },
 	}
@@ -143,15 +144,16 @@ func TestOpenAPIConformance(t *testing.T) {
 	subject := uuid.New().String()
 
 	tests := []struct {
-		name         string
-		method       string
-		target       string
-		body         string
-		noAuth       bool
-		rawAuth      string
-		configure    func(*userConformanceHarness)
-		wantStatus   int
-		responseOnly bool
+		name          string
+		method        string
+		target        string
+		body          string
+		noAuth        bool
+		rawAuth       string
+		configure     func(*userConformanceHarness)
+		wantStatus    int
+		wantErrorCode string
+		responseOnly  bool
 	}{
 		{name: "health", method: http.MethodGet, target: "/health", noAuth: true, wantStatus: http.StatusOK},
 		{
@@ -227,7 +229,8 @@ func TestOpenAPIConformance(t *testing.T) {
 					return usersession.Rotation{}, usersession.ErrInvalidRefreshToken
 				}
 			},
-			wantStatus: http.StatusUnauthorized,
+			wantStatus:    http.StatusUnauthorized,
+			wantErrorCode: "AUTH_INVALID_TOKEN",
 		},
 		{
 			name: "refresh validation error", method: http.MethodPost, target: "/auth/refresh",
@@ -235,14 +238,15 @@ func TestOpenAPIConformance(t *testing.T) {
 			wantStatus: http.StatusUnprocessableEntity, responseOnly: true,
 		},
 		{
-			name: "refresh internal error", method: http.MethodPost, target: "/auth/refresh",
+			name: "refresh infrastructure outage", method: http.MethodPost, target: "/auth/refresh",
 			body: `{"refresh_token":"valid-token"}`,
 			configure: func(h *userConformanceHarness) {
 				h.sessionManager.rotate = func(context.Context, string) (usersession.Rotation, error) {
-					return usersession.Rotation{}, errors.New("db down")
+					return usersession.Rotation{}, fmt.Errorf("database unavailable: %w", usersession.ErrRefreshUnavailable)
 				}
 			},
-			wantStatus: http.StatusInternalServerError,
+			wantStatus:    http.StatusServiceUnavailable,
+			wantErrorCode: "AUTH_SERVICE_UNAVAILABLE",
 		},
 		{name: "logout", method: http.MethodPost, target: "/auth/logout", body: `{"refresh_token":"valid-token"}`, noAuth: true, wantStatus: http.StatusNoContent},
 		{name: "jwks", method: http.MethodGet, target: "/.well-known/jwks.json", noAuth: true, wantStatus: http.StatusOK},
@@ -332,6 +336,12 @@ func TestOpenAPIConformance(t *testing.T) {
 				ValidateRequest: !tc.responseOnly,
 				WantStatus:      tc.wantStatus,
 			})
+
+			if tc.wantErrorCode != "" {
+				rec := httptest.NewRecorder()
+				harness.router.ServeHTTP(rec, buildRequest())
+				wantErrorCode(t, rec, tc.wantErrorCode)
+			}
 		})
 	}
 }

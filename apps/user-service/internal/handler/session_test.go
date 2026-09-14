@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -264,16 +265,17 @@ func TestLoginAccessTokenIsValid(t *testing.T) {
 }
 
 func TestRefresh(t *testing.T) {
-	userID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	userID := uuid.New()
 
 	tests := []struct {
-		name           string
-		body           string
-		setupManager   func(m *mockSessionManager)
-		wantStatus     int
-		wantFieldError map[string]string
-		wantErrorCode  string
-		assertResponse func(t *testing.T, resp refreshResponse)
+		name            string
+		body            string
+		setupManager    func(m *mockSessionManager)
+		wantRotateToken string
+		wantStatus      int
+		wantFieldError  map[string]string
+		wantErrorCode   string
+		assertResponse  func(t *testing.T, resp refreshResponse)
 	}{
 		{
 			name: "rotates valid token",
@@ -283,7 +285,8 @@ func TestRefresh(t *testing.T) {
 					return usersession.Rotation{RefreshToken: "replacement-token", UserID: userID, Email: "user@example.com"}, nil
 				}
 			},
-			wantStatus: http.StatusOK,
+			wantRotateToken: "valid-token",
+			wantStatus:      http.StatusOK,
 			assertResponse: func(t *testing.T, resp refreshResponse) {
 				if resp.AccessToken == "" {
 					t.Error("access_token is empty")
@@ -307,8 +310,9 @@ func TestRefresh(t *testing.T) {
 					return usersession.Rotation{}, usersession.ErrInvalidRefreshToken
 				}
 			},
-			wantStatus:    http.StatusUnauthorized,
-			wantErrorCode: "AUTH_INVALID_TOKEN",
+			wantRotateToken: "does-not-exist",
+			wantStatus:      http.StatusUnauthorized,
+			wantErrorCode:   "AUTH_INVALID_TOKEN",
 		},
 		{
 			name: "token already used - nukes family",
@@ -318,8 +322,9 @@ func TestRefresh(t *testing.T) {
 					return usersession.Rotation{}, usersession.ErrInvalidRefreshToken
 				}
 			},
-			wantStatus:    http.StatusUnauthorized,
-			wantErrorCode: "AUTH_INVALID_TOKEN",
+			wantRotateToken: "used-token",
+			wantStatus:      http.StatusUnauthorized,
+			wantErrorCode:   "AUTH_INVALID_TOKEN",
 		},
 		{
 			name: "expired token",
@@ -329,19 +334,21 @@ func TestRefresh(t *testing.T) {
 					return usersession.Rotation{}, usersession.ErrInvalidRefreshToken
 				}
 			},
-			wantStatus:    http.StatusUnauthorized,
-			wantErrorCode: "AUTH_INVALID_TOKEN",
+			wantRotateToken: "expired-token",
+			wantStatus:      http.StatusUnauthorized,
+			wantErrorCode:   "AUTH_INVALID_TOKEN",
 		},
 		{
-			name: "get user by id error after rotation",
+			name: "refresh infrastructure outage",
 			body: `{"refresh_token":"valid-token"}`,
 			setupManager: func(m *mockSessionManager) {
 				m.rotate = func(context.Context, string) (usersession.Rotation, error) {
-					return usersession.Rotation{}, errors.New("db down")
+					return usersession.Rotation{}, fmt.Errorf("refresh database: %w", usersession.ErrRefreshUnavailable)
 				}
 			},
-			wantStatus:    http.StatusInternalServerError,
-			wantErrorCode: "INTERNAL_ERROR",
+			wantRotateToken: "valid-token",
+			wantStatus:      http.StatusServiceUnavailable,
+			wantErrorCode:   "AUTH_SERVICE_UNAVAILABLE",
 		},
 	}
 
@@ -351,6 +358,15 @@ func TestRefresh(t *testing.T) {
 			manager := &mockSessionManager{}
 			if tt.setupManager != nil {
 				tt.setupManager(manager)
+			}
+			if manager.rotate != nil && tt.wantRotateToken != "" {
+				rotate := manager.rotate
+				manager.rotate = func(ctx context.Context, token string) (usersession.Rotation, error) {
+					if token != tt.wantRotateToken {
+						t.Errorf("forwarded refresh token = %q, want %q", token, tt.wantRotateToken)
+					}
+					return rotate(ctx, token)
+				}
 			}
 
 			handler := newTestSessionHandler(t, store, manager, &mockRefreshTokenStore{
@@ -387,7 +403,7 @@ func TestRefresh(t *testing.T) {
 }
 
 func TestRefreshAccessTokenIsValid(t *testing.T) {
-	userID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	userID := uuid.New()
 	store := &mockSessionStore{}
 
 	handler := newTestSessionHandler(t, store, &mockSessionManager{rotate: func(context.Context, string) (usersession.Rotation, error) {
@@ -410,8 +426,8 @@ func TestRefreshAccessTokenIsValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("verify access token: %v", err)
 	}
-	if claims.Subject != uuid.UUID(userID.Bytes).String() {
-		t.Errorf("subject = %q, want %q", claims.Subject, uuid.UUID(userID.Bytes).String())
+	if claims.Subject != userID.String() {
+		t.Errorf("subject = %q, want %q", claims.Subject, userID.String())
 	}
 	if claims.Email != "user@example.com" {
 		t.Errorf("email claim = %q, want user@example.com", claims.Email)

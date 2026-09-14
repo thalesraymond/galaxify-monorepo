@@ -157,11 +157,15 @@ func (h *SessionHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 			sharedhttp.WriteError(w, http.StatusUnauthorized, "AUTH_INVALID_TOKEN", "Invalid or expired refresh token")
 			return
 		}
+		if errors.Is(err, session.ErrRefreshUnavailable) {
+			sharedhttp.WriteError(w, http.StatusServiceUnavailable, "AUTH_SERVICE_UNAVAILABLE", "Refresh service temporarily unavailable")
+			return
+		}
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return
 	}
 
-	accessToken, err := auth.IssueAccessToken(h.tokenIssuer.privateKey, h.tokenIssuer.kid, sharedhttp.UUIDToString(rotation.UserID), rotation.Email)
+	accessToken, err := auth.IssueAccessToken(h.tokenIssuer.privateKey, h.tokenIssuer.kid, rotation.UserID.String(), rotation.Email)
 	if err != nil {
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return

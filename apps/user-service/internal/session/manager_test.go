@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"sync"
 	"testing"
@@ -158,8 +159,58 @@ func TestManagerRotateConcurrentReuseRevokesFamily(t *testing.T) {
 func TestManagerLookupFailureIsNotInvalid(t *testing.T) {
 	manager := NewManager(noOpStarter{}, func(pgx.Tx) Store { return failingStore{} })
 	_, err := manager.Rotate(context.Background(), "presented")
-	if err == nil || errors.Is(err, ErrInvalidRefreshToken) {
-		t.Fatalf("Rotate() error = %v, want retryable infrastructure error", err)
+	if !errors.Is(err, ErrRefreshUnavailable) {
+		t.Fatalf("Rotate() error = %v, want ErrRefreshUnavailable", err)
+	}
+}
+
+func TestManagerRotateReturnsDomainUserID(t *testing.T) {
+	userID := uuid.New()
+	store := &memorySessionStore{
+		row: database.RefreshToken{
+			ID:        1,
+			UserID:    pgtype.UUID{Bytes: userID, Valid: true},
+			Token:     "presented",
+			FamilyID:  pgtype.UUID{Bytes: uuid.New(), Valid: true},
+			ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		},
+		family: map[string]database.RefreshToken{"presented": {}},
+	}
+	manager := NewManager(noOpStarter{}, func(pgx.Tx) Store { return store })
+
+	rotation, err := manager.Rotate(context.Background(), "presented")
+	if err != nil {
+		t.Fatalf("Rotate() error = %v", err)
+	}
+	if rotation.UserID != userID {
+		t.Errorf("Rotation.UserID = %s, want %s", rotation.UserID, userID)
+	}
+	if rotation.Email != "user@example.com" {
+		t.Errorf("Rotation.Email = %q, want user@example.com", rotation.Email)
+	}
+	if rotation.RefreshToken == "" || rotation.RefreshToken == "presented" {
+		t.Errorf("Rotation.RefreshToken = %q, want a fresh replacement", rotation.RefreshToken)
+	}
+}
+
+func TestGenerateRefreshTokenIsOpaqueAndDistinct(t *testing.T) {
+	seen := make(map[string]struct{}, 2)
+	for range 2 {
+		token, err := GenerateRefreshToken()
+		if err != nil {
+			t.Fatalf("GenerateRefreshToken() error = %v", err)
+		}
+		raw, err := base64.RawURLEncoding.DecodeString(token)
+		if err != nil {
+			t.Fatalf("GenerateRefreshToken() = %q is not base64url: %v", token, err)
+		}
+		if len(raw) != 32 {
+			t.Errorf("GenerateRefreshToken() decodes to %d bytes, want 32", len(raw))
+		}
+		if _, dup := seen[token]; dup {
+			t.Fatalf("GenerateRefreshToken() returned a duplicate: %q", token)
+		}
+		seen[token] = struct{}{}
 	}
 }
 

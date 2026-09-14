@@ -3,14 +3,13 @@ package handler
 import (
 	"context"
 	"crypto/ed25519"
-	"crypto/rand"
-	"encoding/base64"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/database"
+	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/session"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
@@ -68,11 +67,10 @@ func (ti *TokenIssuer) IssueSession(ctx context.Context, userID pgtype.UUID, ema
 // generateRefreshTokenAndFamily creates a new opaque refresh token and the
 // family UUID that binds rotation/revocation together.
 func generateRefreshTokenAndFamily() (token string, familyID uuid.UUID, err error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
+	token, err = session.GenerateRefreshToken()
+	if err != nil {
 		return "", uuid.UUID{}, err
 	}
-	token = base64.RawURLEncoding.EncodeToString(b)
 
 	familyID = uuid.New()
 	return token, familyID, nil

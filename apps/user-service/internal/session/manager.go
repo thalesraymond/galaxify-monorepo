@@ -9,19 +9,23 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/database"
 )
 
-var ErrInvalidRefreshToken = errors.New("invalid refresh token")
+var (
+	ErrInvalidRefreshToken = errors.New("invalid refresh token")
+	ErrRefreshUnavailable  = errors.New("refresh service unavailable")
+)
 
 // Rotation is the replacement credential and identity required to mint a new
 // access token after a successful refresh-token rotation.
 type Rotation struct {
 	RefreshToken string
-	UserID       pgtype.UUID
+	UserID       uuid.UUID
 	Email        string
 }
 
@@ -55,14 +59,14 @@ func NewManager(txStarter TxStarter, newStore ManagerStoreFactory) Manager {
 }
 
 func (m *manager) Rotate(ctx context.Context, presentedToken string) (rotation Rotation, err error) {
-	newToken, err := generateRefreshToken()
+	newToken, err := GenerateRefreshToken()
 	if err != nil {
 		return Rotation{}, fmt.Errorf("generate replacement refresh token: %w", err)
 	}
 
 	tx, err := m.txStarter.Begin(ctx)
 	if err != nil {
-		return Rotation{}, fmt.Errorf("begin refresh rotation: %w", err)
+		return Rotation{}, refreshUnavailable("begin refresh rotation", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -72,15 +76,15 @@ func (m *manager) Rotate(ctx context.Context, presentedToken string) (rotation R
 		return Rotation{}, ErrInvalidRefreshToken
 	}
 	if err != nil {
-		return Rotation{}, fmt.Errorf("lock refresh token: %w", err)
+		return Rotation{}, refreshUnavailable("lock refresh token", err)
 	}
 
 	if row.Used {
 		if err := store.DeleteRefreshTokensByFamilyID(ctx, row.FamilyID); err != nil {
-			return Rotation{}, fmt.Errorf("revoke reused refresh-token family: %w", err)
+			return Rotation{}, refreshUnavailable("revoke reused refresh-token family", err)
 		}
 		if err := tx.Commit(ctx); err != nil {
-			return Rotation{}, fmt.Errorf("commit refresh-token family revocation: %w", err)
+			return Rotation{}, refreshUnavailable("commit refresh-token family revocation", err)
 		}
 		return Rotation{}, ErrInvalidRefreshToken
 	}
@@ -89,22 +93,22 @@ func (m *manager) Rotate(ctx context.Context, presentedToken string) (rotation R
 	}
 
 	if err := store.MarkRefreshTokenUsed(ctx, row.ID); err != nil {
-		return Rotation{}, fmt.Errorf("consume refresh token: %w", err)
+		return Rotation{}, refreshUnavailable("consume refresh token", err)
 	}
 	if _, err := store.InsertRefreshToken(ctx, database.InsertRefreshTokenParams{
 		UserID: row.UserID, Token: newToken, FamilyID: row.FamilyID,
 		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(7 * 24 * time.Hour), Valid: true},
 	}); err != nil {
-		return Rotation{}, fmt.Errorf("store replacement refresh token: %w", err)
+		return Rotation{}, refreshUnavailable("store replacement refresh token", err)
 	}
 	user, err := store.GetUserByID(ctx, row.UserID)
 	if err != nil {
-		return Rotation{}, fmt.Errorf("look up refresh-token user: %w", err)
+		return Rotation{}, refreshUnavailable("look up refresh-token user", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return Rotation{}, fmt.Errorf("commit refresh rotation: %w", err)
+		return Rotation{}, refreshUnavailable("commit refresh rotation", err)
 	}
-	return Rotation{RefreshToken: newToken, UserID: row.UserID, Email: user.Email}, nil
+	return Rotation{RefreshToken: newToken, UserID: uuidFromPg(row.UserID), Email: user.Email}, nil
 }
 
 // Logout revokes the presented token's family without revealing whether it was
@@ -133,10 +137,21 @@ func (m *manager) Logout(ctx context.Context, presentedToken string) error {
 	return nil
 }
 
-func generateRefreshToken() (string, error) {
+// GenerateRefreshToken creates an opaque 32-byte base64url refresh token.
+func GenerateRefreshToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+func refreshUnavailable(operation string, err error) error {
+	return fmt.Errorf("%w: %s: %w", ErrRefreshUnavailable, operation, err)
+}
+
+// uuidFromPg converts a database UUID into the domain's standard uuid.UUID at
+// the store boundary, keeping pgtype out of the Rotation type.
+func uuidFromPg(id pgtype.UUID) uuid.UUID {
+	return uuid.UUID(id.Bytes)
 }

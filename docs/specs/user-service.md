@@ -390,6 +390,7 @@ cascade-delete their per-user data on receipt.
 | `USER_USERNAME_TAKEN`      | 409         | Username already taken (case-insensitive) |
 | `USER_INVALID_CREDENTIALS` | 401         | Wrong email/password on login or delete   |
 | `AUTH_INVALID_TOKEN`       | 401         | Refresh token invalid, expired, or reused |
+| `AUTH_SERVICE_UNAVAILABLE` | 503         | Refresh-token database/infrastructure failure; retry with the same token |
 | `AUTH_MISSING_HEADER`      | 401         | No Authorization header (middleware)      |
 | `AUTH_MISSING_KID`         | 401         | No kid in JWT header (middleware)         |
 | `AUTH_UNKNOWN_KID`         | 401         | kid not found in JWKS (middleware)        |
