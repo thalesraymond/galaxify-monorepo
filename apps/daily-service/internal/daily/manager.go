@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -35,9 +36,11 @@ type Store interface {
 	DeleteDaily(ctx context.Context, arg database.DeleteDailyParams) (int64, error)
 	MarkDailyComplete(ctx context.Context, arg database.MarkDailyCompleteParams) (database.Daily, error)
 	GetDifficultyReward(ctx context.Context, difficulty string) (database.DifficultyReward, error)
+	ListDifficultyRewards(ctx context.Context) ([]database.DifficultyReward, error)
 	CreateDailyHistory(ctx context.Context, arg database.CreateDailyHistoryParams) error
-	ListDailyHistory(ctx context.Context, userID pgtype.UUID) ([]database.DailyHistory, error)
+	ListDailyHistory(ctx context.Context, arg database.ListDailyHistoryParams) ([]database.DailyHistory, error)
 	InsertOutbox(ctx context.Context, arg database.InsertOutboxParams) error
+	UserCacheExists(ctx context.Context, id pgtype.UUID) (bool, error)
 }
 
 // Manager defines the high-leverage domain interface for the Daily Task Lifecycle.
@@ -45,10 +48,11 @@ type Manager interface {
 	Create(ctx context.Context, input CreateInput) (Daily, error)
 	Get(ctx context.Context, userID, id uuid.UUID) (Daily, error)
 	List(ctx context.Context, userID uuid.UUID, filter ListFilter) ([]Daily, error)
-	ListHistory(ctx context.Context, userID uuid.UUID) ([]DailyHistory, error)
+	ListHistory(ctx context.Context, userID uuid.UUID, query HistoryQuery) (HistoryPage, error)
 	Update(ctx context.Context, userID, id uuid.UUID, input UpdateInput) (Daily, error)
 	Delete(ctx context.Context, userID, id uuid.UUID) error
-	Complete(ctx context.Context, userID, id uuid.UUID) (Daily, error)
+	Complete(ctx context.Context, userID, id uuid.UUID) (Completion, error)
+	Difficulties(ctx context.Context) ([]DifficultyMetadata, error)
 }
 
 // DailyManager implements Manager.
@@ -57,6 +61,7 @@ type DailyManager struct {
 	storeFactory func(tx pgx.Tx) Store
 	baseStore    Store
 	logger       *slog.Logger
+	cursorCodec  historyCursorCodec
 }
 
 // DailyManagerOption configures DailyManager.
@@ -68,6 +73,15 @@ func WithDailyManagerLogger(logger *slog.Logger) DailyManagerOption {
 		if logger != nil {
 			m.logger = logger
 		}
+	}
+}
+
+// WithHistoryCursorSigningKey overrides the HMAC key used to sign and verify
+// Daily History continuation tokens. Pass the deployment's HISTORY_CURSOR_SECRET;
+// an empty key keeps the development fallback.
+func WithHistoryCursorSigningKey(key []byte) DailyManagerOption {
+	return func(m *DailyManager) {
+		m.cursorCodec = newHistoryCursorCodec(key)
 	}
 }
 
@@ -83,6 +97,7 @@ func NewDailyManager(
 		storeFactory: storeFactory,
 		baseStore:    baseStore,
 		logger:       slog.Default(),
+		cursorCodec:  defaultHistoryCursorCodec,
 	}
 	for _, opt := range opts {
 		opt(m)
@@ -97,6 +112,12 @@ func (m *DailyManager) Create(ctx context.Context, input CreateInput) (Daily, er
 	}
 	if _, err := LoadTimeZone(input.TimeZone); err != nil {
 		return Daily{}, ErrInvalidTimeZone
+	}
+	if err := validateContent(input.Title, input.Description); err != nil {
+		return Daily{}, err
+	}
+	if err := ensurePlayerReady(ctx, m.baseStore, input.UserID); err != nil {
+		return Daily{}, err
 	}
 
 	pgUserID := pgtype.UUID{Bytes: input.UserID, Valid: true}
@@ -116,6 +137,9 @@ func (m *DailyManager) Create(ctx context.Context, input CreateInput) (Daily, er
 
 // Get retrieves a single daily owned by the user.
 func (m *DailyManager) Get(ctx context.Context, userID, id uuid.UUID) (Daily, error) {
+	if err := ensurePlayerReady(ctx, m.baseStore, userID); err != nil {
+		return Daily{}, err
+	}
 	row, err := m.baseStore.GetDaily(ctx, database.GetDailyParams{
 		ID:     pgtype.UUID{Bytes: id, Valid: true},
 		UserID: pgtype.UUID{Bytes: userID, Valid: true},
@@ -131,6 +155,9 @@ func (m *DailyManager) Get(ctx context.Context, userID, id uuid.UUID) (Daily, er
 
 // List returns all dailies for the user, optionally filtered by status and date, ordered by due_date and created_at.
 func (m *DailyManager) List(ctx context.Context, userID uuid.UUID, filter ListFilter) ([]Daily, error) {
+	if err := ensurePlayerReady(ctx, m.baseStore, userID); err != nil {
+		return nil, err
+	}
 	params := database.ListDailiesParams{
 		UserID: pgtype.UUID{Bytes: userID, Valid: true},
 	}
@@ -155,17 +182,72 @@ func (m *DailyManager) List(ctx context.Context, userID uuid.UUID, filter ListFi
 	return dailies, nil
 }
 
-// ListHistory returns all past daily history records for the user, ordered by due_date DESC.
-func (m *DailyManager) ListHistory(ctx context.Context, userID uuid.UUID) ([]DailyHistory, error) {
-	rows, err := m.baseStore.ListDailyHistory(ctx, pgtype.UUID{Bytes: userID, Valid: true})
+// DefaultHistoryPageSize is the page size used when a request does not specify
+// one. MaxHistoryPageSize caps an explicit page size so a single read can never
+// be unbounded.
+const (
+	DefaultHistoryPageSize = 20
+	MaxHistoryPageSize     = 100
+)
+
+// ListHistory returns one stable, descending page of the user's daily history.
+// Rows are ordered by (due_date, archived_at, id) desc; the tuple is unique
+// because id is, so NextCursor continues strictly after the last item and a
+// traversal neither duplicates nor omits entries. Concurrent newer inserts sort
+// before the cursor and therefore cannot shift the already-observed sequence.
+//
+// A missing users_cache row means the Player's Daily state is still provisioning,
+// so this read is retryable via ErrPlayerNotReady.
+func (m *DailyManager) ListHistory(ctx context.Context, userID uuid.UUID, query HistoryQuery) (HistoryPage, error) {
+	if err := ensurePlayerReady(ctx, m.baseStore, userID); err != nil {
+		return HistoryPage{}, err
+	}
+
+	pageSize := normalizeHistoryPageSize(query.Limit)
+
+	params := database.ListDailyHistoryParams{
+		UserID:   pgtype.UUID{Bytes: userID, Valid: true},
+		PageSize: int32(pageSize) + 1, // read one extra to detect a following page
+	}
+	if query.Cursor != "" {
+		cursor, err := m.cursorCodec.decode(query.Cursor)
+		if err != nil {
+			return HistoryPage{}, err
+		}
+		params.CursorDueDate = pgtype.Timestamptz{Time: cursor.DueDate, Valid: true}
+		params.CursorArchivedAt = pgtype.Timestamptz{Time: cursor.ArchivedAt, Valid: true}
+		params.CursorID = pgtype.UUID{Bytes: cursor.ID, Valid: true}
+	}
+
+	rows, err := m.baseStore.ListDailyHistory(ctx, params)
 	if err != nil {
-		return nil, fmt.Errorf("list daily history: %w", err)
+		return HistoryPage{}, fmt.Errorf("list daily history: %w", err)
 	}
-	items := make([]DailyHistory, len(rows))
-	for i, r := range rows {
-		items[i] = toDomainDailyHistory(r)
+
+	page := HistoryPage{Items: make([]DailyHistory, 0, pageSize)}
+	if len(rows) > pageSize {
+		rows = rows[:pageSize]
+		last := rows[len(rows)-1]
+		page.NextCursor = m.cursorCodec.encode(HistoryCursor{
+			DueDate:    last.DueDate.Time,
+			ArchivedAt: last.ArchivedAt.Time,
+			ID:         last.ID.Bytes,
+		})
 	}
-	return items, nil
+	for _, r := range rows {
+		page.Items = append(page.Items, toDomainDailyHistory(r))
+	}
+	return page, nil
+}
+
+func normalizeHistoryPageSize(limit int) int {
+	if limit <= 0 {
+		return DefaultHistoryPageSize
+	}
+	if limit > MaxHistoryPageSize {
+		return MaxHistoryPageSize
+	}
+	return limit
 }
 
 // Update mutates fields of a daily task atomically. Permitted even if the task is COMPLETED today.
@@ -176,6 +258,16 @@ func (m *DailyManager) Update(ctx context.Context, userID, id uuid.UUID, input U
 	if input.TimeZone != nil {
 		if _, err := LoadTimeZone(*input.TimeZone); err != nil {
 			return Daily{}, ErrInvalidTimeZone
+		}
+	}
+	if input.Title != nil {
+		if err := validateContent(*input.Title, ""); err != nil {
+			return Daily{}, err
+		}
+	}
+	if input.Description != nil {
+		if err := validateContent("", *input.Description); err != nil {
+			return Daily{}, err
 		}
 	}
 
@@ -256,14 +348,17 @@ func (m *DailyManager) Delete(ctx context.Context, userID, id uuid.UUID) error {
 
 // Complete atomically marks a pending daily as COMPLETED, inserts into daily_history,
 // fetches difficulty reward materials, and publishes the daily.completed event.
-func (m *DailyManager) Complete(ctx context.Context, userID, id uuid.UUID) (Daily, error) {
+func (m *DailyManager) Complete(ctx context.Context, userID, id uuid.UUID) (Completion, error) {
 	tx, err := m.pool.Begin(ctx)
 	if err != nil {
-		return Daily{}, fmt.Errorf("begin tx: %w", err)
+		return Completion{}, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
 	s := m.storeFactory(tx)
+	if err := ensurePlayerReady(ctx, s, userID); err != nil {
+		return Completion{}, err
+	}
 	pgUserID := pgtype.UUID{Bytes: userID, Valid: true}
 	pgDailyID := pgtype.UUID{Bytes: id, Valid: true}
 
@@ -274,10 +369,10 @@ func (m *DailyManager) Complete(ctx context.Context, userID, id uuid.UUID) (Dail
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			if inspectErr := m.inspectStatusMismatch(ctx, s, userID, id); inspectErr != nil {
-				return Daily{}, inspectErr
+				return Completion{}, inspectErr
 			}
 		}
-		return Daily{}, fmt.Errorf("mark daily complete: %w", err)
+		return Completion{}, fmt.Errorf("mark daily complete: %w", err)
 	}
 
 	if err := s.CreateDailyHistory(ctx, database.CreateDailyHistoryParams{
@@ -292,12 +387,12 @@ func (m *DailyManager) Complete(ctx context.Context, userID, id uuid.UUID) (Dail
 		CompletedAt: completedRow.UpdatedAt,
 		MissedAt:    pgtype.Timestamptz{Valid: false},
 	}); err != nil {
-		return Daily{}, fmt.Errorf("create daily history: %w", err)
+		return Completion{}, fmt.Errorf("create daily history: %w", err)
 	}
 
 	reward, err := s.GetDifficultyReward(ctx, completedRow.Difficulty)
 	if err != nil {
-		return Daily{}, fmt.Errorf("get difficulty reward: %w", err)
+		return Completion{}, fmt.Errorf("get difficulty reward: %w", err)
 	}
 
 	payload, err := json.Marshal(events.DailyCompleted{
@@ -308,7 +403,7 @@ func (m *DailyManager) Complete(ctx context.Context, userID, id uuid.UUID) (Dail
 		RewardMaterials: int(reward.RewardMaterials),
 	})
 	if err != nil {
-		return Daily{}, fmt.Errorf("marshal daily.completed event: %w", err)
+		return Completion{}, fmt.Errorf("marshal daily.completed event: %w", err)
 	}
 	requestID := sharedhttp.RequestIDFromContext(ctx)
 	if err := s.InsertOutbox(ctx, database.InsertOutboxParams{
@@ -317,14 +412,62 @@ func (m *DailyManager) Complete(ctx context.Context, userID, id uuid.UUID) (Dail
 		Payload:   payload,
 		RequestID: pgtype.Text{String: requestID, Valid: requestID != ""},
 	}); err != nil {
-		return Daily{}, fmt.Errorf("insert daily.completed outbox event: %w", err)
+		return Completion{}, fmt.Errorf("insert daily.completed outbox event: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return Daily{}, fmt.Errorf("commit tx: %w", err)
+		return Completion{}, fmt.Errorf("commit tx: %w", err)
 	}
 
-	return toDomainDaily(completedRow), nil
+	return Completion{
+		Daily:            toDomainDaily(completedRow),
+		AwardedMaterials: int(reward.RewardMaterials),
+	}, nil
+}
+
+// Difficulties returns the backend-owned reward and damage metadata for every
+// supported difficulty tier in canonical order.
+func (m *DailyManager) Difficulties(ctx context.Context) ([]DifficultyMetadata, error) {
+	rows, err := m.baseStore.ListDifficultyRewards(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list difficulty rewards: %w", err)
+	}
+	items := make([]DifficultyMetadata, len(rows))
+	for i, row := range rows {
+		items[i] = DifficultyMetadata{
+			Difficulty:      Difficulty(row.Difficulty),
+			RewardMaterials: int(row.RewardMaterials),
+			DamageAmount:    int(row.DamageAmount),
+		}
+	}
+	return items, nil
+}
+
+// ensurePlayerReady returns ErrPlayerNotReady until the user.created consumer
+// has populated users_cache for the Player, so an unprovisioned Player is
+// distinguishable from absence, validation, and internal failure.
+func ensurePlayerReady(ctx context.Context, store Store, userID uuid.UUID) error {
+	exists, err := store.UserCacheExists(ctx, pgtype.UUID{Bytes: userID, Valid: true})
+	if err != nil {
+		return fmt.Errorf("check player provisioning: %w", err)
+	}
+	if !exists {
+		return ErrPlayerNotReady
+	}
+	return nil
+}
+
+// validateContent enforces the Daily title and description length limits. An
+// empty value is within limits, so update callers can validate one field at a
+// time by passing "" for the other.
+func validateContent(title, description string) error {
+	if utf8.RuneCountInString(title) > MaxTitleLength {
+		return ErrTitleTooLong
+	}
+	if utf8.RuneCountInString(description) > MaxDescriptionLength {
+		return ErrDescriptionTooLong
+	}
+	return nil
 }
 
 func (m *DailyManager) inspectStatusMismatch(ctx context.Context, s Store, userID, id uuid.UUID) error {

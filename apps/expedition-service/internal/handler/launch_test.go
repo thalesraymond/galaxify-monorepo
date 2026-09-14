@@ -59,6 +59,7 @@ func TestExpeditionLaunchHandlerLaunch(t *testing.T) {
 		{name: "maps insufficient materials", body: `{"materials_invested":10}`, managerErr: expedition.ErrInsufficientMaterials, wantStatus: http.StatusUnprocessableEntity, wantErrorCode: expeditionInsufficientMaterialsCode, wantManager: true},
 		{name: "maps active expedition", body: `{"materials_invested":10}`, managerErr: expedition.ErrAlreadyActive, wantStatus: http.StatusConflict, wantErrorCode: expeditionAlreadyActiveCode, wantManager: true},
 		{name: "maps cooldown", body: `{"materials_invested":10}`, managerErr: expedition.ErrCooldown, wantStatus: http.StatusUnprocessableEntity, wantErrorCode: expeditionCooldownCode, wantManager: true},
+		{name: "maps ship state not ready", body: `{"materials_invested":10}`, managerErr: expedition.ErrShipStateNotReady, wantStatus: http.StatusServiceUnavailable, wantErrorCode: expeditionShipStateNotReadyCode, wantManager: true},
 		{name: "maps internal error", body: `{"materials_invested":10}`, managerErr: errors.New("database unavailable"), wantStatus: http.StatusInternalServerError, wantErrorCode: "INTERNAL_ERROR", wantManager: true},
 		{name: "requires authentication", body: `{"materials_invested":10}`, noAuthHeader: true, wantStatus: http.StatusUnauthorized, wantErrorCode: "AUTH_MISSING_HEADER"},
 	}

@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -14,15 +17,20 @@ import (
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
+// dailyPlayerNotReadyCode is the service-specific retryable not-ready code the
+// frontend maps to a typed provisioning outcome while users_cache is populated.
+const dailyPlayerNotReadyCode = "DAILY_PLAYER_NOT_READY"
+
 // dailyManager is the domain interface used by DailyHandler.
 type dailyManager interface {
 	Create(ctx context.Context, input daily.CreateInput) (daily.Daily, error)
 	Get(ctx context.Context, userID, id uuid.UUID) (daily.Daily, error)
 	List(ctx context.Context, userID uuid.UUID, filter daily.ListFilter) ([]daily.Daily, error)
-	ListHistory(ctx context.Context, userID uuid.UUID) ([]daily.DailyHistory, error)
+	ListHistory(ctx context.Context, userID uuid.UUID, query daily.HistoryQuery) (daily.HistoryPage, error)
 	Update(ctx context.Context, userID, id uuid.UUID, input daily.UpdateInput) (daily.Daily, error)
 	Delete(ctx context.Context, userID, id uuid.UUID) error
-	Complete(ctx context.Context, userID, id uuid.UUID) (daily.Daily, error)
+	Complete(ctx context.Context, userID, id uuid.UUID) (daily.Completion, error)
+	Difficulties(ctx context.Context) ([]daily.DifficultyMetadata, error)
 }
 
 // DailyHandler handles auth-protected CRUD endpoints for /dailies.
@@ -46,6 +54,7 @@ func (h *DailyHandler) RegisterDailyRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /dailies", h.authHandshake.RequireAuth(h.CreateDaily))
 	mux.Handle("GET /dailies", h.authHandshake.RequireAuth(h.ListDailies))
 	mux.Handle("GET /dailies/history", h.authHandshake.RequireAuth(h.ListDailyHistory))
+	mux.Handle("GET /dailies/difficulties", h.authHandshake.RequireAuth(h.ListDifficulties))
 	mux.Handle("GET /dailies/{id}", h.authHandshake.RequireAuth(h.GetDaily))
 	mux.Handle("PATCH /dailies/{id}", h.authHandshake.RequireAuth(h.UpdateDaily))
 	mux.Handle("DELETE /dailies/{id}", h.authHandshake.RequireAuth(h.DeleteDaily))
@@ -84,6 +93,29 @@ type dailyHistoryResponse struct {
 	CompletedAt  *string `json:"completed_at"`
 	MissedAt     *string `json:"missed_at"`
 	ArchivedAt   string  `json:"archived_at"`
+}
+
+// dailyHistoryPageResponse is the on-the-wire shape for one history page.
+// next_cursor is null exactly when items is the final page.
+type dailyHistoryPageResponse struct {
+	Items      []dailyHistoryResponse `json:"items"`
+	NextCursor *string                `json:"next_cursor"`
+}
+
+// dailyDifficultyResponse is the on-the-wire shape for one difficulty's
+// backend-owned reward and missed-damage metadata.
+type dailyDifficultyResponse struct {
+	Difficulty      string `json:"difficulty"`
+	RewardMaterials int    `json:"reward_materials"`
+	DamageAmount    int    `json:"damage_amount"`
+}
+
+// dailyCompletionResponse is a completed Daily plus its typed awarded-material
+// effect. It embeds dailyResponse so the completion payload is a superset of
+// the Daily resource and remains reconcilable by the frontend.
+type dailyCompletionResponse struct {
+	dailyResponse
+	AwardedMaterials int `json:"awarded_materials"`
 }
 
 type createDailyRequest struct {
@@ -179,12 +211,24 @@ func (h *DailyHandler) CreateDaily(w http.ResponseWriter, r *http.Request, userI
 		TimeZone:    req.TimeZone,
 	})
 	if err != nil {
+		if errors.Is(err, daily.ErrPlayerNotReady) {
+			writePlayerNotReady(w)
+			return
+		}
 		if errors.Is(err, daily.ErrInvalidDifficulty) {
 			sharedhttp.WriteValidationError(w, map[string]string{"difficulty": "must be one of: EASY, MEDIUM, HARD"})
 			return
 		}
 		if errors.Is(err, daily.ErrInvalidTimeZone) {
 			sharedhttp.WriteValidationError(w, map[string]string{"time_zone": "must be a valid IANA time zone"})
+			return
+		}
+		if errors.Is(err, daily.ErrTitleTooLong) {
+			sharedhttp.WriteValidationError(w, map[string]string{"title": maxLengthError(daily.MaxTitleLength)})
+			return
+		}
+		if errors.Is(err, daily.ErrDescriptionTooLong) {
+			sharedhttp.WriteValidationError(w, map[string]string{"description": maxLengthError(daily.MaxDescriptionLength)})
 			return
 		}
 		sharedhttp.WriteInternal(w, r, err, h.logger)
@@ -238,6 +282,10 @@ func (h *DailyHandler) ListDailies(w http.ResponseWriter, r *http.Request, userI
 
 	items, err := h.manager.List(r.Context(), userUUID, filter)
 	if err != nil {
+		if errors.Is(err, daily.ErrPlayerNotReady) {
+			writePlayerNotReady(w)
+			return
+		}
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return
 	}
@@ -250,22 +298,69 @@ func (h *DailyHandler) ListDailies(w http.ResponseWriter, r *http.Request, userI
 	sharedhttp.WriteJSON(w, http.StatusOK, resp)
 }
 
-// ListDailyHistory returns all past daily task executions from daily_history ordered by due_date DESC.
+// ListDailyHistory returns one stable descending page of the user's archived
+// daily outcomes. A request may carry a bounded `limit` and the opaque `cursor`
+// from a previous page's `next_cursor`.
 func (h *DailyHandler) ListDailyHistory(w http.ResponseWriter, r *http.Request, userID string) {
 	userUUID, ok := h.parseUserID(w, userID)
 	if !ok {
 		return
 	}
 
-	items, err := h.manager.ListHistory(r.Context(), userUUID)
+	query := daily.HistoryQuery{Cursor: r.URL.Query().Get("cursor")}
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		limit, err := strconv.ParseInt(raw, 10, 32)
+		if err != nil || limit < 1 {
+			sharedhttp.WriteValidationError(w, map[string]string{"limit": "must be a positive integer"})
+			return
+		}
+		if limit > int64(daily.MaxHistoryPageSize) {
+			sharedhttp.WriteValidationError(w, map[string]string{
+				"limit": fmt.Sprintf("must be at most %d", daily.MaxHistoryPageSize),
+			})
+			return
+		}
+		query.Limit = int(limit)
+	}
+
+	page, err := h.manager.ListHistory(r.Context(), userUUID, query)
+	if err != nil {
+		if errors.Is(err, daily.ErrInvalidHistoryCursor) {
+			sharedhttp.WriteValidationError(w, map[string]string{"cursor": "is invalid or expired"})
+			return
+		}
+		if errors.Is(err, daily.ErrPlayerNotReady) {
+			writePlayerNotReady(w)
+			return
+		}
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+		return
+	}
+
+	resp := dailyHistoryPageResponse{Items: make([]dailyHistoryResponse, 0, len(page.Items))}
+	for _, item := range page.Items {
+		resp.Items = append(resp.Items, dailyHistoryToResponse(item))
+	}
+	if page.NextCursor != "" {
+		cursor := page.NextCursor
+		resp.NextCursor = &cursor
+	}
+
+	sharedhttp.WriteJSON(w, http.StatusOK, resp)
+}
+
+// ListDifficulties returns the backend-owned reward and missed-damage metadata
+// for every difficulty tier so the frontend never duplicates those rules.
+func (h *DailyHandler) ListDifficulties(w http.ResponseWriter, r *http.Request, _ string) {
+	items, err := h.manager.Difficulties(r.Context())
 	if err != nil {
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return
 	}
 
-	resp := make([]dailyHistoryResponse, len(items))
+	resp := make([]dailyDifficultyResponse, len(items))
 	for i, item := range items {
-		resp[i] = dailyHistoryToResponse(item)
+		resp[i] = dailyDifficultyToResponse(item)
 	}
 
 	sharedhttp.WriteJSON(w, http.StatusOK, resp)
@@ -285,6 +380,10 @@ func (h *DailyHandler) GetDaily(w http.ResponseWriter, r *http.Request, userID s
 
 	item, err := h.manager.Get(r.Context(), userUUID, dailyUUID)
 	if err != nil {
+		if errors.Is(err, daily.ErrPlayerNotReady) {
+			writePlayerNotReady(w)
+			return
+		}
 		if errors.Is(err, daily.ErrDailyNotFound) {
 			sharedhttp.WriteError(w, http.StatusNotFound, "DAILY_NOT_FOUND", "Daily not found")
 			return
@@ -352,6 +451,14 @@ func (h *DailyHandler) UpdateDaily(w http.ResponseWriter, r *http.Request, userI
 			sharedhttp.WriteValidationError(w, map[string]string{"time_zone": "must be a valid IANA time zone"})
 			return
 		}
+		if errors.Is(err, daily.ErrTitleTooLong) {
+			sharedhttp.WriteValidationError(w, map[string]string{"title": maxLengthError(daily.MaxTitleLength)})
+			return
+		}
+		if errors.Is(err, daily.ErrDescriptionTooLong) {
+			sharedhttp.WriteValidationError(w, map[string]string{"description": maxLengthError(daily.MaxDescriptionLength)})
+			return
+		}
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return
 	}
@@ -398,6 +505,10 @@ func (h *DailyHandler) CompleteDaily(w http.ResponseWriter, r *http.Request, use
 
 	item, err := h.manager.Complete(r.Context(), userUUID, dailyUUID)
 	if err != nil {
+		if errors.Is(err, daily.ErrPlayerNotReady) {
+			writePlayerNotReady(w)
+			return
+		}
 		if errors.Is(err, daily.ErrDailyNotFound) {
 			sharedhttp.WriteError(w, http.StatusNotFound, "DAILY_NOT_FOUND", "Daily not found")
 			return
@@ -410,13 +521,18 @@ func (h *DailyHandler) CompleteDaily(w http.ResponseWriter, r *http.Request, use
 		return
 	}
 
-	sharedhttp.WriteJSON(w, http.StatusOK, dailyToResponse(item))
+	sharedhttp.WriteJSON(w, http.StatusOK, dailyCompletionToResponse(item))
 }
 
 func validateCreateDailyRequest(req createDailyRequest) (map[string]string, time.Time) {
 	fieldErrors := make(map[string]string)
 	if req.Title == "" {
 		fieldErrors["title"] = "title is required"
+	} else if utf8.RuneCountInString(req.Title) > daily.MaxTitleLength {
+		fieldErrors["title"] = maxLengthError(daily.MaxTitleLength)
+	}
+	if utf8.RuneCountInString(req.Description) > daily.MaxDescriptionLength {
+		fieldErrors["description"] = maxLengthError(daily.MaxDescriptionLength)
 	}
 	if !daily.IsValidDifficulty(daily.Difficulty(req.Difficulty)) {
 		fieldErrors["difficulty"] = "must be one of: EASY, MEDIUM, HARD"
@@ -450,6 +566,12 @@ func validateCreateDailyRequest(req createDailyRequest) (map[string]string, time
 
 func validateUpdateDailyRequest(req updateDailyRequest) (map[string]string, *time.Time) {
 	fieldErrors := make(map[string]string)
+	if req.Title != "" && utf8.RuneCountInString(req.Title) > daily.MaxTitleLength {
+		fieldErrors["title"] = maxLengthError(daily.MaxTitleLength)
+	}
+	if req.Description != "" && utf8.RuneCountInString(req.Description) > daily.MaxDescriptionLength {
+		fieldErrors["description"] = maxLengthError(daily.MaxDescriptionLength)
+	}
 	if req.Difficulty != "" {
 		if !daily.IsValidDifficulty(daily.Difficulty(req.Difficulty)) {
 			fieldErrors["difficulty"] = "must be one of: EASY, MEDIUM, HARD"
@@ -542,6 +664,33 @@ func parseLegacyDateRange(date, dueDate string) (*time.Time, *time.Time, string)
 	from := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.UTC)
 	to := from.AddDate(0, 0, 1)
 	return &from, &to, ""
+}
+
+// maxLengthError renders the shared "at most N characters" field message from
+// the domain limit so the API and domain cannot drift.
+func maxLengthError(limit int) string {
+	return fmt.Sprintf("must be at most %d characters", limit)
+}
+
+// writePlayerNotReady reports the retryable provisioning outcome (503) that the
+// frontend maps to a typed not-ready state.
+func writePlayerNotReady(w http.ResponseWriter) {
+	sharedhttp.WriteError(w, http.StatusServiceUnavailable, dailyPlayerNotReadyCode, "Daily player state is not ready")
+}
+
+func dailyDifficultyToResponse(item daily.DifficultyMetadata) dailyDifficultyResponse {
+	return dailyDifficultyResponse{
+		Difficulty:      string(item.Difficulty),
+		RewardMaterials: item.RewardMaterials,
+		DamageAmount:    item.DamageAmount,
+	}
+}
+
+func dailyCompletionToResponse(item daily.Completion) dailyCompletionResponse {
+	return dailyCompletionResponse{
+		dailyResponse:    dailyToResponse(item.Daily),
+		AwardedMaterials: item.AwardedMaterials,
+	}
 }
 
 func dailyToResponse(item daily.Daily) dailyResponse {

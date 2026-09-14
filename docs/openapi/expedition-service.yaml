@@ -136,16 +136,12 @@ paths:
       operationId: expeditionQuote
       summary: Return a live launch quote for a proposed investment.
       description: |
-        **Planned (not implemented).** Normalizes an investment, projects the
-        balance, computes success chance, reports eligibility/blocker and
-        cooldown, and estimates the resolve window.
+        Normalizes an investment, projects the balance, computes success chance,
+        reports eligibility/blocker and cooldown, and estimates the resolve
+        window. The quote is informational: launch independently revalidates
+        the identical authoritative rules.
       tags: [expeditions]
-      x-implementation-status: planned
-      x-planned-changes: >-
-        Add authenticated GET /expeditions/quote?materials_invested=<n> with
-        normalized investment, projected balance, chance, eligibility/blocker,
-        cooldown timing, and estimated resolve window.
-      x-ticket: "#152"
+      x-implementation-status: implemented
       security:
         - bearerAuth: []
       parameters:
@@ -218,11 +214,6 @@ paths:
       summary: Invest materials and launch an Expedition.
       tags: [expeditions]
       x-implementation-status: implemented
-      x-planned-changes: >-
-        Replace arbitrary reward_summary JSON with a typed material reward for
-        Success and Failure, and return a service-specific retryable not-ready
-        error while Ship state provisions.
-      x-ticket: "#152"
       security:
         - bearerAuth: []
       parameters:
@@ -328,7 +319,10 @@ components:
 
     ExpeditionResult:
       type: object
-      required: [id, expedition_id, outcome, reward_summary, created_at]
+      description: >-
+        The typed result recorded for Success and Failure, carrying a material
+        reward for both outcomes.
+      required: [id, expedition_id, outcome, material_reward, created_at]
       additionalProperties: false
       properties:
         id:
@@ -339,10 +333,8 @@ components:
           format: uuid
         outcome:
           $ref: "#/components/schemas/Outcome"
-        reward_summary:
-          description: >-
-            Arbitrary JSON today. Planned: replaced by a typed material reward.
-          x-implementation-status: planned
+        material_reward:
+          $ref: "#/components/schemas/MaterialReward"
         created_at:
           type: string
           format: date-time
@@ -386,8 +378,7 @@ components:
 
     MaterialReward:
       type: object
-      description: Planned typed material reward.
-      x-implementation-status: planned
+      description: The typed material reward recorded with an Expedition result.
       required: [materials]
       additionalProperties: false
       properties:
@@ -395,33 +386,9 @@ components:
           type: integer
           format: int32
 
-    ExpeditionResultTyped:
-      type: object
-      description: >-
-        Planned typed result for Success and Failure, replacing the arbitrary
-        reward_summary JSON.
-      x-implementation-status: planned
-      required: [id, expedition_id, outcome, material_reward, created_at]
-      additionalProperties: false
-      properties:
-        id:
-          type: string
-          format: uuid
-        expedition_id:
-          type: string
-          format: uuid
-        outcome:
-          $ref: "#/components/schemas/Outcome"
-        material_reward:
-          $ref: "#/components/schemas/MaterialReward"
-        created_at:
-          type: string
-          format: date-time
-
     ExpeditionQuote:
       type: object
-      description: Planned live launch quote.
-      x-implementation-status: planned
+      description: Live launch quote sharing launch's authoritative calculation and eligibility rules.
       required:
         [materials_invested, normalized_investment, projected_balance, success_chance, eligible, estimated_resolve_at]
       additionalProperties: false
@@ -434,6 +401,7 @@ components:
           format: double
           minimum: 0
           maximum: 1
+          description: The investment factor materials_invested / (materials_invested + 10).
         projected_balance:
           type: integer
           format: int32
@@ -459,6 +427,7 @@ components:
         estimated_resolve_window_seconds:
           type: integer
           format: int64
+          description: Full width of the resolve jitter window around the estimate.
 
     ErrorResponse:
       type: object
@@ -551,9 +520,8 @@ components:
 
     ShipStateNotReady:
       description: >-
-        **Planned.** Service-specific retryable not-ready error while Ship state
-        provisions. Code EXPEDITION_SHIP_STATE_NOT_READY.
-      x-implementation-status: planned
+        Service-specific retryable not-ready error while Ship state provisions.
+        Code EXPEDITION_SHIP_STATE_NOT_READY.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/XRequestId"

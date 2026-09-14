@@ -30,10 +30,10 @@ function isBareOrigin(value: string): boolean {
 }
 
 const proxyEnvironmentSchema = z.object({
-  USER_SERVICE_URL: z.string().default('http://localhost:8081').pipe(serviceOrigin),
-  DAILY_SERVICE_URL: z.string().default('http://localhost:8082').pipe(serviceOrigin),
-  SHIP_SERVICE_URL: z.string().default('http://localhost:8083').pipe(serviceOrigin),
-  EXPEDITION_SERVICE_URL: z.string().default('http://localhost:8084').pipe(serviceOrigin),
+  USER_SERVICE_PROXY_TARGET: z.string().default('http://localhost:8081').pipe(serviceOrigin),
+  DAILY_SERVICE_PROXY_TARGET: z.string().default('http://localhost:8082').pipe(serviceOrigin),
+  SHIP_SERVICE_PROXY_TARGET: z.string().default('http://localhost:8083').pipe(serviceOrigin),
+  EXPEDITION_SERVICE_PROXY_TARGET: z.string().default('http://localhost:8084').pipe(serviceOrigin),
 })
 
 export type ProxyEnvironment = z.infer<typeof proxyEnvironmentSchema>

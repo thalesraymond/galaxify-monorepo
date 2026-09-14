@@ -36,6 +36,9 @@ bin/
 .openapi-generated/
 .gocache/
 
+# Local real-stack supervisor runtime state (PID file for `make dev-down`).
+.dev/
+
 # Node / frontend build and test output
 node_modules/
 dist/

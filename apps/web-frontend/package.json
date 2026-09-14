@@ -20,14 +20,16 @@
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:orchestration": "node --test ../../scripts/dev.test.mjs",
     "test:e2e": "playwright test e2e/smoke.spec.ts",
+    "test:e2e:mock": "playwright test e2e/mock-smoke.spec.ts",
     "test:visual": "playwright test e2e/visual.spec.ts",
     "test:a11y": "playwright test e2e/a11y.spec.ts",
     "perf": "node scripts/run-lhci.mjs",
     "api:generate": "openapi-ts -f openapi-ts.config.ts",
     "api:check": "npm run api:generate && git diff --exit-code -- src/api/generated",
     "bundle:check": "node scripts/check-production-bundle.mjs",
-    "verify": "npm run format:check && npm run typecheck && npm run lint && npm run test:coverage && npm run api:check && npm run build && npm run bundle:check && npm run test:e2e && npm run test:a11y && npm run test:visual && npm run perf"
+    "verify": "npm run format:check && npm run typecheck && npm run lint && npm run test:coverage && npm run test:orchestration && npm run api:check && npm run build && npm run bundle:check && npm run test:e2e && npm run test:e2e:mock && npm run test:a11y && npm run test:visual && npm run perf"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.102.8",
@@ -62,10 +64,16 @@
     "eslint-plugin-testing-library": "^7.16.2",
     "globals": "^17.12.0",
     "jsdom": "^29.0.0",
+    "msw": "^2.15.0",
     "prettier": "^3.9.6",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.70.0",
     "vite": "^7.3.6",
     "vitest": "^5.0.0"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
   }
 }

@@ -54,10 +54,6 @@ paths:
       summary: Create a new recurring Daily.
       tags: [dailies]
       x-implementation-status: implemented
-      x-planned-changes: >-
-        Enforce title <= 120 and description <= 1000, and return a typed
-        awarded-material effect from completion. See docs/specs/web-frontend.md
-        §7.1 (Daily Service).
       x-ticket: "#148, #151"
       security:
         - bearerAuth: []
@@ -168,13 +164,14 @@ paths:
       operationId: dailyHistory
       summary: List archived Daily outcomes, newest first.
       description: |
-        Today this returns the full unbounded array. The planned response is a
-        stable descending cursor page `{items, next_cursor}`.
+        Returns one stable descending cursor page ordered by occurrence
+        (`due_date`), then archive time, then record id as the unique
+        tie-breaker. `next_cursor` is `null` exactly on the final page; pass it
+        back as `cursor` to continue without duplicates or omissions. An
+        invalid or tampered cursor returns `422 VALIDATION_FAILED` with a
+        `cursor` field error.
       tags: [dailies]
       x-implementation-status: implemented
-      x-planned-changes: >-
-        Replace the unbounded array with stable descending cursor pagination
-        returning items plus an optional next cursor.
       x-ticket: "#150"
       security:
         - bearerAuth: []
@@ -183,33 +180,32 @@ paths:
         - name: cursor
           in: query
           required: false
-          description: Planned opaque cursor returned as `next_cursor`.
-          x-implementation-status: planned
+          description: Opaque continuation token from a previous page's `next_cursor`.
           schema:
             type: string
         - name: limit
           in: query
           required: false
-          description: Planned page size for cursor pagination.
-          x-implementation-status: planned
+          description: Page size. Defaults to 20; values above 100 are rejected.
           schema:
             type: integer
             format: int32
             minimum: 1
+            maximum: 100
       responses:
         "200":
-          description: Archived Daily outcomes.
+          description: One stable descending page of archived Daily outcomes.
           headers:
             X-Request-Id:
               $ref: "#/components/headers/XRequestId"
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/DailyHistory"
+                $ref: "#/components/schemas/DailyHistoryPage"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
         "500":
           $ref: "#/components/responses/InternalError"
         "503":
@@ -222,12 +218,12 @@ paths:
       operationId: dailyDifficulties
       summary: Return typed reward and damage metadata for each difficulty.
       description: |
-        **Planned (not implemented).** Backend-owned difficulty metadata so the
-        frontend never duplicates reward/damage rules.
+        Backend-owned difficulty metadata so the frontend never duplicates
+        reward/damage rules. Tiers are returned in canonical EASY, MEDIUM, HARD
+        order. The same `difficulty_rewards` rows back the awarded-material
+        effect of completion.
       tags: [dailies]
-      x-implementation-status: planned
-      x-planned-changes: >-
-        Add GET /dailies/difficulties with typed reward and damage metadata.
+      x-implementation-status: implemented
       x-ticket: "#151"
       security:
         - bearerAuth: []
@@ -361,11 +357,13 @@ paths:
     post:
       operationId: dailyComplete
       summary: Mark a Daily COMPLETED for today.
+      description: >-
+        Marks the Daily COMPLETED, records its history occurrence, and returns
+        the completed Daily with the typed awarded-material effect. Repeating a
+        completion for an already-completed Daily returns 409
+        DAILY_ALREADY_COMPLETED and awards no further materials.
       tags: [dailies]
       x-implementation-status: implemented
-      x-planned-changes: >-
-        Return a typed awarded-material effect from completion, plus a
-        service-specific retryable not-ready error while player state provisions.
       x-ticket: "#151"
       security:
         - bearerAuth: []
@@ -374,14 +372,14 @@ paths:
         - $ref: "#/components/parameters/DailyId"
       responses:
         "200":
-          description: The completed Daily.
+          description: The completed Daily with its awarded-material effect.
           headers:
             X-Request-Id:
               $ref: "#/components/headers/XRequestId"
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Daily"
+                $ref: "#/components/schemas/DailyCompletion"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -475,8 +473,10 @@ components:
         title:
           type: string
           minLength: 1
+          maxLength: 120
         description:
           type: string
+          maxLength: 1000
         difficulty:
           $ref: "#/components/schemas/Difficulty"
         due_date:
@@ -509,8 +509,10 @@ components:
       properties:
         title:
           type: string
+          maxLength: 120
         description:
           type: string
+          maxLength: 1000
         difficulty:
           $ref: "#/components/schemas/Difficulty"
         due_date:
@@ -621,9 +623,8 @@ components:
 
     DailyHistoryPage:
       type: object
-      description: Planned cursor page shaping Daily history.
-      x-implementation-status: planned
-      required: [items]
+      description: One stable descending page of Daily history.
+      required: [items, next_cursor]
       additionalProperties: false
       properties:
         items:
@@ -632,12 +633,11 @@ components:
             $ref: "#/components/schemas/DailyHistory"
         next_cursor:
           type: [string, "null"]
-          description: Opaque cursor for the next page; null at the end.
+          description: Opaque cursor for the next page; null on the final page.
 
     DailyDifficulty:
       type: object
-      description: Planned typed difficulty metadata.
-      x-implementation-status: planned
+      description: Backend-owned reward and missed-hull-damage metadata for one tier.
       required: [difficulty, reward_materials, damage_amount]
       additionalProperties: false
       properties:
@@ -652,7 +652,9 @@ components:
 
     MaterialEffect:
       type: object
-      description: Planned typed awarded-material effect.
+      description: >-
+        Planned reusable typed effect. Reserved for Daily History's typed
+        effects; completion reports its award as `awarded_materials`.
       x-implementation-status: planned
       required: [kind, materials]
       additionalProperties: false
@@ -666,10 +668,11 @@ components:
 
     DailyCompletion:
       type: object
-      description: Planned completion response carrying the typed material award.
-      x-implementation-status: planned
+      description: >-
+        The completed Daily plus the typed awarded-material effect, so clients
+        can reconcile the mutated Daily and the award from one response.
       required:
-        [id, user_id, title, description, difficulty, due_date, status, created_at, updated_at, awarded_materials]
+        [id, user_id, title, description, difficulty, due_date, time_zone, due_local_date, due_local_time, status, created_at, updated_at, awarded_materials]
       additionalProperties: false
       properties:
         id:
@@ -687,6 +690,17 @@ components:
         due_date:
           type: string
           format: date-time
+        time_zone:
+          type: string
+          description: IANA zone retained until explicitly edited.
+        due_local_date:
+          type: string
+          format: date
+          description: Local deadline calendar date derived from `due_date` in `time_zone`.
+        due_local_time:
+          allOf:
+            - $ref: "#/components/schemas/ClockTime"
+          description: Local deadline wall-clock time derived from `due_date` in `time_zone`.
         status:
           $ref: "#/components/schemas/DailyStatus"
         created_at:
@@ -698,6 +712,7 @@ components:
         awarded_materials:
           type: integer
           format: int32
+          description: Materials awarded, sourced from the difficulty reward table.
 
     ErrorResponse:
       type: object
@@ -778,9 +793,8 @@ components:
 
     DailyNotReady:
       description: >-
-        **Planned.** Service-specific retryable not-ready error while the
-        Player's Daily state provisions. Code DAILY_PLAYER_NOT_READY.
-      x-implementation-status: planned
+        Service-specific retryable not-ready error while the Player's Daily
+        state provisions. Code DAILY_PLAYER_NOT_READY; retry after provisioning.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/XRequestId"

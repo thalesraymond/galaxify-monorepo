@@ -96,7 +96,7 @@ func (q *Queries) GetLastResolveAt(ctx context.Context, userID pgtype.UUID) (pgt
 }
 
 const getResultByExpedition = `-- name: GetResultByExpedition :one
-SELECT id, expedition_id, outcome, reward_summary, created_at FROM expedition_results
+SELECT id, expedition_id, outcome, created_at, materials_reward FROM expedition_results
 WHERE expedition_id = $1
 `
 
@@ -107,8 +107,8 @@ func (q *Queries) GetResultByExpedition(ctx context.Context, expeditionID pgtype
 		&i.ID,
 		&i.ExpeditionID,
 		&i.Outcome,
-		&i.RewardSummary,
 		&i.CreatedAt,
+		&i.MaterialsReward,
 	)
 	return i, err
 }
@@ -154,28 +154,28 @@ func (q *Queries) InsertExpedition(ctx context.Context, arg InsertExpeditionPara
 
 const insertExpeditionResult = `-- name: InsertExpeditionResult :one
 INSERT INTO expedition_results (
-    expedition_id, outcome, reward_summary
+    expedition_id, outcome, materials_reward
 ) VALUES (
     $1, $2, $3
 )
-RETURNING id, expedition_id, outcome, reward_summary, created_at
+RETURNING id, expedition_id, outcome, created_at, materials_reward
 `
 
 type InsertExpeditionResultParams struct {
-	ExpeditionID  pgtype.UUID
-	Outcome       string
-	RewardSummary []byte
+	ExpeditionID    pgtype.UUID
+	Outcome         string
+	MaterialsReward int32
 }
 
 func (q *Queries) InsertExpeditionResult(ctx context.Context, arg InsertExpeditionResultParams) (ExpeditionResult, error) {
-	row := q.db.QueryRow(ctx, insertExpeditionResult, arg.ExpeditionID, arg.Outcome, arg.RewardSummary)
+	row := q.db.QueryRow(ctx, insertExpeditionResult, arg.ExpeditionID, arg.Outcome, arg.MaterialsReward)
 	var i ExpeditionResult
 	err := row.Scan(
 		&i.ID,
 		&i.ExpeditionID,
 		&i.Outcome,
-		&i.RewardSummary,
 		&i.CreatedAt,
+		&i.MaterialsReward,
 	)
 	return i, err
 }

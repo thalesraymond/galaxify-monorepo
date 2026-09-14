@@ -127,6 +127,19 @@ func TestLaunchManagerLaunch(t *testing.T) {
 	}
 }
 
+func TestLaunchManagerNotReady(t *testing.T) {
+	store := &launchStoreMock{
+		getShipCache: func(context.Context, pgtype.UUID) (database.UserShipStateCache, error) {
+			return database.UserShipStateCache{}, pgx.ErrNoRows
+		},
+	}
+	manager := NewManager(nil, launchTxStarter{tx: &launchFakeTx{}}, func(pgx.Tx) LaunchStore { return store })
+
+	if _, err := manager.Launch(t.Context(), uuid.New(), LaunchInput{MaterialsInvested: 10}); !errors.Is(err, ErrShipStateNotReady) {
+		t.Fatalf("Launch() error = %v, want ErrShipStateNotReady", err)
+	}
+}
+
 func TestLaunchManagerLaunchRules(t *testing.T) {
 	userID := uuid.New()
 	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)

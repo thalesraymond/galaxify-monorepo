@@ -50,6 +50,16 @@ RETURNING *;
 -- name: GetDifficultyReward :one
 SELECT * FROM difficulty_rewards WHERE difficulty = $1;
 
+-- name: ListDifficultyRewards :many
+-- Canonical tier order (EASY, MEDIUM, HARD) so the metadata endpoint is stable.
+SELECT * FROM difficulty_rewards
+ORDER BY CASE difficulty
+    WHEN 'EASY' THEN 1
+    WHEN 'MEDIUM' THEN 2
+    WHEN 'HARD' THEN 3
+    ELSE 4
+END;
+
 -- name: CreateDailyHistory :exec
 INSERT INTO daily_history (
     daily_id, user_id, title, description, difficulty, due_date, time_zone, status, completed_at, missed_at
@@ -58,6 +68,18 @@ INSERT INTO daily_history (
 );
 
 -- name: ListDailyHistory :many
+-- Stable descending keyset page over the (due_date, archived_at, id) tuple.
+-- `id` is the unique tie-breaker required by the continuation contract. The
+-- cursor nargs are all-or-nothing: when they are NULL the first page is read.
 SELECT * FROM daily_history
 WHERE user_id = $1
-ORDER BY due_date DESC, archived_at DESC;
+  AND (
+    sqlc.narg('cursor_due_date')::timestamptz IS NULL
+    OR (due_date, archived_at, id) < (
+        sqlc.narg('cursor_due_date')::timestamptz,
+        sqlc.narg('cursor_archived_at')::timestamptz,
+        sqlc.narg('cursor_id')::uuid
+    )
+  )
+ORDER BY due_date DESC, archived_at DESC, id DESC
+LIMIT sqlc.arg('page_size')::int;

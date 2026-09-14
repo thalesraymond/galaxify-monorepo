@@ -122,20 +122,20 @@ openapi-generate: ## Generate frontend wire types + zod schemas from docs/openap
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
-dev: ## Start the Vite dev server against real local services
-	npm --prefix apps/web-frontend run dev
+dev: ## Start the complete real local product (infra, migrations, services, workers, Vite)
+	node scripts/dev.mjs
 
-dev-infra: ## Start local infrastructure (docker compose up -d)
-	docker compose up -d
+dev-infra: ## Start PostgreSQL and RabbitMQ and wait until healthy
+	node scripts/dev.mjs --infra
 
-dev-down: ## Stop local infrastructure, preserving data (docker compose down)
-	docker compose down
+dev-down: ## Stop application processes and local infrastructure (data preserved)
+	node scripts/dev.mjs --down
 
-dev-reset: ## Destroy local infrastructure volumes and data (requires confirmation)
+dev-reset: ## Destroy local infrastructure volumes and data, then reapply migrations (requires confirmation)
 	@printf 'This permanently deletes all local infrastructure volumes and data. Continue? [y/N] '; \
 	read -r answer; \
 	case "$$answer" in \
-		[yY]|[yY][eE][sS]) docker compose down -v ;; \
+		[yY]|[yY][eE][sS]) node scripts/dev.mjs --reset ;; \
 		*) echo 'Aborted.'; exit 1 ;; \
 	esac
 

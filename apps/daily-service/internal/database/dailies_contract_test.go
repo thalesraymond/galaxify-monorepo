@@ -21,7 +21,19 @@ type recordedDatabaseCall struct {
 type recordingDBTX struct {
 	calls []recordedDatabaseCall
 	row   pgx.Row
+	rows  pgx.Rows
 }
+
+// emptyRows embeds the pgx.Rows interface so a :many query can run to
+// completion with no results without a live database.
+type emptyRows struct {
+	pgx.Rows
+}
+
+func (emptyRows) Close()            {}
+func (emptyRows) Err() error        { return nil }
+func (emptyRows) Next() bool        { return false }
+func (emptyRows) Scan(...any) error { return nil }
 
 func (db *recordingDBTX) Exec(_ context.Context, statement string, arguments ...any) (pgconn.CommandTag, error) {
 	db.calls = append(db.calls, recordedDatabaseCall{statement: statement, arguments: arguments})
@@ -30,7 +42,7 @@ func (db *recordingDBTX) Exec(_ context.Context, statement string, arguments ...
 
 func (db *recordingDBTX) Query(_ context.Context, statement string, arguments ...any) (pgx.Rows, error) {
 	db.calls = append(db.calls, recordedDatabaseCall{statement: statement, arguments: arguments})
-	return nil, nil
+	return db.rows, nil
 }
 
 func (db *recordingDBTX) QueryRow(_ context.Context, statement string, arguments ...any) pgx.Row {
@@ -133,5 +145,71 @@ func assertCompletedDailyMutationStatement(t *testing.T, statement string) {
 	}
 	if strings.Contains(whereClause, "status") {
 		t.Errorf("statement must not restrict completed dailies by status (former pending-only conflict path): %q", whereClause)
+	}
+}
+
+// TestDailyHistoryPaginationQueryContract is the query-seam regression test for
+// stable descending continuation. It pins the generated statement to a keyset
+// predicate over the unique (due_date, archived_at, id) tuple, the matching
+// ORDER BY, an ownership filter, and a bounded LIMIT — the properties that make
+// traversal duplicate-free and immune to inserts between pages.
+func TestDailyHistoryPaginationQueryContract(t *testing.T) {
+	userID := uuid.New()
+	cursorID := uuid.New()
+	dueDate := time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	archivedAt := time.Date(2026, 9, 15, 11, 0, 0, 0, time.UTC)
+
+	db := &recordingDBTX{rows: emptyRows{}}
+	queries := New(db)
+
+	if _, err := queries.ListDailyHistory(context.Background(), ListDailyHistoryParams{
+		UserID:           pgtype.UUID{Bytes: userID, Valid: true},
+		CursorDueDate:    pgtype.Timestamptz{Time: dueDate, Valid: true},
+		CursorArchivedAt: pgtype.Timestamptz{Time: archivedAt, Valid: true},
+		CursorID:         pgtype.UUID{Bytes: cursorID, Valid: true},
+		PageSize:         21,
+	}); err != nil {
+		t.Fatalf("ListDailyHistory() error = %v", err)
+	}
+
+	if len(db.calls) != 1 {
+		t.Fatalf("database calls = %d, want 1", len(db.calls))
+	}
+	call := db.calls[0]
+	assertDailyHistoryPaginationStatement(t, call.statement)
+
+	if len(call.arguments) != 5 {
+		t.Fatalf("arguments = %d, want 5", len(call.arguments))
+	}
+	if got, ok := call.arguments[0].(pgtype.UUID); !ok || got.Bytes != userID {
+		t.Errorf("argument 1 = %#v, want user id %v", call.arguments[0], userID)
+	}
+	if got, ok := call.arguments[1].(pgtype.Timestamptz); !ok || !got.Time.Equal(dueDate) {
+		t.Errorf("argument 2 = %#v, want cursor due date %v", call.arguments[1], dueDate)
+	}
+	if got, ok := call.arguments[2].(pgtype.Timestamptz); !ok || !got.Time.Equal(archivedAt) {
+		t.Errorf("argument 3 = %#v, want cursor archived at %v", call.arguments[2], archivedAt)
+	}
+	if got, ok := call.arguments[3].(pgtype.UUID); !ok || got.Bytes != cursorID {
+		t.Errorf("argument 4 = %#v, want cursor id %v", call.arguments[3], cursorID)
+	}
+	if got, ok := call.arguments[4].(int32); !ok || got != 21 {
+		t.Errorf("argument 5 = %#v, want page size 21", call.arguments[4])
+	}
+}
+
+func assertDailyHistoryPaginationStatement(t *testing.T, statement string) {
+	t.Helper()
+	if !strings.Contains(statement, "user_id = $1") {
+		t.Errorf("statement is missing the ownership predicate: %q", statement)
+	}
+	if !strings.Contains(statement, "(due_date, archived_at, id) <") {
+		t.Errorf("statement is missing the keyset tuple predicate: %q", statement)
+	}
+	if !strings.Contains(statement, "ORDER BY due_date DESC, archived_at DESC, id DESC") {
+		t.Errorf("statement is missing the deterministic descending order including the id tie-breaker: %q", statement)
+	}
+	if !strings.Contains(statement, "LIMIT $5::int") {
+		t.Errorf("statement is missing the bounded page limit: %q", statement)
 	}
 }
