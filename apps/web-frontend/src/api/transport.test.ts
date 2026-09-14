@@ -70,7 +70,11 @@ describe('ApiTransport', () => {
     const transport = new ApiTransport({ fetch: fetch as typeof globalThis.fetch })
 
     await expect(
-      transport.request({ service: 'user', path: '/users/me', response: zUserGetMeResponse }),
+      transport.request({
+        service: 'user',
+        path: '/users/me',
+        response: zUserGetMeResponse,
+      }),
     ).rejects.toMatchObject({
       kind: 'api',
       status: 422,
@@ -86,8 +90,27 @@ describe('ApiTransport', () => {
     const transport = new ApiTransport({ fetch: fetch as typeof globalThis.fetch })
 
     await expect(
-      transport.request({ service: 'user', path: '/users/me', response: zUserGetMeResponse }),
+      transport.request({
+        service: 'user',
+        path: '/users/me',
+        response: zUserGetMeResponse,
+      }),
     ).rejects.toMatchObject({ kind: 'invalid_response', status: 200 })
+  })
+
+  it('rejects malformed shared error envelopes as invalid responses', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ error: { message: 'missing code' } }, { status: 500 }))
+    const transport = new ApiTransport({ fetch: fetch as typeof globalThis.fetch })
+
+    await expect(
+      transport.request({
+        service: 'user',
+        path: '/users/me',
+        response: zUserGetMeResponse,
+      }),
+    ).rejects.toMatchObject({ kind: 'invalid_response', status: 500 })
   })
 
   it('normalizes aborted requests separately from network failures', async () => {
@@ -95,7 +118,11 @@ describe('ApiTransport', () => {
     const transport = new ApiTransport({ fetch: fetch as typeof globalThis.fetch })
 
     await expect(
-      transport.request({ service: 'user', path: '/users/me', response: zUserGetMeResponse }),
+      transport.request({
+        service: 'user',
+        path: '/users/me',
+        response: zUserGetMeResponse,
+      }),
     ).rejects.toMatchObject({ kind: 'aborted' })
   })
 })

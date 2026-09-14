@@ -4,45 +4,33 @@ import react from '@vitejs/plugin-react'
 import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
 
-import { validateProxyTarget } from './src/api/proxyTarget'
+import { parseProxyEnvironment } from './src/api/proxyTarget'
 
 /**
- * Server-only proxy targets. These variables are intentionally NOT prefixed
- * with `VITE_` so Vite never inlines them into the browser bundle. See
- * `apps/web-frontend/.env.example`.
+ * Browser-visible relative prefixes owned by the domain-neutral transport.
+ * Server-only origins are validated from the environment at Vite's trust
+ * boundary; see `apps/web-frontend/.env.example` and
+ * `docs/specs/web-frontend.md` §7.
  */
-type ProxyTarget = {
-  /** Browser-visible relative prefix owned by the domain-neutral transport. */
-  readonly prefix: string
-  /** Server-only environment variable holding the local service origin. */
-  readonly envKey: string
-  /** Local default matching the service ports in `docs/specs/web-frontend.md` §7. */
-  readonly fallback: string
-}
-
-const proxyTargets: readonly ProxyTarget[] = [
-  { prefix: '/api/user', envKey: 'USER_SERVICE_URL', fallback: 'http://localhost:8081' },
-  { prefix: '/api/daily', envKey: 'DAILY_SERVICE_URL', fallback: 'http://localhost:8082' },
-  { prefix: '/api/ship', envKey: 'SHIP_SERVICE_URL', fallback: 'http://localhost:8083' },
-  {
-    prefix: '/api/expedition',
-    envKey: 'EXPEDITION_SERVICE_URL',
-    fallback: 'http://localhost:8084',
-  },
-]
+const proxyPrefixes = {
+  '/api/user': 'USER_SERVICE_URL',
+  '/api/daily': 'DAILY_SERVICE_URL',
+  '/api/ship': 'SHIP_SERVICE_URL',
+  '/api/expedition': 'EXPEDITION_SERVICE_URL',
+} as const
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '')
+  const environment = parseProxyEnvironment(loadEnv(mode, process.cwd(), ''))
 
   const proxy = Object.fromEntries(
-    proxyTargets.map((target) => [
-      target.prefix,
+    Object.entries(proxyPrefixes).map(([prefix, envKey]) => [
+      prefix,
       {
-        target: validateProxyTarget(env[target.envKey] ?? target.fallback, target.envKey),
+        target: environment[envKey],
         changeOrigin: true,
         // The services own their domain routes; the browser prefix is stripped
         // in real mode and replaced by MSW handlers in mock mode.
-        rewrite: (requestPath: string) => requestPath.replace(target.prefix, ''),
+        rewrite: (requestPath: string) => requestPath.replace(prefix, ''),
       },
     ]),
   )

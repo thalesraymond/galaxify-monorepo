@@ -26,7 +26,8 @@
     "perf": "node scripts/run-lhci.mjs",
     "api:generate": "openapi-ts -f openapi-ts.config.ts",
     "api:check": "npm run api:generate && git diff --exit-code -- src/api/generated",
-    "verify": "npm run format:check && npm run typecheck && npm run lint && npm run test:coverage && npm run build && npm run test:e2e && npm run test:a11y && npm run test:visual && npm run perf"
+    "bundle:check": "node scripts/check-production-bundle.mjs",
+    "verify": "npm run format:check && npm run typecheck && npm run lint && npm run test:coverage && npm run api:check && npm run build && npm run bundle:check && npm run test:e2e && npm run test:a11y && npm run test:visual && npm run perf"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.102.8",

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 describe('getCurrentExpedition', () => {
   it.each([
     ['EXPEDITION_NOT_FOUND', { kind: 'none' }],
-    ['SHIP_STATE_NOT_READY', { kind: 'not_ready' }],
+    ['EXPEDITION_SHIP_STATE_NOT_READY', { kind: 'not_ready' }],
   ])('maps %s into its typed outcome', async (code, expected) => {
     const transport = new ApiTransport({
       fetch: vi

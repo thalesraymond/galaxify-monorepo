@@ -1,5 +1,5 @@
 import { zShipGetMeResponse } from '@/api/generated/ship/zod.gen'
-import { isApiTransportError, type ApiHttpError, type ApiTransport } from '@/api/transport'
+import { isApiHttpError, type ApiHttpError, type ApiTransport } from '@/api/transport'
 
 export const shipQueryKey = ['ship'] as const
 
@@ -19,13 +19,9 @@ export async function getShip(transport: ApiTransport, signal?: AbortSignal): Pr
       }),
     }
   } catch (error: unknown) {
-    if (isApiError(error, 'SHIP_NOT_FOUND')) {
+    if (isApiHttpError(error, 'SHIP_NOT_FOUND')) {
       return { kind: 'provisioning', error }
     }
     throw error
   }
-}
-
-function isApiError(error: unknown, code: string): error is ApiHttpError {
-  return isApiTransportError(error) && error.kind === 'api' && error.code === code
 }

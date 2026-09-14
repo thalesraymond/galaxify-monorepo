@@ -45,6 +45,7 @@ npm run dev:mock       # distinct mock mode (no MSW yet)
 npm run build          # tsc -b && vite build into dist/
 npm run api:generate   # regenerate wire types and Zod schemas from docs/openapi
 npm run api:check      # fail when generated contracts drift from docs/openapi
+npm run bundle:check   # fail when built browser assets contain proxy configuration
 npm run preview        # serve the production build on 127.0.0.1:4173
 npm run format:check   # Prettier
 npm run typecheck      # strict project-reference type check
@@ -75,6 +76,11 @@ typed mappings such as provisioning or no-current-expedition outcomes.
 OpenAPI generation produces types and Zod schemas only—never a generated SDK,
 hooks, or HTTP client. Generated output under `src/api/generated/` is committed
 and must be regenerated after changes under `docs/openapi/`.
+
+`npm run verify` records both generation-drift and post-build proxy inspection
+evidence: it regenerates contracts, fails on a checked-in drift, builds the app,
+and verifies the browser assets contain neither proxy variable names nor proxy
+target values (including configured local production env files).
 
 Root shortcuts: `make dev`, `make dev-infra`, `make dev-down`,
 `make dev-reset` (requires confirmation), `make frontend-install`, and

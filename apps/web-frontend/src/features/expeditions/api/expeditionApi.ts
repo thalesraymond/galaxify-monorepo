@@ -1,5 +1,5 @@
 import { zExpeditionCurrentResponse } from '@/api/generated/expedition/zod.gen'
-import { isApiTransportError, type ApiHttpError, type ApiTransport } from '@/api/transport'
+import { isApiHttpError, type ApiHttpError, type ApiTransport } from '@/api/transport'
 
 export const currentExpeditionQueryKey = ['expeditions', 'current'] as const
 
@@ -26,16 +26,12 @@ export async function getCurrentExpedition(
       }),
     }
   } catch (error: unknown) {
-    if (isApiError(error, 'EXPEDITION_NOT_FOUND')) {
+    if (isApiHttpError(error, 'EXPEDITION_NOT_FOUND')) {
       return { kind: 'none' }
     }
-    if (isApiError(error, 'SHIP_STATE_NOT_READY')) {
+    if (isApiHttpError(error, 'EXPEDITION_SHIP_STATE_NOT_READY')) {
       return { kind: 'not_ready', error }
     }
     throw error
   }
-}
-
-function isApiError(error: unknown, code: string): error is ApiHttpError {
-  return isApiTransportError(error) && error.kind === 'api' && error.code === code
 }

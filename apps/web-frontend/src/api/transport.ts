@@ -1,8 +1,26 @@
-import type { z } from 'zod'
-
-import { zErrorResponse } from './generated/user/zod.gen'
+import { z } from 'zod'
 
 export type ApiService = 'user' | 'daily' | 'ship' | 'expedition'
+
+/**
+ * Transport-owned schema for the shared backend error envelope
+ * (docs/adr/0006-shared-http-error-envelope-and-request-id.md). The envelope is
+ * cross-cutting infrastructure, so the domain-neutral transport owns it rather
+ * than importing a feature's generated contract.
+ */
+const zApiErrorEnvelope = z.object({
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+    details: z
+      .object({
+        field_errors: z.record(z.string(), z.string()),
+      })
+      .optional(),
+  }),
+})
+
+export type ApiErrorEnvelope = z.infer<typeof zApiErrorEnvelope>
 
 type ApiErrorBase = {
   readonly requestId: string | undefined
@@ -141,7 +159,7 @@ export class ApiTransport {
 
   private async createApiError(response: Response, requestId: string): Promise<ApiTransportError> {
     const body = await this.readJson(response, requestId)
-    const parsed = zErrorResponse.safeParse(body)
+    const parsed = zApiErrorEnvelope.safeParse(body)
     if (!parsed.success) {
       return this.invalidResponse(response.status, requestId, parsed.error)
     }
@@ -185,6 +203,14 @@ export function isApiTransportError(error: unknown): error is ApiTransportError 
     return false
   }
   return ['network', 'aborted', 'invalid_response', 'api'].includes(String(error.kind))
+}
+
+/**
+ * Narrows a transport error to the HTTP API error for a specific backend code.
+ * Feature adapters branch on `code` (spec §7), never status.
+ */
+export function isApiHttpError(error: unknown, code: string): error is ApiHttpError {
+  return isApiTransportError(error) && error.kind === 'api' && error.code === code
 }
 
 function isAbortError(error: unknown): boolean {
