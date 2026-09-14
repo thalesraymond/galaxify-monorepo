@@ -1,0 +1,24 @@
+.badge {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+.ready {
+  background: var(--color-mint);
+  color: var(--color-ink);
+}
+.preparing,
+.updating {
+  background: var(--color-amber);
+  color: var(--color-ink);
+}
+.delayed,
+.error {
+  background: var(--color-danger-surface);
+  color: var(--color-text-on-danger);
+}

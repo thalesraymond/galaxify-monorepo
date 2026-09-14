@@ -27,6 +27,14 @@ function lazyRoute(load: () => Promise<{ default: ComponentType }>): ReactElemen
 export const routes: RouteObject[] = [
   { path: '/', element: <HomeRedirect /> },
   {
+    path: '/__design-system-preview',
+    element: lazyRoute(() =>
+      import('./pages/DesignSystemPreviewPage').then((module) => ({
+        default: module.DesignSystemPreviewPage,
+      })),
+    ),
+  },
+  {
     element: <AuthShell />,
     errorElement: <AppErrorBoundary />,
     children: [

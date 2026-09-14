@@ -1,4 +1,5 @@
 # Generated and vendored output
+src/api/generated/
 node_modules/
 dist/
 coverage/

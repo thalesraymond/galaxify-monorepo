@@ -38,7 +38,7 @@ describe('application shell and route tree', () => {
     for (const label of primaryNavLabels) {
       expect(within(primaryNav).getByRole('link', { name: label })).toBeInTheDocument()
     }
-    expect(screen.getByRole('navigation', { name: /account/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Account' })).toBeInTheDocument()
   })
 
   it.each(shellRoutes)(

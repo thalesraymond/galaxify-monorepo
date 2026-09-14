@@ -55,9 +55,9 @@ paths:
       tags: [dailies]
       x-implementation-status: implemented
       x-planned-changes: >-
-        Enforce title <= 120 and description <= 1000, accept an IANA time_zone
-        plus local deadline, and return a typed awarded-material effect from
-        completion. See docs/specs/web-frontend.md §7.1 (Daily Service).
+        Enforce title <= 120 and description <= 1000, and return a typed
+        awarded-material effect from completion. See docs/specs/web-frontend.md
+        §7.1 (Daily Service).
       x-ticket: "#148, #151"
       security:
         - bearerAuth: []
@@ -93,14 +93,12 @@ paths:
       operationId: dailyList
       summary: List the authenticated Player's current-cycle Dailies.
       description: |
-        Current filter is `status` plus `date`/`due_date`. The planned
-        `from`/`to` query parameters select current Dailies by explicit RFC3339
-        instants.
+        Filter by `status` and an optional `[from, to)` range of explicit RFC3339
+        instants. The legacy `date` (UTC calendar day) and `due_date` (inclusive
+        RFC3339 instant) filters remain supported for compatibility. Filtering is
+        ownership-scoped before applying any range.
       tags: [dailies]
       x-implementation-status: implemented
-      x-planned-changes: >-
-        Add explicit RFC3339 from/to instant filtering alongside the existing
-        date/due_date filter.
       x-ticket: "#148"
       security:
         - bearerAuth: []
@@ -111,34 +109,37 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/DailyStatus"
-        - name: date
-          in: query
-          required: false
-          description: A `YYYY-MM-DD` date or an RFC3339 instant.
-          schema:
-            $ref: "#/components/schemas/DateOrDateTime"
-        - name: due_date
-          in: query
-          required: false
-          description: Legacy alias for `date`; used only when `date` is absent.
-          schema:
-            $ref: "#/components/schemas/DateOrDateTime"
         - name: from
           in: query
           required: false
-          description: Planned inclusive lower bound instant (RFC3339).
-          x-implementation-status: planned
+          description: Inclusive lower bound instant (RFC3339).
           schema:
             type: string
             format: date-time
         - name: to
           in: query
           required: false
-          description: Planned exclusive upper bound instant (RFC3339).
-          x-implementation-status: planned
+          description: Exclusive upper bound instant (RFC3339).
           schema:
             type: string
             format: date-time
+        - name: date
+          in: query
+          required: false
+          deprecated: true
+          description: >-
+            Legacy filter superseded by explicit RFC3339 `from`/`to`. Accepts a
+            `YYYY-MM-DD` date or an RFC3339 instant and selects that UTC calendar
+            day. `date` wins over its `due_date` alias.
+          schema:
+            $ref: "#/components/schemas/DateOrDateTime"
+        - name: due_date
+          in: query
+          required: false
+          deprecated: true
+          description: Legacy alias for `date`, used only when `date` is absent.
+          schema:
+            $ref: "#/components/schemas/DateOrDateTime"
       responses:
         "200":
           description: Current-cycle Dailies.
@@ -288,11 +289,14 @@ paths:
     patch:
       operationId: dailyUpdate
       summary: Edit a Daily.
+      description: >-
+        Updates the recurring Daily for future cycles even when today's
+        occurrence is COMPLETED. Existing Daily History records are unchanged.
       tags: [dailies]
       x-implementation-status: implemented
       x-planned-changes: >-
-        Permit edit after today's completion while preserving history, and
-        accept an IANA time_zone plus local deadline.
+        Permit edit after today's completion while preserving history.
+        Accept an IANA time_zone plus local deadline.
       x-ticket: "#147, #148"
       security:
         - bearerAuth: []
@@ -318,8 +322,6 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/ValidationFailed"
         "500":
@@ -329,11 +331,11 @@ paths:
     delete:
       operationId: dailyDelete
       summary: Delete a recurring Daily.
+      description: >-
+        Deletes the recurring Daily even when today's occurrence is COMPLETED.
+        Existing Daily History records are unchanged.
       tags: [dailies]
       x-implementation-status: implemented
-      x-planned-changes: >-
-        Permit delete after today's completion while preserving past history.
-      x-ticket: "#147"
       security:
         - bearerAuth: []
       parameters:
@@ -348,8 +350,6 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/ValidationFailed"
         "500":
@@ -466,7 +466,10 @@ components:
 
     CreateDailyRequest:
       type: object
-      required: [title, difficulty, due_date]
+      required: [title, difficulty, time_zone]
+      anyOf:
+        - required: [due_date]
+        - required: [due_local_date, due_local_time]
       additionalProperties: false
       properties:
         title:
@@ -479,18 +482,26 @@ components:
         due_date:
           type: string
           format: date-time
+          deprecated: true
           description: >-
-            RFC3339 instant today. Planned: a local deadline interpreted with
-            `time_zone`.
+            Legacy RFC3339 deadline instant. New clients should send
+            `due_local_date` + `due_local_time` + `time_zone` and let the backend
+            resolve DST.
         time_zone:
           type: string
-          description: Planned IANA time zone, e.g. Europe/Paris.
-          x-implementation-status: planned
+          description: IANA time zone retained across recurrence, e.g. Europe/Paris.
+        due_local_date:
+          type: string
+          format: date
+          description: Local calendar date paired with `due_local_time` and `time_zone`.
         due_local_time:
           allOf:
             - $ref: "#/components/schemas/ClockTime"
-          description: Planned local due time paired with `time_zone`.
-          x-implementation-status: planned
+          description: >-
+            Local wall-clock deadline resolved by the backend using `time_zone`.
+            An ambiguous fall-back time selects its first occurrence; a
+            nonexistent spring-forward time moves to the first valid local
+            instant after it.
 
     UpdateDailyRequest:
       type: object
@@ -505,20 +516,24 @@ components:
         due_date:
           type: string
           format: date-time
+          deprecated: true
+          description: Legacy RFC3339 deadline instant; prefer the local deadline pair.
         time_zone:
           type: string
-          description: Planned IANA time zone.
-          x-implementation-status: planned
+          description: Replacement IANA time zone. Omit to retain the configured zone.
+        due_local_date:
+          type: string
+          format: date
+          description: Local calendar date; requires `due_local_time` and `time_zone`.
         due_local_time:
           allOf:
             - $ref: "#/components/schemas/ClockTime"
-          description: Planned local due time paired with `time_zone`.
-          x-implementation-status: planned
+          description: Local wall-clock deadline; requires `due_local_date` and `time_zone`.
 
     Daily:
       type: object
       required:
-        [id, user_id, title, description, difficulty, due_date, status, created_at, updated_at]
+        [id, user_id, title, description, difficulty, due_date, time_zone, due_local_date, due_local_time, status, created_at, updated_at]
       additionalProperties: false
       properties:
         id:
@@ -547,13 +562,20 @@ components:
           format: date-time
         time_zone:
           type: string
-          description: Planned IANA zone retained until edited.
-          x-implementation-status: planned
+          description: IANA zone retained until explicitly edited.
+        due_local_date:
+          type: string
+          format: date
+          description: Local deadline calendar date derived from `due_date` in `time_zone`.
+        due_local_time:
+          allOf:
+            - $ref: "#/components/schemas/ClockTime"
+          description: Local deadline wall-clock time derived from `due_date` in `time_zone`.
 
     DailyHistory:
       type: object
       required:
-        [id, daily_id, user_id, title, description, difficulty, due_date, status, completed_at, missed_at, archived_at]
+        [id, daily_id, user_id, title, description, difficulty, due_date, time_zone, due_local_date, due_local_time, status, completed_at, missed_at, archived_at]
       additionalProperties: false
       properties:
         id:
@@ -574,6 +596,17 @@ components:
         due_date:
           type: string
           format: date-time
+        time_zone:
+          type: string
+          description: IANA zone snapshot for grouping and display of this occurrence.
+        due_local_date:
+          type: string
+          format: date
+          description: Local occurrence calendar date derived from `due_date` in `time_zone`.
+        due_local_time:
+          allOf:
+            - $ref: "#/components/schemas/ClockTime"
+          description: Local occurrence wall-clock time derived from `due_date` in `time_zone`.
         status:
           $ref: "#/components/schemas/DailyStatus"
         completed_at:
@@ -734,7 +767,7 @@ components:
     Conflict:
       description: >-
         The Daily is not mutable in its current state. Codes:
-        DAILY_NOT_EDITABLE, DAILY_ALREADY_COMPLETED.
+        DAILY_ALREADY_COMPLETED.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/XRequestId"

@@ -95,6 +95,9 @@ func (m *DailyManager) Create(ctx context.Context, input CreateInput) (Daily, er
 	if !IsValidDifficulty(input.Difficulty) {
 		return Daily{}, ErrInvalidDifficulty
 	}
+	if _, err := LoadTimeZone(input.TimeZone); err != nil {
+		return Daily{}, ErrInvalidTimeZone
+	}
 
 	pgUserID := pgtype.UUID{Bytes: input.UserID, Valid: true}
 	row, err := m.baseStore.CreateDaily(ctx, database.CreateDailyParams{
@@ -103,6 +106,7 @@ func (m *DailyManager) Create(ctx context.Context, input CreateInput) (Daily, er
 		Description: input.Description,
 		Difficulty:  string(input.Difficulty),
 		DueDate:     pgtype.Timestamptz{Time: input.DueDate, Valid: true},
+		TimeZone:    input.TimeZone,
 	})
 	if err != nil {
 		return Daily{}, fmt.Errorf("create daily: %w", err)
@@ -133,8 +137,11 @@ func (m *DailyManager) List(ctx context.Context, userID uuid.UUID, filter ListFi
 	if filter.Status != nil {
 		params.Status = pgtype.Text{String: string(*filter.Status), Valid: true}
 	}
-	if filter.Date != nil {
-		params.DueDate = pgtype.Date{Time: *filter.Date, Valid: true}
+	if filter.From != nil {
+		params.From = pgtype.Timestamptz{Time: *filter.From, Valid: true}
+	}
+	if filter.To != nil {
+		params.To = pgtype.Timestamptz{Time: *filter.To, Valid: true}
 	}
 
 	rows, err := m.baseStore.ListDailies(ctx, params)
@@ -166,6 +173,11 @@ func (m *DailyManager) Update(ctx context.Context, userID, id uuid.UUID, input U
 	if input.Difficulty != nil && !IsValidDifficulty(*input.Difficulty) {
 		return Daily{}, ErrInvalidDifficulty
 	}
+	if input.TimeZone != nil {
+		if _, err := LoadTimeZone(*input.TimeZone); err != nil {
+			return Daily{}, ErrInvalidTimeZone
+		}
+	}
 
 	tx, err := m.pool.Begin(ctx)
 	if err != nil {
@@ -192,6 +204,9 @@ func (m *DailyManager) Update(ctx context.Context, userID, id uuid.UUID, input U
 	}
 	if input.DueDate != nil {
 		params.DueDate = pgtype.Timestamptz{Time: *input.DueDate, Valid: true}
+	}
+	if input.TimeZone != nil {
+		params.TimeZone = pgtype.Text{String: *input.TimeZone, Valid: true}
 	}
 
 	updatedRow, err := s.UpdateDaily(ctx, params)
@@ -272,6 +287,7 @@ func (m *DailyManager) Complete(ctx context.Context, userID, id uuid.UUID) (Dail
 		Description: completedRow.Description,
 		Difficulty:  completedRow.Difficulty,
 		DueDate:     completedRow.DueDate,
+		TimeZone:    completedRow.TimeZone,
 		Status:      string(StatusCompleted),
 		CompletedAt: completedRow.UpdatedAt,
 		MissedAt:    pgtype.Timestamptz{Valid: false},
@@ -356,6 +372,7 @@ func toDomainDaily(row database.Daily) Daily {
 		Description: row.Description,
 		Difficulty:  Difficulty(row.Difficulty),
 		DueDate:     dueDate,
+		TimeZone:    row.TimeZone,
 		Status:      Status(row.Status),
 		CreatedAt:   createdAt,
 		UpdatedAt:   updatedAt,
@@ -397,6 +414,7 @@ func toDomainDailyHistory(row database.DailyHistory) DailyHistory {
 		Description: row.Description,
 		Difficulty:  Difficulty(row.Difficulty),
 		DueDate:     dueDate,
+		TimeZone:    row.TimeZone,
 		Status:      Status(row.Status),
 		CompletedAt: completedAt,
 		MissedAt:    missedAt,

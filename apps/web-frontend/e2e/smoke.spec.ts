@@ -3,6 +3,21 @@ import { expect, test } from '@playwright/test'
 const primaryNavLabels = ['Dashboard', 'Dailies', 'Ship', 'Expeditions'] as const
 
 test.describe('application shell', () => {
+  test('keeps primary navigation and content usable from 320 px through desktop', async ({
+    page,
+  }) => {
+    for (const viewport of [
+      { width: 320, height: 700 },
+      { width: 390, height: 844 },
+      { width: 768, height: 1024 },
+      { width: 1440, height: 900 },
+    ]) {
+      await page.setViewportSize(viewport)
+      await page.goto('/dashboard')
+      await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible()
+    }
+  })
+
   test('boots the app shell with the primary navigation', async ({ page }) => {
     await page.goto('/dashboard')
 

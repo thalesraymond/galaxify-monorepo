@@ -1,0 +1,26 @@
+.tabs {
+  margin-bottom: var(--space-6);
+  border-bottom: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+}
+.tabs ul {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+}
+.tab {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  color: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.active {
+  border-bottom: 3px solid var(--color-amber);
+  color: var(--color-amber);
+}

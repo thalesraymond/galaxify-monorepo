@@ -18,6 +18,7 @@ import (
 	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/database"
 	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/handler"
 	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/outbox"
+	usersession "github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/session"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/events"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/rabbitmq"
@@ -119,7 +120,8 @@ func run(logger *slog.Logger) error {
 	)
 	registrationHandler.RegisterRoutes(mux)
 
-	sessionHandler := handler.NewSessionHandler(db, tokenIssuer, logger)
+	sessionManager := usersession.NewManager(pool, func(tx pgx.Tx) usersession.Store { return database.New(tx) })
+	sessionHandler := handler.NewSessionHandler(db, sessionManager, tokenIssuer, logger)
 	sessionHandler.RegisterRoutes(mux)
 
 	jwksHandler := handler.NewJWKSHandler(priv, jwtKey.Kid, logger)

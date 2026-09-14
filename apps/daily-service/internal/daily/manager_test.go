@@ -65,6 +65,17 @@ func (s *threadSafeTxStarter) Begin(ctx context.Context) (pgx.Tx, error) {
 	return &fakeTx{}, nil
 }
 
+// recordingTxStarter counts Begin calls so tests can prove that validation
+// rejected a request before any transaction was opened.
+type recordingTxStarter struct {
+	calls int
+}
+
+func (s *recordingTxStarter) Begin(ctx context.Context) (pgx.Tx, error) {
+	s.calls++
+	return &fakeTx{}, nil
+}
+
 type mockStore struct {
 	createDaily         func(ctx context.Context, arg database.CreateDailyParams) (database.Daily, error)
 	listDailies         func(ctx context.Context, arg database.ListDailiesParams) ([]database.Daily, error)
@@ -155,6 +166,9 @@ func TestDailyManager_Create(t *testing.T) {
 
 	store := &mockStore{
 		createDaily: func(ctx context.Context, arg database.CreateDailyParams) (database.Daily, error) {
+			if arg.TimeZone != "America/New_York" {
+				t.Errorf("time_zone = %q, want America/New_York", arg.TimeZone)
+			}
 			return database.Daily{
 				ID:          pgtype.UUID{Bytes: dailyID, Valid: true},
 				UserID:      arg.UserID,
@@ -162,6 +176,7 @@ func TestDailyManager_Create(t *testing.T) {
 				Description: arg.Description,
 				Difficulty:  arg.Difficulty,
 				DueDate:     arg.DueDate,
+				TimeZone:    arg.TimeZone,
 				Status:      "PENDING",
 				CreatedAt:   pgtype.Timestamptz{Time: now, Valid: true},
 				UpdatedAt:   pgtype.Timestamptz{Time: now, Valid: true},
@@ -178,6 +193,7 @@ func TestDailyManager_Create(t *testing.T) {
 			Description: "Do something",
 			Difficulty:  DifficultyMedium,
 			DueDate:     now.Add(24 * time.Hour),
+			TimeZone:    "America/New_York",
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -200,6 +216,30 @@ func TestDailyManager_Create(t *testing.T) {
 		})
 		if !errors.Is(err, ErrInvalidDifficulty) {
 			t.Errorf("error = %v, want ErrInvalidDifficulty", err)
+		}
+	})
+
+	t.Run("returns ErrInvalidTimeZone and does not touch the store", func(t *testing.T) {
+		for _, zone := range []string{"Mars/Olympus", "Local", "", "EST"} {
+			t.Run(zone, func(t *testing.T) {
+				store := &mockStore{
+					createDaily: func(ctx context.Context, arg database.CreateDailyParams) (database.Daily, error) {
+						t.Fatalf("CreateDaily must not be called for invalid zone %q", zone)
+						return database.Daily{}, nil
+					},
+				}
+				mgr := NewDailyManager(nil, nil, store)
+				_, err := mgr.Create(context.Background(), CreateInput{
+					UserID:     userID,
+					Title:      "Test task",
+					Difficulty: DifficultyEasy,
+					DueDate:    now.Add(24 * time.Hour),
+					TimeZone:   zone,
+				})
+				if !errors.Is(err, ErrInvalidTimeZone) {
+					t.Fatalf("error = %v, want ErrInvalidTimeZone", err)
+				}
+			})
 		}
 	})
 }
@@ -255,8 +295,8 @@ func TestDailyManager_List(t *testing.T) {
 				if arg.Status.Valid {
 					t.Errorf("status should not be valid")
 				}
-				if arg.DueDate.Valid {
-					t.Errorf("due_date should not be valid")
+				if arg.From.Valid || arg.To.Valid {
+					t.Errorf("range should not be valid")
 				}
 				return []database.Daily{
 					{ID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, Title: "One"},
@@ -283,8 +323,8 @@ func TestDailyManager_List(t *testing.T) {
 				if !arg.Status.Valid || arg.Status.String != string(statusFilter) {
 					t.Errorf("status = %v, want %v", arg.Status.String, statusFilter)
 				}
-				if !arg.DueDate.Valid || !arg.DueDate.Time.Equal(dateFilter) {
-					t.Errorf("due_date = %v, want %v", arg.DueDate.Time, dateFilter)
+				if !arg.From.Valid || !arg.From.Time.Equal(dateFilter) {
+					t.Errorf("from = %v, want %v", arg.From.Time, dateFilter)
 				}
 				return []database.Daily{
 					{ID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, Title: "Filtered", Status: "PENDING"},
@@ -294,7 +334,7 @@ func TestDailyManager_List(t *testing.T) {
 		mgr := NewDailyManager(nil, nil, store)
 		items, err := mgr.List(context.Background(), userID, ListFilter{
 			Status: &statusFilter,
-			Date:   &dateFilter,
+			From:   &dateFilter,
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -390,6 +430,49 @@ func TestDailyManager_Update(t *testing.T) {
 			t.Errorf("error = %v, want ErrInvalidDifficulty", err)
 		}
 	})
+
+	t.Run("returns ErrInvalidTimeZone before opening a transaction", func(t *testing.T) {
+		for _, zone := range []string{"Mars/Olympus", "Local", "", "EST"} {
+			t.Run(zone, func(t *testing.T) {
+				txStarter := &recordingTxStarter{}
+				store := &mockStore{
+					updateDaily: func(ctx context.Context, arg database.UpdateDailyParams) (database.Daily, error) {
+						t.Fatalf("UpdateDaily must not be called for invalid zone %q", zone)
+						return database.Daily{}, nil
+					},
+				}
+				mgr := NewDailyManager(txStarter, func(pgx.Tx) Store { return store }, store)
+				_, err := mgr.Update(context.Background(), userID, dailyID, UpdateInput{TimeZone: &zone})
+				if !errors.Is(err, ErrInvalidTimeZone) {
+					t.Fatalf("error = %v, want ErrInvalidTimeZone", err)
+				}
+				if txStarter.calls != 0 {
+					t.Errorf("Begin calls = %d, want 0", txStarter.calls)
+				}
+			})
+		}
+	})
+
+	t.Run("updates the configured time zone only when supplied", func(t *testing.T) {
+		tx := &fakeTx{}
+		zone := "Europe/Paris"
+		store := &mockStore{
+			updateDaily: func(ctx context.Context, arg database.UpdateDailyParams) (database.Daily, error) {
+				if !arg.TimeZone.Valid || arg.TimeZone.String != zone {
+					t.Errorf("time_zone = %+v, want %q", arg.TimeZone, zone)
+				}
+				return database.Daily{ID: arg.ID, UserID: arg.UserID, TimeZone: arg.TimeZone.String}, nil
+			},
+		}
+		mgr := NewDailyManager(&fakeTxStarter{tx: tx}, func(pgx.Tx) Store { return store }, nil)
+		item, err := mgr.Update(context.Background(), userID, dailyID, UpdateInput{TimeZone: &zone})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if item.TimeZone != zone {
+			t.Errorf("time_zone = %q, want %q", item.TimeZone, zone)
+		}
+	})
 }
 
 func TestDailyManager_Delete(t *testing.T) {
@@ -448,6 +531,170 @@ func TestDailyManager_Delete(t *testing.T) {
 			t.Errorf("tx was not committed")
 		}
 	})
+}
+
+// completedDailyTable is an in-memory model of the `dailies` and
+// `daily_history` tables. UpdateDaily and DeleteDaily mutate `dailies` only;
+// `daily_history` stays append-only, mirroring the real schema, so the manager
+// seam can prove that editing/deleting a COMPLETED daily never rewrites the
+// archived occurrence snapshots.
+type completedDailyTable struct {
+	dailies       map[uuid.UUID]database.Daily
+	history       []database.DailyHistory
+	historyWrites int
+}
+
+func (tbl *completedDailyTable) store() *mockStore {
+	return &mockStore{
+		updateDaily: func(_ context.Context, arg database.UpdateDailyParams) (database.Daily, error) {
+			row, ok := tbl.dailies[arg.ID.Bytes]
+			if !ok {
+				return database.Daily{}, pgx.ErrNoRows
+			}
+			if row.UserID != arg.UserID {
+				return database.Daily{}, pgx.ErrNoRows
+			}
+			if arg.Title.Valid {
+				row.Title = arg.Title.String
+			}
+			if arg.Description.Valid {
+				row.Description = arg.Description.String
+			}
+			if arg.Difficulty.Valid {
+				row.Difficulty = arg.Difficulty.String
+			}
+			if arg.DueDate.Valid {
+				row.DueDate = arg.DueDate
+			}
+			tbl.dailies[arg.ID.Bytes] = row
+			return row, nil
+		},
+		deleteDaily: func(_ context.Context, arg database.DeleteDailyParams) (int64, error) {
+			row, ok := tbl.dailies[arg.ID.Bytes]
+			if !ok || row.UserID != arg.UserID {
+				return 0, nil
+			}
+			delete(tbl.dailies, arg.ID.Bytes)
+			return 1, nil
+		},
+		listDailyHistory: func(context.Context, pgtype.UUID) ([]database.DailyHistory, error) {
+			return append([]database.DailyHistory(nil), tbl.history...), nil
+		},
+		createDailyHistory: func(context.Context, database.CreateDailyHistoryParams) error {
+			tbl.historyWrites++
+			return errors.New("editing or deleting a completed daily must not write daily_history")
+		},
+	}
+}
+
+// TestCompletedDailyMutationsPreserveHistoryContract drives the real
+// DailyManager (ADR-0011's domain seam) against a stateful store. It proves
+// that a COMPLETED recurring Daily can be edited and deleted — the behavior
+// the former `AND status = 'PENDING'` predicates rejected — while the archived
+// occurrence snapshots remain byte-for-byte unchanged for both operations.
+func TestCompletedDailyMutationsPreserveHistoryContract(t *testing.T) {
+	userID := uuid.New()
+	dailyID := uuid.New()
+	now := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	completedDaily := database.Daily{
+		ID:          pgtype.UUID{Bytes: dailyID, Valid: true},
+		UserID:      pgtype.UUID{Bytes: userID, Valid: true},
+		Title:       "Calibrate sensors",
+		Description: "before launch",
+		Difficulty:  "MEDIUM",
+		DueDate:     pgtype.Timestamptz{Time: now, Valid: true},
+		Status:      string(StatusCompleted),
+		CreatedAt:   pgtype.Timestamptz{Time: now, Valid: true},
+		UpdatedAt:   pgtype.Timestamptz{Time: now, Valid: true},
+	}
+	occurrence := database.DailyHistory{
+		ID:          pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		DailyID:     pgtype.UUID{Bytes: dailyID, Valid: true},
+		UserID:      pgtype.UUID{Bytes: userID, Valid: true},
+		Title:       "Calibrate sensors",
+		Description: "before launch",
+		Difficulty:  "MEDIUM",
+		DueDate:     pgtype.Timestamptz{Time: now, Valid: true},
+		Status:      string(StatusCompleted),
+		CompletedAt: pgtype.Timestamptz{Time: now, Valid: true},
+		ArchivedAt:  pgtype.Timestamptz{Time: now.Add(time.Minute), Valid: true},
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(t *testing.T, manager *DailyManager, table *completedDailyTable)
+	}{
+		{
+			name: "update completed daily",
+			mutate: func(t *testing.T, manager *DailyManager, table *completedDailyTable) {
+				t.Helper()
+				title := "Recalibrate sensors"
+				updated, err := manager.Update(context.Background(), userID, dailyID, UpdateInput{Title: &title})
+				if err != nil {
+					t.Fatalf("Update() error = %v; completed dailies must stay editable", err)
+				}
+				if updated.Status != StatusCompleted {
+					t.Errorf("Update() status = %q, want COMPLETED", updated.Status)
+				}
+				if got := table.dailies[dailyID].Title; got != title {
+					t.Errorf("persisted title = %q, want %q", got, title)
+				}
+			},
+		},
+		{
+			name: "delete completed daily",
+			mutate: func(t *testing.T, manager *DailyManager, table *completedDailyTable) {
+				t.Helper()
+				if err := manager.Delete(context.Background(), userID, dailyID); err != nil {
+					t.Fatalf("Delete() error = %v; completed dailies must stay deletable", err)
+				}
+				if _, ok := table.dailies[dailyID]; ok {
+					t.Error("daily still present after Delete()")
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			table := &completedDailyTable{
+				dailies: map[uuid.UUID]database.Daily{dailyID: completedDaily},
+				history: []database.DailyHistory{occurrence},
+			}
+			store := table.store()
+			tx := &fakeTx{}
+			manager := NewDailyManager(&fakeTxStarter{tx: tx}, func(pgx.Tx) Store { return store }, store)
+
+			before := encodedHistoryContract(t, manager, userID)
+			tt.mutate(t, manager, table)
+			after := encodedHistoryContract(t, manager, userID)
+
+			if string(after) != string(before) {
+				t.Errorf("daily history changed after %s:\n got %s\nwant %s", tt.name, after, before)
+			}
+			if table.historyWrites != 0 {
+				t.Errorf("history writes = %d, want 0", table.historyWrites)
+			}
+			if !tx.committed {
+				t.Error("mutation transaction was not committed")
+			}
+		})
+	}
+}
+
+// encodedHistoryContract renders the user's daily history as bytes so tests can
+// assert the occurrence snapshots are unchanged for the wire contract.
+func encodedHistoryContract(t *testing.T, manager *DailyManager, userID uuid.UUID) []byte {
+	t.Helper()
+	history, err := manager.ListHistory(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("ListHistory() error = %v", err)
+	}
+	encoded, err := json.Marshal(history)
+	if err != nil {
+		t.Fatalf("marshal daily history = %v", err)
+	}
+	return encoded
 }
 
 func TestDailyManager_Complete(t *testing.T) {

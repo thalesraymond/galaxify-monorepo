@@ -34,6 +34,7 @@ export default tseslint.config(
       'blob-report/**',
       '.lighthouseci/**',
       'src/generated/**',
+      'src/api/generated/**',
     ],
   },
   js.configs.recommended,

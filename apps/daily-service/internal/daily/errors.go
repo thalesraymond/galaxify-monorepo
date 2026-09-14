@@ -14,4 +14,7 @@ var (
 
 	// ErrInvalidDifficulty indicates an unsupported difficulty tier.
 	ErrInvalidDifficulty = errors.New("invalid difficulty")
+
+	// ErrInvalidTimeZone indicates an unsupported IANA time zone.
+	ErrInvalidTimeZone = errors.New("invalid daily time zone")
 )

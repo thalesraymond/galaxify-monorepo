@@ -7,6 +7,11 @@ RETURNING *;
 SELECT * FROM refresh_tokens
 WHERE token = $1;
 
+-- name: GetRefreshTokenByTokenForUpdate :one
+SELECT * FROM refresh_tokens
+WHERE token = $1
+FOR UPDATE;
+
 -- name: MarkRefreshTokenUsed :exec
 UPDATE refresh_tokens
 SET used = true

@@ -18,6 +18,7 @@ type Daily struct {
 	Status      string
 	CreatedAt   pgtype.Timestamptz
 	UpdatedAt   pgtype.Timestamptz
+	TimeZone    string
 }
 
 type DailyHistory struct {
@@ -32,6 +33,7 @@ type DailyHistory struct {
 	CompletedAt pgtype.Timestamptz
 	MissedAt    pgtype.Timestamptz
 	ArchivedAt  pgtype.Timestamptz
+	TimeZone    string
 }
 
 type DifficultyReward struct {

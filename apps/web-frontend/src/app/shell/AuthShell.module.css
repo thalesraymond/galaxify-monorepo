@@ -1,33 +1,28 @@
 .shell {
   display: flex;
+  min-height: 100vh;
   flex-direction: column;
   align-items: center;
-  min-height: 100vh;
+  justify-content: center;
   padding: var(--space-8) var(--space-4);
-  background-color: var(--color-shell-deep);
+  background: var(--color-shell-deep);
 }
-
 .header {
-  margin-bottom: var(--space-8);
+  margin-bottom: var(--space-6);
 }
-
 .brand {
   margin: 0;
   color: var(--color-amber);
   font-family: Georgia, 'Times New Roman', serif;
-  font-size: 1.5rem;
+  font-size: clamp(2rem, 6vw, 3rem);
 }
-
 .main {
   width: 100%;
-  max-width: 28rem;
+  max-width: 32rem;
   padding: var(--space-6);
-  border-radius: var(--radius-panel);
-  background-color: var(--color-logbook);
+  border-left: 4px solid var(--color-logbook-edge);
+  border-radius: var(--radius-logbook);
+  background: var(--color-logbook);
   color: var(--color-ink);
-}
-
-.main:focus-visible {
-  outline: 2px solid var(--color-focus);
-  outline-offset: 2px;
+  box-shadow: 0 18px 42px rgb(0 0 0 / 0.25);
 }

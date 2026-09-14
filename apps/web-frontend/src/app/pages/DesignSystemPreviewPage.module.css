@@ -1,0 +1,28 @@
+.page {
+  width: min(100%, 76rem);
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4);
+}
+@media (min-width: 768px) {
+  .page {
+    padding: var(--space-8);
+  }
+}
+@media (min-width: 1024px) {
+  .page {
+    padding: var(--space-12);
+  }
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.grid h2 {
+  margin-top: 0;
+}
+.form {
+  display: grid;
+  gap: var(--space-4);
+}

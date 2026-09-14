@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/database"
+	usersession "github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/session"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/httpcontract"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
@@ -32,10 +34,11 @@ type userConformanceHarness struct {
 	priv   ed25519.PrivateKey
 	kid    string
 
-	registration *mockRegistrationStore
-	session      *mockSessionStore
-	me           *mockMeStore
-	refreshToken *mockRefreshTokenStore
+	registration   *mockRegistrationStore
+	session        *mockSessionStore
+	sessionManager *mockSessionManager
+	me             *mockMeStore
+	refreshToken   *mockRefreshTokenStore
 }
 
 func (h *userConformanceHarness) token(t *testing.T, userID string) string {
@@ -67,8 +70,6 @@ func newUserConformance(t *testing.T) *userConformanceHarness {
 		ID: pgID, Email: "user@example.com", Username: "spacecadet",
 		PasswordHash: passwordHash, CreatedAt: createdAt, UpdatedAt: createdAt,
 	}
-	familyID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
-
 	registration := &mockRegistrationStore{
 		insertUser: func(_ context.Context, arg database.InsertUserParams) (database.User, error) {
 			u := user
@@ -82,18 +83,12 @@ func newUserConformance(t *testing.T) *userConformanceHarness {
 	}
 	session := &mockSessionStore{
 		getUserByEmail: func(context.Context, string) (database.User, error) { return user, nil },
-		getRefreshTokenByToken: func(context.Context, string) (database.RefreshToken, error) {
-			return database.RefreshToken{
-				ID: 1, UserID: pgID, Token: "valid-token", FamilyID: familyID, Used: false,
-				ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
-			}, nil
+	}
+	sessionManager := &mockSessionManager{
+		rotate: func(context.Context, string) (usersession.Rotation, error) {
+			return usersession.Rotation{RefreshToken: "replacement-token", UserID: userID, Email: user.Email}, nil
 		},
-		markRefreshTokenUsed:        func(context.Context, int64) error { return nil },
-		deleteRefreshTokensByFamily: func(context.Context, pgtype.UUID) error { return nil },
-		insertRefreshToken: func(context.Context, database.InsertRefreshTokenParams) (database.RefreshToken, error) {
-			return database.RefreshToken{}, nil
-		},
-		getUserByID: func(context.Context, pgtype.UUID) (database.User, error) { return user, nil },
+		logout: func(context.Context, string) error { return nil },
 	}
 	me := &mockMeStore{
 		getUserByID: func(context.Context, pgtype.UUID) (database.User, error) { return user, nil },
@@ -118,13 +113,13 @@ func newUserConformance(t *testing.T) *userConformanceHarness {
 	mux := http.NewServeMux()
 	NewUserHealthHandler("user-service").RegisterHealthRoutes(mux)
 	NewRegistrationHandler(starter, func(pgx.Tx) RegistrationStore { return registration }, tokenIssuer, logger).RegisterRoutes(mux)
-	NewSessionHandler(session, tokenIssuer, logger).RegisterRoutes(mux)
+	NewSessionHandler(session, sessionManager, tokenIssuer, logger).RegisterRoutes(mux)
 	NewJWKSHandler(priv, kid, logger).RegisterRoutes(mux)
 	NewMeHandler(me, starter, func(pgx.Tx) MeStore { return me }, authHandshake, logger).RegisterMeRoutes(mux)
 
 	return &userConformanceHarness{
 		mux: mux, router: sharedhttp.RequestIDMiddleware(mux), priv: priv, kid: kid,
-		registration: registration, session: session, me: me, refreshToken: refreshToken,
+		registration: registration, session: session, sessionManager: sessionManager, me: me, refreshToken: refreshToken,
 	}
 }
 
@@ -135,6 +130,7 @@ func TestOpenAPIConformance(t *testing.T) {
 		{Method: http.MethodPost, Path: "/users"},
 		{Method: http.MethodPost, Path: "/auth/login"},
 		{Method: http.MethodPost, Path: "/auth/refresh"},
+		{Method: http.MethodPost, Path: "/auth/logout"},
 		{Method: http.MethodGet, Path: "/.well-known/jwks.json"},
 		{Method: http.MethodGet, Path: "/users/me"},
 		{Method: http.MethodPatch, Path: "/users/me"},
@@ -148,15 +144,16 @@ func TestOpenAPIConformance(t *testing.T) {
 	subject := uuid.New().String()
 
 	tests := []struct {
-		name         string
-		method       string
-		target       string
-		body         string
-		noAuth       bool
-		rawAuth      string
-		configure    func(*userConformanceHarness)
-		wantStatus   int
-		responseOnly bool
+		name          string
+		method        string
+		target        string
+		body          string
+		noAuth        bool
+		rawAuth       string
+		configure     func(*userConformanceHarness)
+		wantStatus    int
+		wantErrorCode string
+		responseOnly  bool
 	}{
 		{name: "health", method: http.MethodGet, target: "/health", noAuth: true, wantStatus: http.StatusOK},
 		{
@@ -228,11 +225,12 @@ func TestOpenAPIConformance(t *testing.T) {
 			name: "refresh invalid token", method: http.MethodPost, target: "/auth/refresh",
 			body: `{"refresh_token":"valid-token"}`,
 			configure: func(h *userConformanceHarness) {
-				h.session.getRefreshTokenByToken = func(context.Context, string) (database.RefreshToken, error) {
-					return database.RefreshToken{}, pgx.ErrNoRows
+				h.sessionManager.rotate = func(context.Context, string) (usersession.Rotation, error) {
+					return usersession.Rotation{}, usersession.ErrInvalidRefreshToken
 				}
 			},
-			wantStatus: http.StatusUnauthorized,
+			wantStatus:    http.StatusUnauthorized,
+			wantErrorCode: "AUTH_INVALID_TOKEN",
 		},
 		{
 			name: "refresh validation error", method: http.MethodPost, target: "/auth/refresh",
@@ -240,15 +238,17 @@ func TestOpenAPIConformance(t *testing.T) {
 			wantStatus: http.StatusUnprocessableEntity, responseOnly: true,
 		},
 		{
-			name: "refresh internal error", method: http.MethodPost, target: "/auth/refresh",
+			name: "refresh infrastructure outage", method: http.MethodPost, target: "/auth/refresh",
 			body: `{"refresh_token":"valid-token"}`,
 			configure: func(h *userConformanceHarness) {
-				h.session.getUserByID = func(context.Context, pgtype.UUID) (database.User, error) {
-					return database.User{}, errors.New("db down")
+				h.sessionManager.rotate = func(context.Context, string) (usersession.Rotation, error) {
+					return usersession.Rotation{}, fmt.Errorf("database unavailable: %w", usersession.ErrRefreshUnavailable)
 				}
 			},
-			wantStatus: http.StatusInternalServerError,
+			wantStatus:    http.StatusServiceUnavailable,
+			wantErrorCode: "AUTH_SERVICE_UNAVAILABLE",
 		},
+		{name: "logout", method: http.MethodPost, target: "/auth/logout", body: `{"refresh_token":"valid-token"}`, noAuth: true, wantStatus: http.StatusNoContent},
 		{name: "jwks", method: http.MethodGet, target: "/.well-known/jwks.json", noAuth: true, wantStatus: http.StatusOK},
 		{name: "get me", method: http.MethodGet, target: "/users/me", wantStatus: http.StatusOK},
 		{name: "get me missing auth", method: http.MethodGet, target: "/users/me", noAuth: true, wantStatus: http.StatusUnauthorized},
@@ -336,6 +336,12 @@ func TestOpenAPIConformance(t *testing.T) {
 				ValidateRequest: !tc.responseOnly,
 				WantStatus:      tc.wantStatus,
 			})
+
+			if tc.wantErrorCode != "" {
+				rec := httptest.NewRecorder()
+				harness.router.ServeHTTP(rec, buildRequest())
+				wantErrorCode(t, rec, tc.wantErrorCode)
+			}
 		})
 	}
 }
