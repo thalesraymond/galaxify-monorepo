@@ -52,18 +52,19 @@ func TestOpenAPIConformance(t *testing.T) {
 	createdAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	item := daily.Daily{
 		ID: dailyID, UserID: userID, Title: "Explore Mars", Description: "scan surface",
-		Difficulty: daily.DifficultyMedium, DueDate: dueDate, Status: daily.StatusPending,
+		Difficulty: daily.DifficultyMedium, DueDate: dueDate, TimeZone: "UTC", Status: daily.StatusPending,
 		CreatedAt: createdAt, UpdatedAt: createdAt,
 	}
 	historyID := uuid.New()
 	completedAt := dueDate.Add(time.Hour)
 	history := daily.DailyHistory{
 		ID: historyID, DailyID: dailyID, UserID: userID, Title: "Explore Mars",
-		Description: "scan surface", Difficulty: daily.DifficultyMedium, DueDate: dueDate,
+		Description: "scan surface", Difficulty: daily.DifficultyMedium, DueDate: dueDate, TimeZone: "UTC",
 		Status: daily.StatusCompleted, CompletedAt: &completedAt, ArchivedAt: completedAt.Add(time.Second),
 	}
 
 	createBody := `{"title":"Explore Mars","description":"scan surface","difficulty":"MEDIUM","due_date":"2026-09-15T10:00:00Z","time_zone":"UTC"}`
+	createLocalDeadlineBody := `{"title":"Explore Mars","description":"scan surface","difficulty":"MEDIUM","due_local_date":"2026-09-15","due_local_time":"09:00","time_zone":"America/New_York"}`
 
 	tests := []struct {
 		name         string
@@ -78,6 +79,13 @@ func TestOpenAPIConformance(t *testing.T) {
 		{name: "health", method: http.MethodGet, target: "/health", noAuth: true, wantStatus: http.StatusOK},
 		{
 			name: "create daily", method: http.MethodPost, target: "/dailies", body: createBody,
+			configure: func(m *mockDailyManager) {
+				m.create = func(context.Context, daily.CreateInput) (daily.Daily, error) { return item, nil }
+			},
+			wantStatus: http.StatusCreated,
+		},
+		{
+			name: "create daily from local deadline", method: http.MethodPost, target: "/dailies", body: createLocalDeadlineBody,
 			configure: func(m *mockDailyManager) {
 				m.create = func(context.Context, daily.CreateInput) (daily.Daily, error) { return item, nil }
 			},
@@ -100,6 +108,25 @@ func TestOpenAPIConformance(t *testing.T) {
 		},
 		{
 			name: "list dailies", method: http.MethodGet, target: "/dailies?status=PENDING",
+			configure: func(m *mockDailyManager) {
+				m.list = func(context.Context, uuid.UUID, daily.ListFilter) ([]daily.Daily, error) {
+					return []daily.Daily{item}, nil
+				}
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "list dailies with instant range", method: http.MethodGet,
+			target: "/dailies?from=2026-09-15T00:00:00Z&to=2026-09-16T00:00:00Z",
+			configure: func(m *mockDailyManager) {
+				m.list = func(context.Context, uuid.UUID, daily.ListFilter) ([]daily.Daily, error) {
+					return []daily.Daily{item}, nil
+				}
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "list dailies with legacy date", method: http.MethodGet, target: "/dailies?date=2026-09-15",
 			configure: func(m *mockDailyManager) {
 				m.list = func(context.Context, uuid.UUID, daily.ListFilter) ([]daily.Daily, error) {
 					return []daily.Daily{item}, nil

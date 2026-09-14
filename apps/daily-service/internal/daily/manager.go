@@ -95,7 +95,7 @@ func (m *DailyManager) Create(ctx context.Context, input CreateInput) (Daily, er
 	if !IsValidDifficulty(input.Difficulty) {
 		return Daily{}, ErrInvalidDifficulty
 	}
-	if _, err := time.LoadLocation(input.TimeZone); err != nil {
+	if _, err := LoadTimeZone(input.TimeZone); err != nil {
 		return Daily{}, ErrInvalidTimeZone
 	}
 
@@ -174,7 +174,7 @@ func (m *DailyManager) Update(ctx context.Context, userID, id uuid.UUID, input U
 		return Daily{}, ErrInvalidDifficulty
 	}
 	if input.TimeZone != nil {
-		if _, err := time.LoadLocation(*input.TimeZone); err != nil {
+		if _, err := LoadTimeZone(*input.TimeZone); err != nil {
 			return Daily{}, ErrInvalidTimeZone
 		}
 	}
