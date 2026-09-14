@@ -125,11 +125,6 @@ paths:
       summary: Rotate a single-use refresh token and issue a new access token.
       tags: [auth]
       x-implementation-status: implemented
-      x-planned-changes: >-
-        Make refresh-token consume/replace atomic and concurrency-safe, and
-        surface database/infrastructure failures as retryable 5xx responses
-        instead of collapsing them into AUTH_INVALID_TOKEN. See
-        docs/specs/web-frontend.md §7.1 (User Service).
       x-ticket: "#149"
       parameters:
         - $ref: "#/components/parameters/XRequestId"
@@ -155,8 +150,6 @@ paths:
           $ref: "#/components/responses/ValidationFailed"
         "500":
           $ref: "#/components/responses/InternalError"
-        "503":
-          $ref: "#/components/responses/RefreshUnavailable"
         default:
           $ref: "#/components/responses/Error"
 
@@ -165,14 +158,11 @@ paths:
       operationId: userLogout
       summary: Revoke the token family that owns a refresh token.
       description: |
-        **Planned (not implemented).** Idempotent family logout that accepts
-        only a `refresh_token` (no access token required) and always returns 204
-        once the family is revoked or was already absent.
+        Idempotent family logout that accepts only a `refresh_token` (no access
+        token required) and always returns 204 once the family is revoked or was
+        already absent.
       tags: [auth]
-      x-implementation-status: planned
-      x-planned-changes: >-
-        Add idempotent POST /auth/logout accepting {refresh_token}, requiring no
-        access token, revoking only its token family, and returning 204.
+      x-implementation-status: implemented
       x-ticket: "#149"
       parameters:
         - $ref: "#/components/parameters/XRequestId"
@@ -390,8 +380,6 @@ components:
 
     LogoutRequest:
       type: object
-      description: Planned request body for POST /auth/logout.
-      x-implementation-status: planned
       required: [refresh_token]
       additionalProperties: false
       properties:
@@ -566,20 +554,6 @@ components:
 
     InternalError:
       description: Unexpected server error. Code INTERNAL_ERROR.
-      headers:
-        X-Request-Id:
-          $ref: "#/components/headers/XRequestId"
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
-
-    RefreshUnavailable:
-      description: >-
-        **Planned.** Retryable infrastructure failure while refreshing. The
-        refresh token is preserved; code AUTH_SERVICE_UNAVAILABLE. Today a
-        database error is incorrectly reported as AUTH_INVALID_TOKEN.
-      x-implementation-status: planned
       headers:
         X-Request-Id:
           $ref: "#/components/headers/XRequestId"

@@ -17,16 +17,31 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/database"
+	usersession "github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/session"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
 )
 
 type mockSessionStore struct {
-	getUserByEmail              func(ctx context.Context, email string) (database.User, error)
-	getRefreshTokenByToken      func(ctx context.Context, token string) (database.RefreshToken, error)
-	markRefreshTokenUsed        func(ctx context.Context, id int64) error
-	deleteRefreshTokensByFamily func(ctx context.Context, familyID pgtype.UUID) error
-	insertRefreshToken          func(ctx context.Context, arg database.InsertRefreshTokenParams) (database.RefreshToken, error)
-	getUserByID                 func(ctx context.Context, id pgtype.UUID) (database.User, error)
+	getUserByEmail func(ctx context.Context, email string) (database.User, error)
+}
+
+type mockSessionManager struct {
+	rotate func(context.Context, string) (usersession.Rotation, error)
+	logout func(context.Context, string) error
+}
+
+func (m *mockSessionManager) Rotate(ctx context.Context, token string) (usersession.Rotation, error) {
+	if m.rotate != nil {
+		return m.rotate(ctx, token)
+	}
+	return usersession.Rotation{}, errors.New("unexpected Rotate call")
+}
+
+func (m *mockSessionManager) Logout(ctx context.Context, token string) error {
+	if m.logout != nil {
+		return m.logout(ctx, token)
+	}
+	return errors.New("unexpected Logout call")
 }
 
 func (m *mockSessionStore) GetUserByEmail(ctx context.Context, email string) (database.User, error) {
@@ -36,42 +51,7 @@ func (m *mockSessionStore) GetUserByEmail(ctx context.Context, email string) (da
 	return database.User{}, errors.New("unexpected GetUserByEmail call")
 }
 
-func (m *mockSessionStore) GetRefreshTokenByToken(ctx context.Context, token string) (database.RefreshToken, error) {
-	if m.getRefreshTokenByToken != nil {
-		return m.getRefreshTokenByToken(ctx, token)
-	}
-	return database.RefreshToken{}, errors.New("unexpected GetRefreshTokenByToken call")
-}
-
-func (m *mockSessionStore) MarkRefreshTokenUsed(ctx context.Context, id int64) error {
-	if m.markRefreshTokenUsed != nil {
-		return m.markRefreshTokenUsed(ctx, id)
-	}
-	return errors.New("unexpected MarkRefreshTokenUsed call")
-}
-
-func (m *mockSessionStore) DeleteRefreshTokensByFamilyID(ctx context.Context, familyID pgtype.UUID) error {
-	if m.deleteRefreshTokensByFamily != nil {
-		return m.deleteRefreshTokensByFamily(ctx, familyID)
-	}
-	return errors.New("unexpected DeleteRefreshTokensByFamilyID call")
-}
-
-func (m *mockSessionStore) InsertRefreshToken(ctx context.Context, arg database.InsertRefreshTokenParams) (database.RefreshToken, error) {
-	if m.insertRefreshToken != nil {
-		return m.insertRefreshToken(ctx, arg)
-	}
-	return database.RefreshToken{}, errors.New("unexpected InsertRefreshToken call")
-}
-
-func (m *mockSessionStore) GetUserByID(ctx context.Context, id pgtype.UUID) (database.User, error) {
-	if m.getUserByID != nil {
-		return m.getUserByID(ctx, id)
-	}
-	return database.User{}, errors.New("unexpected GetUserByID call")
-}
-
-func newTestSessionHandler(t *testing.T, store sessionStore, refreshStore refreshTokenStore) *SessionHandler {
+func newTestSessionHandler(t *testing.T, store sessionStore, manager usersession.Manager, refreshStore refreshTokenStore) *SessionHandler {
 	t.Helper()
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -79,7 +59,7 @@ func newTestSessionHandler(t *testing.T, store sessionStore, refreshStore refres
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	tokenIssuer := NewTokenIssuer(priv, "test-key", refreshStore)
-	return NewSessionHandler(store, tokenIssuer, logger)
+	return NewSessionHandler(store, manager, tokenIssuer, logger)
 }
 
 func TestLogin(t *testing.T) {
@@ -215,7 +195,7 @@ func TestLogin(t *testing.T) {
 				tt.setupRefreshStore(refreshStore)
 			}
 
-			handler := newTestSessionHandler(t, store, refreshStore)
+			handler := newTestSessionHandler(t, store, &mockSessionManager{}, refreshStore)
 			rec := httptest.NewRecorder()
 			req := newTestRequest(t, http.MethodPost, "/auth/login", tt.body)
 
@@ -261,7 +241,7 @@ func TestLoginAccessTokenIsValid(t *testing.T) {
 			return database.RefreshToken{}, nil
 		},
 	}
-	handler := newTestSessionHandler(t, store, refreshStore)
+	handler := newTestSessionHandler(t, store, &mockSessionManager{}, refreshStore)
 
 	rec := httptest.NewRecorder()
 	req := newTestRequest(t, http.MethodPost, "/auth/login", `{"email":"user@example.com","password":"secret123"}`)
@@ -285,39 +265,11 @@ func TestLoginAccessTokenIsValid(t *testing.T) {
 
 func TestRefresh(t *testing.T) {
 	userID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
-	familyID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
-
-	validToken := database.RefreshToken{
-		ID:        1,
-		UserID:    userID,
-		Token:     "valid-token",
-		FamilyID:  familyID,
-		Used:      false,
-		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(7 * 24 * time.Hour), Valid: true},
-	}
-
-	usedToken := database.RefreshToken{
-		ID:        2,
-		UserID:    userID,
-		Token:     "used-token",
-		FamilyID:  familyID,
-		Used:      true,
-		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(7 * 24 * time.Hour), Valid: true},
-	}
-
-	expiredToken := database.RefreshToken{
-		ID:        3,
-		UserID:    userID,
-		Token:     "expired-token",
-		FamilyID:  familyID,
-		Used:      false,
-		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(-time.Hour), Valid: true},
-	}
 
 	tests := []struct {
 		name           string
 		body           string
-		setupStore     func(m *mockSessionStore)
+		setupManager   func(m *mockSessionManager)
 		wantStatus     int
 		wantFieldError map[string]string
 		wantErrorCode  string
@@ -326,36 +278,9 @@ func TestRefresh(t *testing.T) {
 		{
 			name: "rotates valid token",
 			body: `{"refresh_token":"valid-token"}`,
-			setupStore: func(m *mockSessionStore) {
-				m.getRefreshTokenByToken = func(ctx context.Context, token string) (database.RefreshToken, error) {
-					if token != "valid-token" {
-						t.Errorf("token = %q, want valid-token", token)
-					}
-					return validToken, nil
-				}
-				m.markRefreshTokenUsed = func(ctx context.Context, id int64) error {
-					if id != 1 {
-						t.Errorf("id = %d, want 1", id)
-					}
-					return nil
-				}
-				m.insertRefreshToken = func(ctx context.Context, arg database.InsertRefreshTokenParams) (database.RefreshToken, error) {
-					if arg.UserID != userID {
-						t.Error("user_id mismatch")
-					}
-					if arg.Token == "" {
-						t.Error("new token is empty")
-					}
-					if arg.FamilyID != familyID {
-						t.Error("family_id mismatch")
-					}
-					return database.RefreshToken{Token: arg.Token}, nil
-				}
-				m.getUserByID = func(ctx context.Context, id pgtype.UUID) (database.User, error) {
-					if id != userID {
-						t.Error("user_id mismatch in GetUserByID")
-					}
-					return database.User{ID: userID, Email: "user@example.com", Username: "spacecadet"}, nil
+			setupManager: func(m *mockSessionManager) {
+				m.rotate = func(context.Context, string) (usersession.Rotation, error) {
+					return usersession.Rotation{RefreshToken: "replacement-token", UserID: userID, Email: "user@example.com"}, nil
 				}
 			},
 			wantStatus: http.StatusOK,
@@ -377,9 +302,9 @@ func TestRefresh(t *testing.T) {
 		{
 			name: "token not found",
 			body: `{"refresh_token":"does-not-exist"}`,
-			setupStore: func(m *mockSessionStore) {
-				m.getRefreshTokenByToken = func(ctx context.Context, token string) (database.RefreshToken, error) {
-					return database.RefreshToken{}, pgx.ErrNoRows
+			setupManager: func(m *mockSessionManager) {
+				m.rotate = func(context.Context, string) (usersession.Rotation, error) {
+					return usersession.Rotation{}, usersession.ErrInvalidRefreshToken
 				}
 			},
 			wantStatus:    http.StatusUnauthorized,
@@ -388,23 +313,10 @@ func TestRefresh(t *testing.T) {
 		{
 			name: "token already used - nukes family",
 			body: `{"refresh_token":"used-token"}`,
-			setupStore: func(m *mockSessionStore) {
-				familyDeleted := false
-				m.getRefreshTokenByToken = func(ctx context.Context, token string) (database.RefreshToken, error) {
-					return usedToken, nil
+			setupManager: func(m *mockSessionManager) {
+				m.rotate = func(context.Context, string) (usersession.Rotation, error) {
+					return usersession.Rotation{}, usersession.ErrInvalidRefreshToken
 				}
-				m.deleteRefreshTokensByFamily = func(ctx context.Context, fid pgtype.UUID) error {
-					if fid != familyID {
-						t.Error("family_id mismatch in delete")
-					}
-					familyDeleted = true
-					return nil
-				}
-				t.Cleanup(func() {
-					if !familyDeleted {
-						t.Error("family was not deleted on reuse detection")
-					}
-				})
 			},
 			wantStatus:    http.StatusUnauthorized,
 			wantErrorCode: "AUTH_INVALID_TOKEN",
@@ -412,9 +324,9 @@ func TestRefresh(t *testing.T) {
 		{
 			name: "expired token",
 			body: `{"refresh_token":"expired-token"}`,
-			setupStore: func(m *mockSessionStore) {
-				m.getRefreshTokenByToken = func(ctx context.Context, token string) (database.RefreshToken, error) {
-					return expiredToken, nil
+			setupManager: func(m *mockSessionManager) {
+				m.rotate = func(context.Context, string) (usersession.Rotation, error) {
+					return usersession.Rotation{}, usersession.ErrInvalidRefreshToken
 				}
 			},
 			wantStatus:    http.StatusUnauthorized,
@@ -423,16 +335,9 @@ func TestRefresh(t *testing.T) {
 		{
 			name: "get user by id error after rotation",
 			body: `{"refresh_token":"valid-token"}`,
-			setupStore: func(m *mockSessionStore) {
-				m.getRefreshTokenByToken = func(ctx context.Context, token string) (database.RefreshToken, error) {
-					return validToken, nil
-				}
-				m.markRefreshTokenUsed = func(ctx context.Context, id int64) error { return nil }
-				m.insertRefreshToken = func(ctx context.Context, arg database.InsertRefreshTokenParams) (database.RefreshToken, error) {
-					return database.RefreshToken{Token: arg.Token}, nil
-				}
-				m.getUserByID = func(ctx context.Context, id pgtype.UUID) (database.User, error) {
-					return database.User{}, errors.New("db down")
+			setupManager: func(m *mockSessionManager) {
+				m.rotate = func(context.Context, string) (usersession.Rotation, error) {
+					return usersession.Rotation{}, errors.New("db down")
 				}
 			},
 			wantStatus:    http.StatusInternalServerError,
@@ -443,11 +348,12 @@ func TestRefresh(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &mockSessionStore{}
-			if tt.setupStore != nil {
-				tt.setupStore(store)
+			manager := &mockSessionManager{}
+			if tt.setupManager != nil {
+				tt.setupManager(manager)
 			}
 
-			handler := newTestSessionHandler(t, store, &mockRefreshTokenStore{
+			handler := newTestSessionHandler(t, store, manager, &mockRefreshTokenStore{
 				insertRefreshToken: func(ctx context.Context, arg database.InsertRefreshTokenParams) (database.RefreshToken, error) {
 					return database.RefreshToken{}, nil
 				},
@@ -482,31 +388,11 @@ func TestRefresh(t *testing.T) {
 
 func TestRefreshAccessTokenIsValid(t *testing.T) {
 	userID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
-	familyID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	store := &mockSessionStore{}
 
-	validToken := database.RefreshToken{
-		ID:        1,
-		UserID:    userID,
-		Token:     "valid-token",
-		FamilyID:  familyID,
-		Used:      false,
-		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(7 * 24 * time.Hour), Valid: true},
-	}
-
-	store := &mockSessionStore{
-		getRefreshTokenByToken: func(ctx context.Context, token string) (database.RefreshToken, error) {
-			return validToken, nil
-		},
-		markRefreshTokenUsed: func(ctx context.Context, id int64) error { return nil },
-		insertRefreshToken: func(ctx context.Context, arg database.InsertRefreshTokenParams) (database.RefreshToken, error) {
-			return database.RefreshToken{Token: arg.Token}, nil
-		},
-		getUserByID: func(ctx context.Context, id pgtype.UUID) (database.User, error) {
-			return database.User{ID: userID, Email: "user@example.com", Username: "spacecadet"}, nil
-		},
-	}
-
-	handler := newTestSessionHandler(t, store, &mockRefreshTokenStore{
+	handler := newTestSessionHandler(t, store, &mockSessionManager{rotate: func(context.Context, string) (usersession.Rotation, error) {
+		return usersession.Rotation{RefreshToken: "replacement-token", UserID: userID, Email: "user@example.com"}, nil
+	}}, &mockRefreshTokenStore{
 		insertRefreshToken: func(ctx context.Context, arg database.InsertRefreshTokenParams) (database.RefreshToken, error) {
 			return database.RefreshToken{}, nil
 		},
@@ -529,5 +415,53 @@ func TestRefreshAccessTokenIsValid(t *testing.T) {
 	}
 	if claims.Email != "user@example.com" {
 		t.Errorf("email claim = %q, want user@example.com", claims.Email)
+	}
+}
+
+func TestLogout(t *testing.T) {
+	tests := []struct {
+		name          string
+		body          string
+		manager       *mockSessionManager
+		wantStatus    int
+		wantErrorCode string
+	}{
+		{
+			name: "revokes presented token family",
+			body: `{"refresh_token":"current-token"}`,
+			manager: &mockSessionManager{logout: func(_ context.Context, token string) error {
+				if token != "current-token" {
+					t.Errorf("logout token = %q, want current-token", token)
+				}
+				return nil
+			}},
+			wantStatus: http.StatusNoContent,
+		},
+		{
+			name:          "missing refresh token",
+			body:          `{}`,
+			manager:       &mockSessionManager{},
+			wantStatus:    http.StatusUnprocessableEntity,
+			wantErrorCode: "VALIDATION_FAILED",
+		},
+		{
+			name:          "logout infrastructure failure",
+			body:          `{"refresh_token":"current-token"}`,
+			manager:       &mockSessionManager{logout: func(context.Context, string) error { return errors.New("database down") }},
+			wantStatus:    http.StatusInternalServerError,
+			wantErrorCode: "INTERNAL_ERROR",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := newTestSessionHandler(t, &mockSessionStore{}, tt.manager, &mockRefreshTokenStore{})
+			rec := httptest.NewRecorder()
+			handler.Logout(rec, newTestRequest(t, http.MethodPost, "/auth/logout", tt.body))
+			wantStatus(t, rec, tt.wantStatus)
+			if tt.wantErrorCode != "" {
+				wantErrorCode(t, rec, tt.wantErrorCode)
+			}
+		})
 	}
 }
