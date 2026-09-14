@@ -50,6 +50,22 @@ func IsValidStatus(s Status) bool {
 	return ok
 }
 
+// Content length limits for a Daily. They mirror the web form limits in the
+// Web Frontend Specification §5.3 and bound both create and update.
+const (
+	MaxTitleLength       = 120
+	MaxDescriptionLength = 1000
+)
+
+// DifficultyMetadata describes the backend-owned reward and missed-hull-damage
+// facts for one difficulty tier. It is the single source of truth for the
+// difficulty metadata endpoint and the awarded-material effect of completion.
+type DifficultyMetadata struct {
+	Difficulty      Difficulty
+	RewardMaterials int
+	DamageAmount    int
+}
+
 // Daily represents a task in the domain model.
 type Daily struct {
 	ID          uuid.UUID
@@ -80,8 +96,14 @@ type DailyHistory struct {
 	ArchivedAt  time.Time
 }
 
-// CreateInput defines parameters required to create a new daily task.
+// Completion is the outcome of marking a Daily COMPLETED: the completed Daily
+// plus the awarded-material effect sourced from the difficulty_rewards table.
+type Completion struct {
+	Daily
+	AwardedMaterials int
+}
 
+// CreateInput defines parameters required to create a new daily task.
 type CreateInput struct {
 	UserID      uuid.UUID
 	Title       string

@@ -271,6 +271,37 @@ func (q *Queries) ListDailyHistory(ctx context.Context, arg ListDailyHistoryPara
 	return items, nil
 }
 
+const listDifficultyRewards = `-- name: ListDifficultyRewards :many
+SELECT difficulty, reward_materials, damage_amount FROM difficulty_rewards
+ORDER BY CASE difficulty
+    WHEN 'EASY' THEN 1
+    WHEN 'MEDIUM' THEN 2
+    WHEN 'HARD' THEN 3
+    ELSE 4
+END
+`
+
+// Canonical tier order (EASY, MEDIUM, HARD) so the metadata endpoint is stable.
+func (q *Queries) ListDifficultyRewards(ctx context.Context) ([]DifficultyReward, error) {
+	rows, err := q.db.Query(ctx, listDifficultyRewards)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DifficultyReward
+	for rows.Next() {
+		var i DifficultyReward
+		if err := rows.Scan(&i.Difficulty, &i.RewardMaterials, &i.DamageAmount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markDailyComplete = `-- name: MarkDailyComplete :one
 UPDATE dailies SET
     status = 'COMPLETED',

@@ -7,7 +7,9 @@ This document defines the implementation details for the Daily Service (Phase 1)
 - **Daily**: `{ id, user_id, title, description, difficulty [EASY|MEDIUM|HARD], due_date, time_zone, status [PENDING|COMPLETED], created_at, updated_at }`. `due_date` is an RFC3339 instant and `time_zone` is an IANA zone retained until explicitly edited. The API accepts a **local deadline** (local due date + local due time) plus `time_zone` and resolves it to `due_date` in the backend; an ambiguous fall-back wall time selects its first occurrence and a nonexistent spring-forward wall time moves to the first valid local instant after it. Responses also expose the derived `due_local_date`/`due_local_time` projection. All dailies are recurrent by design; active tasks in `dailies` represent the current cycle.
 - **DailyHistory**: `{ id, daily_id, user_id, title, description, difficulty, due_date, time_zone, status [COMPLETED|MISSED], completed_at, missed_at, archived_at }`. Archival log capturing the outcome and configured zone of each completed or missed daily cycle; the `due_local_date`/`due_local_time` projection is derived from `due_date` + `time_zone`.
 - **Time Zone Validation**: `time_zone` must be an explicit IANA name (UTC is allowed). Go's process-dependent `Local` location and bare aliases are rejected so a deployment host's time zone can never change scheduling.
-- **Difficulty Mapping**: Difficulty maps to `reward_materials` and `damage_amount` via a static table/configuration (`difficulty_rewards`).
+- **Difficulty Mapping**: Difficulty maps to `reward_materials` and `damage_amount` via a static table/configuration (`difficulty_rewards`). This table is the single source of truth for both `GET /dailies/difficulties` and the awarded-material effect returned by completion.
+- **Content Limits**: A Daily `title` is at most 120 characters and its `description` at most 1000 characters, enforced in the domain and surfaced as `422 VALIDATION_FAILED` field errors on create and update.
+- **Player Provisioning**: A Player's Daily state is provisioned asynchronously by the `user.created` consumer populating `users_cache`. Until that row exists, Daily operations return the retryable `503 DAILY_PLAYER_NOT_READY` so missing provisioning stays distinguishable from absence (`404`), validation (`422`), and internal failure (`500`).
 
 ## Database Schema
 
@@ -34,15 +36,18 @@ Required sqlc queries:
 
 Auth: Required (Bearer token via cross-cutting middleware).
 
-- `POST /dailies` — create a new recurring daily task. Accepts a local deadline (`due_local_date` + `due_local_time`) with an explicit IANA `time_zone`, or a legacy RFC3339 `due_date`; supplying both is rejected.
+- `POST /dailies` — create a new recurring daily task. Accepts a local deadline (`due_local_date` + `due_local_time`) with an explicit IANA `time_zone`, or a legacy RFC3339 `due_date`; supplying both is rejected. `title` is limited to 120 characters and `description` to 1000.
 - `GET /dailies` — list active dailies for the current cycle (filter by status and explicit RFC3339 `from`/`to` instants). The legacy `date`/`due_date` query parameters remain supported and are deprecated: they accept a `YYYY-MM-DD` day or an RFC3339 instant and select that UTC calendar day.
 - `GET /dailies/history` — list past execution history from `daily_history` (ordered by `due_date DESC`)
+- `GET /dailies/difficulties` — list the backend-owned reward and missed-damage metadata for each difficulty tier in canonical EASY, MEDIUM, HARD order, so the frontend never duplicates reward/damage rules.
 - `GET /dailies/{id}` — get one active daily
-- `PATCH /dailies/{id}` — edit active daily (title, description, difficulty; permitted even if COMPLETED today)
+- `PATCH /dailies/{id}` — edit active daily (title, description, difficulty; permitted even if COMPLETED today). The same 120/1000 character limits apply.
 - `DELETE /dailies/{id}` — delete active recurring daily (permitted even if COMPLETED today; preserves past `daily_history`)
-- `POST /dailies/{id}/complete` — marks COMPLETED for today, inserts into `daily_history`, publishes `daily.completed` exactly once (via outbox)
+- `POST /dailies/{id}/complete` — marks COMPLETED for today, inserts into `daily_history`, publishes `daily.completed` exactly once (via outbox), and returns the completed Daily plus its `awarded_materials` typed effect. Repeating the completion returns `409 DAILY_ALREADY_COMPLETED` without awarding materials again.
 
-Errors return standard cross-cutting envelope format (e.g., codes like `DAILY_NOT_FOUND`, `DAILY_ALREADY_COMPLETED`).
+While the Player's Daily state is unprovisioned, `POST /dailies`, `GET /dailies`, `GET /dailies/history`, `GET /dailies/{id}`, and `POST /dailies/{id}/complete` return `503 DAILY_PLAYER_NOT_READY`.
+
+Errors return standard cross-cutting envelope format (e.g., codes like `DAILY_NOT_FOUND`, `DAILY_ALREADY_COMPLETED`, `DAILY_PLAYER_NOT_READY`).
 
 ## Event Publication
 

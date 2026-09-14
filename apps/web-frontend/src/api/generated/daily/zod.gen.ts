@@ -33,8 +33,8 @@ export const zDateOrDateTime = z.union([
 export const zClockTime = z.string().regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/);
 
 export const zCreateDailyRequest = z.intersection(z.unknown(), z.object({
-    title: z.string().min(1),
-    description: z.string().optional(),
+    title: z.string().min(1).max(120),
+    description: z.string().max(1000).optional(),
     difficulty: zDifficulty,
     due_date: z.iso.datetime().optional(),
     time_zone: z.string(),
@@ -43,8 +43,8 @@ export const zCreateDailyRequest = z.intersection(z.unknown(), z.object({
 }));
 
 export const zUpdateDailyRequest = z.object({
-    title: z.string().optional(),
-    description: z.string().optional(),
+    title: z.string().max(120).optional(),
+    description: z.string().max(1000).optional(),
     difficulty: zDifficulty.optional(),
     due_date: z.iso.datetime().optional(),
     time_zone: z.string().optional(),
@@ -93,7 +93,7 @@ export const zDailyHistoryPage = z.object({
 });
 
 /**
- * Planned typed difficulty metadata.
+ * Backend-owned reward and missed-hull-damage metadata for one tier.
  */
 export const zDailyDifficulty = z.object({
     difficulty: zDifficulty,
@@ -102,7 +102,7 @@ export const zDailyDifficulty = z.object({
 });
 
 /**
- * Planned typed awarded-material effect.
+ * Planned reusable typed effect. Reserved for Daily History's typed effects; completion reports its award as `awarded_materials`.
  */
 export const zMaterialEffect = z.object({
     kind: z.enum(['MATERIALS']),
@@ -110,7 +110,7 @@ export const zMaterialEffect = z.object({
 });
 
 /**
- * Planned completion response carrying the typed material award.
+ * The completed Daily plus the typed awarded-material effect, so clients can reconcile the mutated Daily and the award from one response.
  */
 export const zDailyCompletion = z.object({
     id: z.uuid(),
@@ -119,6 +119,9 @@ export const zDailyCompletion = z.object({
     description: z.string(),
     difficulty: zDifficulty,
     due_date: z.iso.datetime(),
+    time_zone: z.string(),
+    due_local_date: z.iso.date(),
+    due_local_time: zClockTime,
     status: zDailyStatus,
     created_at: z.iso.datetime(),
     updated_at: z.iso.datetime(),
@@ -255,6 +258,6 @@ export const zDailyCompletePath = z.object({
 });
 
 /**
- * The completed Daily.
+ * The completed Daily with its awarded-material effect.
  */
-export const zDailyCompleteResponse = zDaily;
+export const zDailyCompleteResponse = zDailyCompletion;

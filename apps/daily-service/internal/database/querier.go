@@ -29,6 +29,8 @@ type Querier interface {
 	// `id` is the unique tie-breaker required by the continuation contract. The
 	// cursor nargs are all-or-nothing: when they are NULL the first page is read.
 	ListDailyHistory(ctx context.Context, arg ListDailyHistoryParams) ([]DailyHistory, error)
+	// Canonical tier order (EASY, MEDIUM, HARD) so the metadata endpoint is stable.
+	ListDifficultyRewards(ctx context.Context) ([]DifficultyReward, error)
 	ListPendingOutbox(ctx context.Context, limit int32) ([]Outbox, error)
 	ListTestTables(ctx context.Context) ([]TestTable, error)
 	MarkDailyComplete(ctx context.Context, arg MarkDailyCompleteParams) (Daily, error)
@@ -37,6 +39,7 @@ type Querier interface {
 	UpdateDaily(ctx context.Context, arg UpdateDailyParams) (Daily, error)
 	UpdateTestTable(ctx context.Context, arg UpdateTestTableParams) (TestTable, error)
 	UpsertUserCache(ctx context.Context, id pgtype.UUID) error
+	UserCacheExists(ctx context.Context, id pgtype.UUID) (bool, error)
 }
 
 var _ Querier = (*Queries)(nil)

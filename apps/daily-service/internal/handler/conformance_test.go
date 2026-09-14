@@ -36,6 +36,7 @@ func TestOpenAPIConformance(t *testing.T) {
 		{Method: http.MethodPost, Path: "/dailies"},
 		{Method: http.MethodGet, Path: "/dailies"},
 		{Method: http.MethodGet, Path: "/dailies/history"},
+		{Method: http.MethodGet, Path: "/dailies/difficulties"},
 		{Method: http.MethodGet, Path: "/dailies/{id}"},
 		{Method: http.MethodPatch, Path: "/dailies/{id}"},
 		{Method: http.MethodDelete, Path: "/dailies/{id}"},
@@ -90,6 +91,20 @@ func TestOpenAPIConformance(t *testing.T) {
 				m.create = func(context.Context, daily.CreateInput) (daily.Daily, error) { return item, nil }
 			},
 			wantStatus: http.StatusCreated,
+		},
+		{
+			name: "create daily at the title limit", method: http.MethodPost, target: "/dailies",
+			body: `{"title":"` + strings.Repeat("a", daily.MaxTitleLength) + `","difficulty":"MEDIUM","due_date":"2026-09-15T10:00:00Z","time_zone":"UTC"}`,
+			configure: func(m *mockDailyManager) {
+				m.create = func(context.Context, daily.CreateInput) (daily.Daily, error) { return item, nil }
+			},
+			wantStatus: http.StatusCreated,
+		},
+		{
+			name: "create daily title over the limit", method: http.MethodPost, target: "/dailies",
+			body:         `{"title":"` + strings.Repeat("a", daily.MaxTitleLength+1) + `","difficulty":"MEDIUM","due_date":"2026-09-15T10:00:00Z","time_zone":"UTC"}`,
+			wantStatus:   http.StatusUnprocessableEntity,
+			responseOnly: true,
 		},
 		{
 			name: "create daily validation error", method: http.MethodPost, target: "/dailies",
@@ -188,6 +203,28 @@ func TestOpenAPIConformance(t *testing.T) {
 			wantStatus: http.StatusInternalServerError,
 		},
 		{
+			name: "difficulties", method: http.MethodGet, target: "/dailies/difficulties",
+			configure: func(m *mockDailyManager) {
+				m.difficulties = func(context.Context) ([]daily.DifficultyMetadata, error) {
+					return []daily.DifficultyMetadata{
+						{Difficulty: daily.DifficultyEasy, RewardMaterials: 10, DamageAmount: 5},
+						{Difficulty: daily.DifficultyMedium, RewardMaterials: 20, DamageAmount: 10},
+						{Difficulty: daily.DifficultyHard, RewardMaterials: 30, DamageAmount: 20},
+					}, nil
+				}
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "difficulties internal error", method: http.MethodGet, target: "/dailies/difficulties",
+			configure: func(m *mockDailyManager) {
+				m.difficulties = func(context.Context) ([]daily.DifficultyMetadata, error) {
+					return nil, errors.New("db down")
+				}
+			},
+			wantStatus: http.StatusInternalServerError,
+		},
+		{
 			name: "get daily", method: http.MethodGet, target: "/dailies/" + dailyID.String(),
 			configure: func(m *mockDailyManager) {
 				m.get = func(context.Context, uuid.UUID, uuid.UUID) (daily.Daily, error) { return item, nil }
@@ -275,15 +312,26 @@ func TestOpenAPIConformance(t *testing.T) {
 		{
 			name: "complete daily", method: http.MethodPost, target: "/dailies/" + dailyID.String() + "/complete",
 			configure: func(m *mockDailyManager) {
-				m.complete = func(context.Context, uuid.UUID, uuid.UUID) (daily.Daily, error) { return item, nil }
+				m.complete = func(context.Context, uuid.UUID, uuid.UUID) (daily.Completion, error) {
+					return daily.Completion{Daily: item, AwardedMaterials: 20}, nil
+				}
 			},
 			wantStatus: http.StatusOK,
 		},
 		{
+			name: "complete daily not ready", method: http.MethodPost, target: "/dailies/" + dailyID.String() + "/complete",
+			configure: func(m *mockDailyManager) {
+				m.complete = func(context.Context, uuid.UUID, uuid.UUID) (daily.Completion, error) {
+					return daily.Completion{}, daily.ErrPlayerNotReady
+				}
+			},
+			wantStatus: http.StatusServiceUnavailable,
+		},
+		{
 			name: "complete daily conflict", method: http.MethodPost, target: "/dailies/" + dailyID.String() + "/complete",
 			configure: func(m *mockDailyManager) {
-				m.complete = func(context.Context, uuid.UUID, uuid.UUID) (daily.Daily, error) {
-					return daily.Daily{}, daily.ErrDailyAlreadyCompleted
+				m.complete = func(context.Context, uuid.UUID, uuid.UUID) (daily.Completion, error) {
+					return daily.Completion{}, daily.ErrDailyAlreadyCompleted
 				}
 			},
 			wantStatus: http.StatusConflict,
@@ -291,8 +339,8 @@ func TestOpenAPIConformance(t *testing.T) {
 		{
 			name: "complete daily not found", method: http.MethodPost, target: "/dailies/" + dailyID.String() + "/complete",
 			configure: func(m *mockDailyManager) {
-				m.complete = func(context.Context, uuid.UUID, uuid.UUID) (daily.Daily, error) {
-					return daily.Daily{}, daily.ErrDailyNotFound
+				m.complete = func(context.Context, uuid.UUID, uuid.UUID) (daily.Completion, error) {
+					return daily.Completion{}, daily.ErrDailyNotFound
 				}
 			},
 			wantStatus: http.StatusNotFound,
@@ -300,8 +348,8 @@ func TestOpenAPIConformance(t *testing.T) {
 		{
 			name: "complete daily internal error", method: http.MethodPost, target: "/dailies/" + dailyID.String() + "/complete",
 			configure: func(m *mockDailyManager) {
-				m.complete = func(context.Context, uuid.UUID, uuid.UUID) (daily.Daily, error) {
-					return daily.Daily{}, errors.New("db down")
+				m.complete = func(context.Context, uuid.UUID, uuid.UUID) (daily.Completion, error) {
+					return daily.Completion{}, errors.New("db down")
 				}
 			},
 			wantStatus: http.StatusInternalServerError,

@@ -136,7 +136,7 @@ export type DailyHistoryPage = {
 };
 
 /**
- * Planned typed difficulty metadata.
+ * Backend-owned reward and missed-hull-damage metadata for one tier.
  */
 export type DailyDifficulty = {
     difficulty: Difficulty;
@@ -145,7 +145,7 @@ export type DailyDifficulty = {
 };
 
 /**
- * Planned typed awarded-material effect.
+ * Planned reusable typed effect. Reserved for Daily History's typed effects; completion reports its award as `awarded_materials`.
  */
 export type MaterialEffect = {
     kind: 'MATERIALS';
@@ -153,7 +153,7 @@ export type MaterialEffect = {
 };
 
 /**
- * Planned completion response carrying the typed material award.
+ * The completed Daily plus the typed awarded-material effect, so clients can reconcile the mutated Daily and the award from one response.
  */
 export type DailyCompletion = {
     id: string;
@@ -162,9 +162,24 @@ export type DailyCompletion = {
     description: string;
     difficulty: Difficulty;
     due_date: string;
+    /**
+     * IANA zone retained until explicitly edited.
+     */
+    time_zone: string;
+    /**
+     * Local deadline calendar date derived from `due_date` in `time_zone`.
+     */
+    due_local_date: string;
+    /**
+     * Local deadline wall-clock time derived from `due_date` in `time_zone`.
+     */
+    due_local_time: ClockTime;
     status: DailyStatus;
     created_at: string;
     updated_at: string;
+    /**
+     * Materials awarded, sourced from the difficulty reward table.
+     */
     awarded_materials: number;
 };
 
@@ -272,7 +287,7 @@ export type DailyListErrors = {
      */
     500: ErrorResponse;
     /**
-     * **Planned.** Service-specific retryable not-ready error while the Player's Daily state provisions. Code DAILY_PLAYER_NOT_READY.
+     * Service-specific retryable not-ready error while the Player's Daily state provisions. Code DAILY_PLAYER_NOT_READY; retry after provisioning.
      */
     503: ErrorResponse;
     /**
@@ -319,7 +334,7 @@ export type DailyCreateErrors = {
      */
     500: ErrorResponse;
     /**
-     * **Planned.** Service-specific retryable not-ready error while the Player's Daily state provisions. Code DAILY_PLAYER_NOT_READY.
+     * Service-specific retryable not-ready error while the Player's Daily state provisions. Code DAILY_PLAYER_NOT_READY; retry after provisioning.
      */
     503: ErrorResponse;
     /**
@@ -371,7 +386,7 @@ export type DailyHistoryErrors = {
      */
     500: ErrorResponse;
     /**
-     * **Planned.** Service-specific retryable not-ready error while the Player's Daily state provisions. Code DAILY_PLAYER_NOT_READY.
+     * Service-specific retryable not-ready error while the Player's Daily state provisions. Code DAILY_PLAYER_NOT_READY; retry after provisioning.
      */
     503: ErrorResponse;
     /**
@@ -518,7 +533,7 @@ export type DailyGetErrors = {
      */
     500: ErrorResponse;
     /**
-     * **Planned.** Service-specific retryable not-ready error while the Player's Daily state provisions. Code DAILY_PLAYER_NOT_READY.
+     * Service-specific retryable not-ready error while the Player's Daily state provisions. Code DAILY_PLAYER_NOT_READY; retry after provisioning.
      */
     503: ErrorResponse;
     /**
@@ -630,7 +645,7 @@ export type DailyCompleteErrors = {
      */
     500: ErrorResponse;
     /**
-     * **Planned.** Service-specific retryable not-ready error while the Player's Daily state provisions. Code DAILY_PLAYER_NOT_READY.
+     * Service-specific retryable not-ready error while the Player's Daily state provisions. Code DAILY_PLAYER_NOT_READY; retry after provisioning.
      */
     503: ErrorResponse;
     /**
@@ -643,9 +658,9 @@ export type DailyCompleteError = DailyCompleteErrors[keyof DailyCompleteErrors];
 
 export type DailyCompleteResponses = {
     /**
-     * The completed Daily.
+     * The completed Daily with its awarded-material effect.
      */
-    200: Daily;
+    200: DailyCompletion;
 };
 
 export type DailyCompleteResponse = DailyCompleteResponses[keyof DailyCompleteResponses];

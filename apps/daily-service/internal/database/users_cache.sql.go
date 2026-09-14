@@ -30,3 +30,14 @@ func (q *Queries) UpsertUserCache(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, upsertUserCache, id)
 	return err
 }
+
+const userCacheExists = `-- name: UserCacheExists :one
+SELECT EXISTS (SELECT 1 FROM users_cache WHERE id = $1)
+`
+
+func (q *Queries) UserCacheExists(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, userCacheExists, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
