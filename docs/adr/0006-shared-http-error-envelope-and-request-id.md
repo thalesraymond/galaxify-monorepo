@@ -74,7 +74,11 @@ Per-service codes (illustrative):
 
 - **User**: `USER_NOT_FOUND`, `USER_EMAIL_TAKEN`, `USER_USERNAME_TAKEN`,
   `USER_INVALID_CREDENTIALS`.
-- **Daily**: `DAILY_NOT_FOUND`, `DAILY_NOT_EDITABLE`, `DAILY_ALREADY_COMPLETED`.
+- **Daily**: `DAILY_NOT_FOUND`, `DAILY_ALREADY_COMPLETED`.
+  (`DAILY_NOT_EDITABLE` was retired by #147: completed recurring Dailies are
+  editable and deletable per
+  [ADR-0012](0012-recurring-daily-lifecycle-and-archival-rollover.md), so no
+  endpoint emits that code. The list above is illustrative, not a registry.)
 - **Ship**: `SHIP_NOT_FOUND`, `SHIP_INSUFFICIENT_MATERIALS`, `SHIP_HULL_FULL`.
 - **Expedition**: `EXPEDITION_NOT_FOUND`, `EXPEDITION_ALREADY_ACTIVE`.
 
