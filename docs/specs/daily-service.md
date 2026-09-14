@@ -4,8 +4,9 @@ This document defines the implementation details for the Daily Service (Phase 1)
 
 ## Domain Model
 
-- **Daily**: `{ id, user_id, title, description, difficulty [EASY|MEDIUM|HARD], due_date, status [PENDING|COMPLETED], created_at, updated_at }`. All dailies are recurrent by design; active tasks in `dailies` represent the current 24-hour cycle.
-- **DailyHistory**: `{ id, daily_id, user_id, title, description, difficulty, due_date, status [COMPLETED|MISSED], completed_at, missed_at, archived_at }`. Archival log capturing the outcome of each completed or missed daily cycle.
+- **Daily**: `{ id, user_id, title, description, difficulty [EASY|MEDIUM|HARD], due_date, time_zone, status [PENDING|COMPLETED], created_at, updated_at }`. `due_date` is an RFC3339 instant and `time_zone` is an IANA zone retained until explicitly edited. The API accepts a **local deadline** (local due date + local due time) plus `time_zone` and resolves it to `due_date` in the backend; an ambiguous fall-back wall time selects its first occurrence and a nonexistent spring-forward wall time moves to the first valid local instant after it. Responses also expose the derived `due_local_date`/`due_local_time` projection. All dailies are recurrent by design; active tasks in `dailies` represent the current cycle.
+- **DailyHistory**: `{ id, daily_id, user_id, title, description, difficulty, due_date, time_zone, status [COMPLETED|MISSED], completed_at, missed_at, archived_at }`. Archival log capturing the outcome and configured zone of each completed or missed daily cycle; the `due_local_date`/`due_local_time` projection is derived from `due_date` + `time_zone`.
+- **Time Zone Validation**: `time_zone` must be an explicit IANA name (UTC is allowed). Go's process-dependent `Local` location and bare aliases are rejected so a deployment host's time zone can never change scheduling.
 - **Difficulty Mapping**: Difficulty maps to `reward_materials` and `damage_amount` via a static table/configuration (`difficulty_rewards`).
 
 ## Database Schema
@@ -33,8 +34,8 @@ Required sqlc queries:
 
 Auth: Required (Bearer token via cross-cutting middleware).
 
-- `POST /dailies` — create a new recurring daily task
-- `GET /dailies` — list active dailies for the current cycle (filter by date / status)
+- `POST /dailies` — create a new recurring daily task. Accepts a local deadline (`due_local_date` + `due_local_time`) with an explicit IANA `time_zone`, or a legacy RFC3339 `due_date`; supplying both is rejected.
+- `GET /dailies` — list active dailies for the current cycle (filter by status and explicit RFC3339 `from`/`to` instants). The legacy `date`/`due_date` query parameters remain supported and are deprecated: they accept a `YYYY-MM-DD` day or an RFC3339 instant and select that UTC calendar day.
 - `GET /dailies/history` — list past execution history from `daily_history` (ordered by `due_date DESC`)
 - `GET /dailies/{id}` — get one active daily
 - `PATCH /dailies/{id}` — edit active daily (title, description, difficulty; permitted even if COMPLETED today)
@@ -61,18 +62,18 @@ Events published via the outbox pattern to the `galaxify.events` exchange.
 Runs in `workers/daily-cron` as a standalone worker. Responsible for rolling active dailies over into the next cycle and penalizing missed dailies.
 
 - **Interval**: Continuous sweep every 5 minutes.
-- **Timezone Model**: Evaluates `due_date` against server UTC `now()`.
+- **Timezone Model**: Evaluates the UTC `due_date` instant against UTC `now()`, then advances recurrence by local calendar day in the persisted IANA `time_zone`. An ambiguous fall-back wall time selects its first occurrence; a nonexistent spring-forward wall time advances to the first valid local instant after it.
 - **Batch Size**: Processes in batches of 500 using `LIMIT` and `FOR UPDATE SKIP LOCKED`.
 - **Two-Phase Sweep**:
   1. **Missed Pending Sweep**:
      - Finds `status = 'PENDING' AND due_date < now()`.
      - Atomically inserts a `MISSED` record into `daily_history` (`missed_at = now()`).
-     - Snaps `due_date` forward by adding full 24-hour increments until `due_date > now()`, preserving the user's deadline time-of-day.
+      - Snaps `due_date` forward by local calendar days until `due_date > now()`, preserving the configured-zone wall-clock deadline.
      - Leaves `status = 'PENDING'` for the new cycle.
      - Stages a `daily.missed` event in the `outbox` table within the same transaction.
   2. **Completed Reset Sweep**:
      - Finds `status = 'COMPLETED' AND due_date < now()`.
-     - Advances `due_date = due_date + INTERVAL '1 day'` and resets `status = 'PENDING'` for the new cycle.
+      - Advances the due date by one local calendar day and resets `status = 'PENDING'` for the new cycle.
      - Does not emit events or write to history (history was already written on completion).
 
 ### Daily.missed publication
@@ -88,4 +89,3 @@ shared `pkg/events.OutboxDrainer` (see cross-cutting §6 and ADR-0004).
 - Partial-completion rules.
 - Streaks/achievements.
 - Push notifications.
-- Timezone-aware UI.

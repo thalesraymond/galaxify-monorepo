@@ -19,6 +19,7 @@ CREATE TABLE dailies (
     description TEXT        NOT NULL DEFAULT '',
     difficulty  TEXT        NOT NULL REFERENCES difficulty_rewards(difficulty),
     due_date    TIMESTAMPTZ NOT NULL,
+    time_zone   TEXT        NOT NULL DEFAULT 'UTC',
     status      TEXT        NOT NULL DEFAULT 'PENDING',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -32,6 +33,7 @@ CREATE TABLE daily_history (
     description TEXT        NOT NULL DEFAULT '',
     difficulty  TEXT        NOT NULL,
     due_date    TIMESTAMPTZ NOT NULL,
+    time_zone   TEXT        NOT NULL DEFAULT 'UTC',
     status      TEXT        NOT NULL,
     completed_at TIMESTAMPTZ,
     missed_at   TIMESTAMPTZ,
@@ -51,5 +53,4 @@ CREATE TABLE outbox (
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     published_at TIMESTAMPTZ
 );
-
 

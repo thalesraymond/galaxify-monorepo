@@ -15,6 +15,7 @@ type Daily struct {
 	Description string
 	Difficulty  string
 	DueDate     pgtype.Timestamptz
+	TimeZone    string
 	Status      string
 	CreatedAt   pgtype.Timestamptz
 	UpdatedAt   pgtype.Timestamptz
@@ -28,6 +29,7 @@ type DailyHistory struct {
 	Description string
 	Difficulty  string
 	DueDate     pgtype.Timestamptz
+	TimeZone    string
 	Status      string
 	CompletedAt pgtype.Timestamptz
 	MissedAt    pgtype.Timestamptz

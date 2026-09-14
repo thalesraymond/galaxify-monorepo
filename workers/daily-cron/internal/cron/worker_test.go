@@ -32,8 +32,8 @@ type mockTx struct {
 	listPendingExpiredDailies   func(ctx context.Context, before time.Time, limit int32) ([]database.ListPendingExpiredDailiesRow, error)
 	getDamageAmount             func(ctx context.Context, difficulty string) (int32, error)
 	rollOverPendingDaily        func(ctx context.Context, daily database.ListPendingExpiredDailiesRow, now time.Time) error
-	listCompletedExpiredDailies func(ctx context.Context, before time.Time, limit int32) ([]pgtype.UUID, error)
-	resetCompletedDaily         func(ctx context.Context, id pgtype.UUID, now time.Time) error
+	listCompletedExpiredDailies func(ctx context.Context, before time.Time, limit int32) ([]database.ListCompletedExpiredDailiesRow, error)
+	resetCompletedDaily         func(ctx context.Context, daily database.ListCompletedExpiredDailiesRow, now time.Time) error
 	insertOutbox                func(ctx context.Context, arg database.InsertOutboxParams) error
 }
 
@@ -58,16 +58,16 @@ func (m *mockTx) RollOverPendingDaily(ctx context.Context, daily database.ListPe
 	return errors.New("unexpected RollOverPendingDaily call")
 }
 
-func (m *mockTx) ListCompletedExpiredDailies(ctx context.Context, before time.Time, limit int32) ([]pgtype.UUID, error) {
+func (m *mockTx) ListCompletedExpiredDailies(ctx context.Context, before time.Time, limit int32) ([]database.ListCompletedExpiredDailiesRow, error) {
 	if m.listCompletedExpiredDailies != nil {
 		return m.listCompletedExpiredDailies(ctx, before, limit)
 	}
 	return nil, nil
 }
 
-func (m *mockTx) ResetCompletedDaily(ctx context.Context, id pgtype.UUID, now time.Time) error {
+func (m *mockTx) ResetCompletedDaily(ctx context.Context, daily database.ListCompletedExpiredDailiesRow, now time.Time) error {
 	if m.resetCompletedDaily != nil {
-		return m.resetCompletedDaily(ctx, id, now)
+		return m.resetCompletedDaily(ctx, daily, now)
 	}
 	return errors.New("unexpected ResetCompletedDaily call")
 }
@@ -122,7 +122,7 @@ func TestWorkerTickNoExpiredDailies(t *testing.T) {
 					}
 					return nil, nil
 				},
-				listCompletedExpiredDailies: func(ctx context.Context, before time.Time, limit int32) ([]pgtype.UUID, error) {
+				listCompletedExpiredDailies: func(ctx context.Context, before time.Time, limit int32) ([]database.ListCompletedExpiredDailiesRow, error) {
 					if !before.Equal(fixedNow) {
 						t.Errorf("before = %v, want %v", before, fixedNow)
 					}
@@ -243,15 +243,15 @@ func TestWorkerTickResetsExpiredCompletedDaily(t *testing.T) {
 	store := &mockStore{
 		withTx: func(ctx context.Context, fn func(Tx) error) error {
 			return fn(&mockTx{
-				listCompletedExpiredDailies: func(ctx context.Context, before time.Time, limit int32) ([]pgtype.UUID, error) {
+				listCompletedExpiredDailies: func(ctx context.Context, before time.Time, limit int32) ([]database.ListCompletedExpiredDailiesRow, error) {
 					completedCalls++
 					if completedCalls == 1 {
-						return []pgtype.UUID{pgUUID(dailyID)}, nil
+						return []database.ListCompletedExpiredDailiesRow{{ID: pgUUID(dailyID), DueDate: pgtype.Timestamptz{Time: fixedNow.Add(-time.Hour), Valid: true}, TimeZone: "UTC"}}, nil
 					}
 					return nil, nil
 				},
-				resetCompletedDaily: func(ctx context.Context, id pgtype.UUID, now time.Time) error {
-					resetDailyID = id
+				resetCompletedDaily: func(ctx context.Context, daily database.ListCompletedExpiredDailiesRow, now time.Time) error {
+					resetDailyID = daily.ID
 					resetTime = now
 					return nil
 				},
@@ -303,14 +303,14 @@ func TestWorkerTickRunsBothSweeps(t *testing.T) {
 					return nil
 				},
 				insertOutbox: func(_ context.Context, _ database.InsertOutboxParams) error { return nil },
-				listCompletedExpiredDailies: func(ctx context.Context, before time.Time, limit int32) ([]pgtype.UUID, error) {
+				listCompletedExpiredDailies: func(ctx context.Context, before time.Time, limit int32) ([]database.ListCompletedExpiredDailiesRow, error) {
 					completedCalls++
 					if completedCalls == 1 {
-						return []pgtype.UUID{pgUUID(dailyID)}, nil
+						return []database.ListCompletedExpiredDailiesRow{{ID: pgUUID(dailyID), DueDate: pgtype.Timestamptz{Time: fixedNow.Add(-time.Hour), Valid: true}, TimeZone: "UTC"}}, nil
 					}
 					return nil, nil
 				},
-				resetCompletedDaily: func(ctx context.Context, id pgtype.UUID, now time.Time) error {
+				resetCompletedDaily: func(ctx context.Context, daily database.ListCompletedExpiredDailiesRow, now time.Time) error {
 					completedProcessed = true
 					return nil
 				},
@@ -352,14 +352,14 @@ func TestWorkerTickProcessesMultipleBatches(t *testing.T) {
 					return nil
 				},
 				insertOutbox: func(_ context.Context, _ database.InsertOutboxParams) error { return nil },
-				listCompletedExpiredDailies: func(ctx context.Context, before time.Time, limit int32) ([]pgtype.UUID, error) {
+				listCompletedExpiredDailies: func(ctx context.Context, before time.Time, limit int32) ([]database.ListCompletedExpiredDailiesRow, error) {
 					completedCalls++
 					if completedCalls == 1 {
-						return []pgtype.UUID{pgUUID(dailyID)}, nil
+						return []database.ListCompletedExpiredDailiesRow{{ID: pgUUID(dailyID), DueDate: pgtype.Timestamptz{Time: fixedNow.Add(-time.Hour), Valid: true}, TimeZone: "UTC"}}, nil
 					}
 					return nil, nil
 				},
-				resetCompletedDaily: func(ctx context.Context, id pgtype.UUID, now time.Time) error {
+				resetCompletedDaily: func(ctx context.Context, daily database.ListCompletedExpiredDailiesRow, now time.Time) error {
 					return nil
 				},
 			})
@@ -455,10 +455,10 @@ func TestWorkerTickResetCompletedDailyError(t *testing.T) {
 	store := &mockStore{
 		withTx: func(ctx context.Context, fn func(Tx) error) error {
 			return fn(&mockTx{
-				listCompletedExpiredDailies: func(ctx context.Context, before time.Time, limit int32) ([]pgtype.UUID, error) {
-					return []pgtype.UUID{pgUUID(dailyID)}, nil
+				listCompletedExpiredDailies: func(ctx context.Context, before time.Time, limit int32) ([]database.ListCompletedExpiredDailiesRow, error) {
+					return []database.ListCompletedExpiredDailiesRow{{ID: pgUUID(dailyID), DueDate: pgtype.Timestamptz{Time: fixedNow.Add(-time.Hour), Valid: true}, TimeZone: "UTC"}}, nil
 				},
-				resetCompletedDaily: func(ctx context.Context, id pgtype.UUID, now time.Time) error {
+				resetCompletedDaily: func(ctx context.Context, daily database.ListCompletedExpiredDailiesRow, now time.Time) error {
 					return errors.New("db write failed")
 				},
 			})

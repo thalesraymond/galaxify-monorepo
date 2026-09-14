@@ -65,6 +65,17 @@ func (s *threadSafeTxStarter) Begin(ctx context.Context) (pgx.Tx, error) {
 	return &fakeTx{}, nil
 }
 
+// recordingTxStarter counts Begin calls so tests can prove that validation
+// rejected a request before any transaction was opened.
+type recordingTxStarter struct {
+	calls int
+}
+
+func (s *recordingTxStarter) Begin(ctx context.Context) (pgx.Tx, error) {
+	s.calls++
+	return &fakeTx{}, nil
+}
+
 type mockStore struct {
 	createDaily         func(ctx context.Context, arg database.CreateDailyParams) (database.Daily, error)
 	listDailies         func(ctx context.Context, arg database.ListDailiesParams) ([]database.Daily, error)
@@ -155,6 +166,9 @@ func TestDailyManager_Create(t *testing.T) {
 
 	store := &mockStore{
 		createDaily: func(ctx context.Context, arg database.CreateDailyParams) (database.Daily, error) {
+			if arg.TimeZone != "America/New_York" {
+				t.Errorf("time_zone = %q, want America/New_York", arg.TimeZone)
+			}
 			return database.Daily{
 				ID:          pgtype.UUID{Bytes: dailyID, Valid: true},
 				UserID:      arg.UserID,
@@ -162,6 +176,7 @@ func TestDailyManager_Create(t *testing.T) {
 				Description: arg.Description,
 				Difficulty:  arg.Difficulty,
 				DueDate:     arg.DueDate,
+				TimeZone:    arg.TimeZone,
 				Status:      "PENDING",
 				CreatedAt:   pgtype.Timestamptz{Time: now, Valid: true},
 				UpdatedAt:   pgtype.Timestamptz{Time: now, Valid: true},
@@ -178,6 +193,7 @@ func TestDailyManager_Create(t *testing.T) {
 			Description: "Do something",
 			Difficulty:  DifficultyMedium,
 			DueDate:     now.Add(24 * time.Hour),
+			TimeZone:    "America/New_York",
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -200,6 +216,30 @@ func TestDailyManager_Create(t *testing.T) {
 		})
 		if !errors.Is(err, ErrInvalidDifficulty) {
 			t.Errorf("error = %v, want ErrInvalidDifficulty", err)
+		}
+	})
+
+	t.Run("returns ErrInvalidTimeZone and does not touch the store", func(t *testing.T) {
+		for _, zone := range []string{"Mars/Olympus", "Local", "", "EST"} {
+			t.Run(zone, func(t *testing.T) {
+				store := &mockStore{
+					createDaily: func(ctx context.Context, arg database.CreateDailyParams) (database.Daily, error) {
+						t.Fatalf("CreateDaily must not be called for invalid zone %q", zone)
+						return database.Daily{}, nil
+					},
+				}
+				mgr := NewDailyManager(nil, nil, store)
+				_, err := mgr.Create(context.Background(), CreateInput{
+					UserID:     userID,
+					Title:      "Test task",
+					Difficulty: DifficultyEasy,
+					DueDate:    now.Add(24 * time.Hour),
+					TimeZone:   zone,
+				})
+				if !errors.Is(err, ErrInvalidTimeZone) {
+					t.Fatalf("error = %v, want ErrInvalidTimeZone", err)
+				}
+			})
 		}
 	})
 }
@@ -255,8 +295,8 @@ func TestDailyManager_List(t *testing.T) {
 				if arg.Status.Valid {
 					t.Errorf("status should not be valid")
 				}
-				if arg.DueDate.Valid {
-					t.Errorf("due_date should not be valid")
+				if arg.From.Valid || arg.To.Valid {
+					t.Errorf("range should not be valid")
 				}
 				return []database.Daily{
 					{ID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, Title: "One"},
@@ -283,8 +323,8 @@ func TestDailyManager_List(t *testing.T) {
 				if !arg.Status.Valid || arg.Status.String != string(statusFilter) {
 					t.Errorf("status = %v, want %v", arg.Status.String, statusFilter)
 				}
-				if !arg.DueDate.Valid || !arg.DueDate.Time.Equal(dateFilter) {
-					t.Errorf("due_date = %v, want %v", arg.DueDate.Time, dateFilter)
+				if !arg.From.Valid || !arg.From.Time.Equal(dateFilter) {
+					t.Errorf("from = %v, want %v", arg.From.Time, dateFilter)
 				}
 				return []database.Daily{
 					{ID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, Title: "Filtered", Status: "PENDING"},
@@ -294,7 +334,7 @@ func TestDailyManager_List(t *testing.T) {
 		mgr := NewDailyManager(nil, nil, store)
 		items, err := mgr.List(context.Background(), userID, ListFilter{
 			Status: &statusFilter,
-			Date:   &dateFilter,
+			From:   &dateFilter,
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -388,6 +428,49 @@ func TestDailyManager_Update(t *testing.T) {
 		_, err := mgr.Update(context.Background(), userID, dailyID, UpdateInput{Difficulty: &invalidDiff})
 		if !errors.Is(err, ErrInvalidDifficulty) {
 			t.Errorf("error = %v, want ErrInvalidDifficulty", err)
+		}
+	})
+
+	t.Run("returns ErrInvalidTimeZone before opening a transaction", func(t *testing.T) {
+		for _, zone := range []string{"Mars/Olympus", "Local", "", "EST"} {
+			t.Run(zone, func(t *testing.T) {
+				txStarter := &recordingTxStarter{}
+				store := &mockStore{
+					updateDaily: func(ctx context.Context, arg database.UpdateDailyParams) (database.Daily, error) {
+						t.Fatalf("UpdateDaily must not be called for invalid zone %q", zone)
+						return database.Daily{}, nil
+					},
+				}
+				mgr := NewDailyManager(txStarter, func(pgx.Tx) Store { return store }, store)
+				_, err := mgr.Update(context.Background(), userID, dailyID, UpdateInput{TimeZone: &zone})
+				if !errors.Is(err, ErrInvalidTimeZone) {
+					t.Fatalf("error = %v, want ErrInvalidTimeZone", err)
+				}
+				if txStarter.calls != 0 {
+					t.Errorf("Begin calls = %d, want 0", txStarter.calls)
+				}
+			})
+		}
+	})
+
+	t.Run("updates the configured time zone only when supplied", func(t *testing.T) {
+		tx := &fakeTx{}
+		zone := "Europe/Paris"
+		store := &mockStore{
+			updateDaily: func(ctx context.Context, arg database.UpdateDailyParams) (database.Daily, error) {
+				if !arg.TimeZone.Valid || arg.TimeZone.String != zone {
+					t.Errorf("time_zone = %+v, want %q", arg.TimeZone, zone)
+				}
+				return database.Daily{ID: arg.ID, UserID: arg.UserID, TimeZone: arg.TimeZone.String}, nil
+			},
+		}
+		mgr := NewDailyManager(&fakeTxStarter{tx: tx}, func(pgx.Tx) Store { return store }, nil)
+		item, err := mgr.Update(context.Background(), userID, dailyID, UpdateInput{TimeZone: &zone})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if item.TimeZone != zone {
+			t.Errorf("time_zone = %q, want %q", item.TimeZone, zone)
 		}
 	})
 }

@@ -13,10 +13,10 @@ import (
 
 const createDaily = `-- name: CreateDaily :one
 INSERT INTO dailies (
-    user_id, title, description, difficulty, due_date
+    user_id, title, description, difficulty, due_date, time_zone
 ) VALUES (
-    $1, $2, $3, $4, $5
-) RETURNING id, user_id, title, description, difficulty, due_date, status, created_at, updated_at
+    $1, $2, $3, $4, $5, $6
+) RETURNING id, user_id, title, description, difficulty, due_date, status, created_at, updated_at, time_zone
 `
 
 type CreateDailyParams struct {
@@ -25,6 +25,7 @@ type CreateDailyParams struct {
 	Description string
 	Difficulty  string
 	DueDate     pgtype.Timestamptz
+	TimeZone    string
 }
 
 func (q *Queries) CreateDaily(ctx context.Context, arg CreateDailyParams) (Daily, error) {
@@ -34,6 +35,7 @@ func (q *Queries) CreateDaily(ctx context.Context, arg CreateDailyParams) (Daily
 		arg.Description,
 		arg.Difficulty,
 		arg.DueDate,
+		arg.TimeZone,
 	)
 	var i Daily
 	err := row.Scan(
@@ -46,15 +48,16 @@ func (q *Queries) CreateDaily(ctx context.Context, arg CreateDailyParams) (Daily
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TimeZone,
 	)
 	return i, err
 }
 
 const createDailyHistory = `-- name: CreateDailyHistory :exec
 INSERT INTO daily_history (
-    daily_id, user_id, title, description, difficulty, due_date, status, completed_at, missed_at
+    daily_id, user_id, title, description, difficulty, due_date, time_zone, status, completed_at, missed_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 )
 `
 
@@ -65,6 +68,7 @@ type CreateDailyHistoryParams struct {
 	Description string
 	Difficulty  string
 	DueDate     pgtype.Timestamptz
+	TimeZone    string
 	Status      string
 	CompletedAt pgtype.Timestamptz
 	MissedAt    pgtype.Timestamptz
@@ -78,6 +82,7 @@ func (q *Queries) CreateDailyHistory(ctx context.Context, arg CreateDailyHistory
 		arg.Description,
 		arg.Difficulty,
 		arg.DueDate,
+		arg.TimeZone,
 		arg.Status,
 		arg.CompletedAt,
 		arg.MissedAt,
@@ -112,7 +117,7 @@ func (q *Queries) DeleteDaily(ctx context.Context, arg DeleteDailyParams) (int64
 }
 
 const getDaily = `-- name: GetDaily :one
-SELECT id, user_id, title, description, difficulty, due_date, status, created_at, updated_at FROM dailies WHERE id = $1 AND user_id = $2
+SELECT id, user_id, title, description, difficulty, due_date, status, created_at, updated_at, time_zone FROM dailies WHERE id = $1 AND user_id = $2
 `
 
 type GetDailyParams struct {
@@ -133,6 +138,7 @@ func (q *Queries) GetDaily(ctx context.Context, arg GetDailyParams) (Daily, erro
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TimeZone,
 	)
 	return i, err
 }
@@ -149,21 +155,28 @@ func (q *Queries) GetDifficultyReward(ctx context.Context, difficulty string) (D
 }
 
 const listDailies = `-- name: ListDailies :many
-SELECT id, user_id, title, description, difficulty, due_date, status, created_at, updated_at FROM dailies
+SELECT id, user_id, title, description, difficulty, due_date, status, created_at, updated_at, time_zone FROM dailies
 WHERE user_id = $1
   AND ($2::text IS NULL OR status = $2)
-  AND ($3::date IS NULL OR due_date::date = $3::date)
+  AND ($3::timestamptz IS NULL OR due_date >= $3)
+  AND ($4::timestamptz IS NULL OR due_date < $4)
 ORDER BY due_date ASC, created_at ASC
 `
 
 type ListDailiesParams struct {
-	UserID  pgtype.UUID
-	Status  pgtype.Text
-	DueDate pgtype.Date
+	UserID pgtype.UUID
+	Status pgtype.Text
+	From   pgtype.Timestamptz
+	To     pgtype.Timestamptz
 }
 
 func (q *Queries) ListDailies(ctx context.Context, arg ListDailiesParams) ([]Daily, error) {
-	rows, err := q.db.Query(ctx, listDailies, arg.UserID, arg.Status, arg.DueDate)
+	rows, err := q.db.Query(ctx, listDailies,
+		arg.UserID,
+		arg.Status,
+		arg.From,
+		arg.To,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +194,7 @@ func (q *Queries) ListDailies(ctx context.Context, arg ListDailiesParams) ([]Dai
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TimeZone,
 		); err != nil {
 			return nil, err
 		}
@@ -193,7 +207,7 @@ func (q *Queries) ListDailies(ctx context.Context, arg ListDailiesParams) ([]Dai
 }
 
 const listDailyHistory = `-- name: ListDailyHistory :many
-SELECT id, daily_id, user_id, title, description, difficulty, due_date, status, completed_at, missed_at, archived_at FROM daily_history
+SELECT id, daily_id, user_id, title, description, difficulty, due_date, status, completed_at, missed_at, archived_at, time_zone FROM daily_history
 WHERE user_id = $1
 ORDER BY due_date DESC, archived_at DESC
 `
@@ -219,6 +233,7 @@ func (q *Queries) ListDailyHistory(ctx context.Context, userID pgtype.UUID) ([]D
 			&i.CompletedAt,
 			&i.MissedAt,
 			&i.ArchivedAt,
+			&i.TimeZone,
 		); err != nil {
 			return nil, err
 		}
@@ -235,7 +250,7 @@ UPDATE dailies SET
     status = 'COMPLETED',
     updated_at = now()
 WHERE id = $1 AND user_id = $2 AND status = 'PENDING'
-RETURNING id, user_id, title, description, difficulty, due_date, status, created_at, updated_at
+RETURNING id, user_id, title, description, difficulty, due_date, status, created_at, updated_at, time_zone
 `
 
 type MarkDailyCompleteParams struct {
@@ -256,6 +271,7 @@ func (q *Queries) MarkDailyComplete(ctx context.Context, arg MarkDailyCompletePa
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TimeZone,
 	)
 	return i, err
 }
@@ -265,7 +281,7 @@ UPDATE dailies SET
     status = 'MISSED',
     updated_at = now()
 WHERE id = $1 AND status = 'PENDING'
-RETURNING id, user_id, title, description, difficulty, due_date, status, created_at, updated_at
+RETURNING id, user_id, title, description, difficulty, due_date, status, created_at, updated_at, time_zone
 `
 
 func (q *Queries) MarkDailyMissed(ctx context.Context, id pgtype.UUID) (Daily, error) {
@@ -281,6 +297,7 @@ func (q *Queries) MarkDailyMissed(ctx context.Context, id pgtype.UUID) (Daily, e
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TimeZone,
 	)
 	return i, err
 }
@@ -291,9 +308,10 @@ UPDATE dailies SET
     description = COALESCE($4, description),
     difficulty = COALESCE($5, difficulty),
     due_date = COALESCE($6, due_date),
+    time_zone = COALESCE($7, time_zone),
     updated_at = now()
 WHERE id = $1 AND user_id = $2
-RETURNING id, user_id, title, description, difficulty, due_date, status, created_at, updated_at
+RETURNING id, user_id, title, description, difficulty, due_date, status, created_at, updated_at, time_zone
 `
 
 type UpdateDailyParams struct {
@@ -303,6 +321,7 @@ type UpdateDailyParams struct {
 	Description pgtype.Text
 	Difficulty  pgtype.Text
 	DueDate     pgtype.Timestamptz
+	TimeZone    pgtype.Text
 }
 
 func (q *Queries) UpdateDaily(ctx context.Context, arg UpdateDailyParams) (Daily, error) {
@@ -313,6 +332,7 @@ func (q *Queries) UpdateDaily(ctx context.Context, arg UpdateDailyParams) (Daily
 		arg.Description,
 		arg.Difficulty,
 		arg.DueDate,
+		arg.TimeZone,
 	)
 	var i Daily
 	err := row.Scan(
@@ -325,6 +345,7 @@ func (q *Queries) UpdateDaily(ctx context.Context, arg UpdateDailyParams) (Daily
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TimeZone,
 	)
 	return i, err
 }

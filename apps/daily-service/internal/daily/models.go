@@ -58,6 +58,7 @@ type Daily struct {
 	Description string
 	Difficulty  Difficulty
 	DueDate     time.Time
+	TimeZone    string
 	Status      Status
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
@@ -72,6 +73,7 @@ type DailyHistory struct {
 	Description string
 	Difficulty  Difficulty
 	DueDate     time.Time
+	TimeZone    string
 	Status      Status
 	CompletedAt *time.Time
 	MissedAt    *time.Time
@@ -86,12 +88,14 @@ type CreateInput struct {
 	Description string
 	Difficulty  Difficulty
 	DueDate     time.Time
+	TimeZone    string
 }
 
 // ListFilter defines optional filtering criteria when querying dailies.
 type ListFilter struct {
 	Status *Status
-	Date   *time.Time
+	From   *time.Time
+	To     *time.Time
 }
 
 // UpdateInput defines optional fields when editing a pending daily task.
@@ -100,4 +104,5 @@ type UpdateInput struct {
 	Description *string
 	Difficulty  *Difficulty
 	DueDate     *time.Time
+	TimeZone    *string
 }

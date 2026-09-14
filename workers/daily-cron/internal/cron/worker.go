@@ -173,8 +173,8 @@ func (w *Worker) resetCompletedBatch(ctx context.Context, now time.Time) (int, e
 			return nil
 		}
 
-		for _, id := range dailies {
-			if err := tx.ResetCompletedDaily(ctx, id, now); err != nil {
+		for _, daily := range dailies {
+			if err := tx.ResetCompletedDaily(ctx, daily, now); err != nil {
 				return err
 			}
 		}
