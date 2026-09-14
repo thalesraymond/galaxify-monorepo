@@ -129,7 +129,7 @@ func TestCreateDaily(t *testing.T) {
 	}{
 		{
 			name: "creates daily",
-			body: `{"title":"Explore Mars","description":"scan surface","difficulty":"MEDIUM","due_date":"2026-09-15T10:00:00Z"}`,
+			body: `{"title":"Explore Mars","description":"scan surface","difficulty":"MEDIUM","due_date":"2026-09-15T10:00:00Z","time_zone":"UTC"}`,
 			setupManager: func(m *mockDailyManager) {
 				m.create = func(ctx context.Context, input daily.CreateInput) (daily.Daily, error) {
 					if input.UserID != userID {
@@ -147,6 +147,9 @@ func TestCreateDaily(t *testing.T) {
 					if !input.DueDate.Equal(dueDate) {
 						t.Errorf("due_date = %v, want %v", input.DueDate, dueDate)
 					}
+					if input.TimeZone != "UTC" {
+						t.Errorf("time_zone = %q, want UTC", input.TimeZone)
+					}
 					return daily.Daily{
 						ID:          dailyID,
 						UserID:      userID,
@@ -154,6 +157,7 @@ func TestCreateDaily(t *testing.T) {
 						Description: "scan surface",
 						Difficulty:  daily.DifficultyMedium,
 						DueDate:     dueDate,
+						TimeZone:    "UTC",
 						Status:      daily.StatusPending,
 						CreatedAt:   createdAt,
 						UpdatedAt:   createdAt,
@@ -181,21 +185,27 @@ func TestCreateDaily(t *testing.T) {
 		},
 		{
 			name:           "missing title",
-			body:           `{"description":"scan surface","difficulty":"MEDIUM","due_date":"2026-09-15T10:00:00Z"}`,
+			body:           `{"description":"scan surface","difficulty":"MEDIUM","due_date":"2026-09-15T10:00:00Z","time_zone":"UTC"}`,
 			wantStatus:     http.StatusUnprocessableEntity,
 			wantFieldError: map[string]string{"title": "title is required"},
 		},
 		{
 			name:           "invalid difficulty",
-			body:           `{"title":"Explore Mars","difficulty":"EXTREME","due_date":"2026-09-15T10:00:00Z"}`,
+			body:           `{"title":"Explore Mars","difficulty":"EXTREME","due_date":"2026-09-15T10:00:00Z","time_zone":"UTC"}`,
 			wantStatus:     http.StatusUnprocessableEntity,
 			wantFieldError: map[string]string{"difficulty": "must be one of: EASY, MEDIUM, HARD"},
 		},
 		{
 			name:           "invalid due_date format",
-			body:           `{"title":"Explore Mars","difficulty":"MEDIUM","due_date":"not-a-date"}`,
+			body:           `{"title":"Explore Mars","difficulty":"MEDIUM","due_date":"not-a-date","time_zone":"UTC"}`,
 			wantStatus:     http.StatusUnprocessableEntity,
 			wantFieldError: map[string]string{"due_date": "due_date must be a valid RFC3339 timestamp"},
+		},
+		{
+			name:           "invalid time zone",
+			body:           `{"title":"Explore Mars","difficulty":"MEDIUM","due_date":"2026-09-15T10:00:00Z","time_zone":"Mars/Olympus"}`,
+			wantStatus:     http.StatusUnprocessableEntity,
+			wantFieldError: map[string]string{"time_zone": "must be a valid IANA time zone"},
 		},
 		{
 			name:           "malformed JSON body",
@@ -205,7 +215,7 @@ func TestCreateDaily(t *testing.T) {
 		},
 		{
 			name: "manager invalid difficulty error",
-			body: `{"title":"Explore Mars","difficulty":"MEDIUM","due_date":"2026-09-15T10:00:00Z"}`,
+			body: `{"title":"Explore Mars","difficulty":"MEDIUM","due_date":"2026-09-15T10:00:00Z","time_zone":"UTC"}`,
 			setupManager: func(m *mockDailyManager) {
 				m.create = func(ctx context.Context, input daily.CreateInput) (daily.Daily, error) {
 					return daily.Daily{}, daily.ErrInvalidDifficulty
@@ -216,7 +226,7 @@ func TestCreateDaily(t *testing.T) {
 		},
 		{
 			name: "manager error",
-			body: `{"title":"Explore Mars","difficulty":"MEDIUM","due_date":"2026-09-15T10:00:00Z"}`,
+			body: `{"title":"Explore Mars","difficulty":"MEDIUM","due_date":"2026-09-15T10:00:00Z","time_zone":"UTC"}`,
 			setupManager: func(m *mockDailyManager) {
 				m.create = func(ctx context.Context, input daily.CreateInput) (daily.Daily, error) {
 					return daily.Daily{}, errors.New("database down")
@@ -290,8 +300,8 @@ func TestListDailies(t *testing.T) {
 					if filter.Status != nil {
 						t.Errorf("status filter = %v, want nil", *filter.Status)
 					}
-					if filter.Date != nil {
-						t.Errorf("date filter = %v, want nil", *filter.Date)
+					if filter.From != nil || filter.To != nil {
+						t.Errorf("range filter = %+v, want nil", filter)
 					}
 					return []daily.Daily{
 						{
@@ -321,8 +331,8 @@ func TestListDailies(t *testing.T) {
 			},
 		},
 		{
-			name: "filters by status and date",
-			path: "/dailies?status=PENDING&date=2026-09-15",
+			name: "filters by status and instant range",
+			path: "/dailies?status=PENDING&from=2026-09-15T00:00:00Z&to=2026-09-16T00:00:00Z",
 			setupManager: func(m *mockDailyManager) {
 				m.list = func(ctx context.Context, id uuid.UUID, filter daily.ListFilter) ([]daily.Daily, error) {
 					if id != userID {
@@ -331,9 +341,10 @@ func TestListDailies(t *testing.T) {
 					if filter.Status == nil || *filter.Status != daily.StatusPending {
 						t.Errorf("status filter = %v, want PENDING", filter.Status)
 					}
-					wantDate := time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC)
-					if filter.Date == nil || !filter.Date.Equal(wantDate) {
-						t.Errorf("date filter = %v, want %v", filter.Date, wantDate)
+					wantFrom := time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC)
+					wantTo := wantFrom.AddDate(0, 0, 1)
+					if filter.From == nil || !filter.From.Equal(wantFrom) || filter.To == nil || !filter.To.Equal(wantTo) {
+						t.Errorf("range = %+v, want [%v, %v)", filter, wantFrom, wantTo)
 					}
 					return []daily.Daily{
 						{
@@ -363,10 +374,10 @@ func TestListDailies(t *testing.T) {
 			wantFieldError: map[string]string{"status": "must be one of: PENDING, COMPLETED, MISSED"},
 		},
 		{
-			name:           "invalid date filter returns 422",
-			path:           "/dailies?date=not-a-date",
+			name:           "invalid from filter returns 422",
+			path:           "/dailies?from=not-a-date",
 			wantStatus:     http.StatusUnprocessableEntity,
-			wantFieldError: map[string]string{"date": "date must be YYYY-MM-DD or RFC3339"},
+			wantFieldError: map[string]string{"from": "must be a valid RFC3339 timestamp"},
 		},
 		{
 			name: "returns empty list",
@@ -610,7 +621,7 @@ func TestUpdateDaily(t *testing.T) {
 		{
 			name:    "updates due_date",
 			dailyID: dailyID.String(),
-			body:    `{"due_date":"2026-09-20T10:00:00Z"}`,
+			body:    `{"due_date":"2026-09-20T10:00:00Z","time_zone":"UTC"}`,
 			setupManager: func(m *mockDailyManager) {
 				m.update = func(ctx context.Context, uID, dID uuid.UUID, input daily.UpdateInput) (daily.Daily, error) {
 					if dID != dailyID {

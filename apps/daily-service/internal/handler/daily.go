@@ -60,6 +60,7 @@ type dailyResponse struct {
 	Description string `json:"description"`
 	Difficulty  string `json:"difficulty"`
 	DueDate     string `json:"due_date"`
+	TimeZone    string `json:"time_zone"`
 	Status      string `json:"status"`
 	CreatedAt   string `json:"created_at"`
 	UpdatedAt   string `json:"updated_at"`
@@ -74,6 +75,7 @@ type dailyHistoryResponse struct {
 	Description string  `json:"description"`
 	Difficulty  string  `json:"difficulty"`
 	DueDate     string  `json:"due_date"`
+	TimeZone    string  `json:"time_zone"`
 	Status      string  `json:"status"`
 	CompletedAt *string `json:"completed_at"`
 	MissedAt    *string `json:"missed_at"`
@@ -85,6 +87,7 @@ type createDailyRequest struct {
 	Description string `json:"description"`
 	Difficulty  string `json:"difficulty"`
 	DueDate     string `json:"due_date"`
+	TimeZone    string `json:"time_zone"`
 }
 
 type updateDailyRequest struct {
@@ -92,6 +95,7 @@ type updateDailyRequest struct {
 	Description string `json:"description"`
 	Difficulty  string `json:"difficulty"`
 	DueDate     string `json:"due_date"`
+	TimeZone    string `json:"time_zone"`
 }
 
 func (h *DailyHandler) parseUserID(w http.ResponseWriter, userID string) (uuid.UUID, bool) {
@@ -137,10 +141,15 @@ func (h *DailyHandler) CreateDaily(w http.ResponseWriter, r *http.Request, userI
 		Description: req.Description,
 		Difficulty:  daily.Difficulty(req.Difficulty),
 		DueDate:     dueDate,
+		TimeZone:    req.TimeZone,
 	})
 	if err != nil {
 		if errors.Is(err, daily.ErrInvalidDifficulty) {
 			sharedhttp.WriteValidationError(w, map[string]string{"difficulty": "must be one of: EASY, MEDIUM, HARD"})
+			return
+		}
+		if errors.Is(err, daily.ErrInvalidTimeZone) {
+			sharedhttp.WriteValidationError(w, map[string]string{"time_zone": "must be a valid IANA time zone"})
 			return
 		}
 		sharedhttp.WriteInternal(w, r, err, h.logger)
@@ -150,7 +159,7 @@ func (h *DailyHandler) CreateDaily(w http.ResponseWriter, r *http.Request, userI
 	sharedhttp.WriteJSON(w, http.StatusCreated, dailyToResponse(item))
 }
 
-// ListDailies returns all dailies for the authenticated user, optionally filtered by status and date.
+// ListDailies returns all dailies for the authenticated user, optionally filtered by status and an instant range.
 func (h *DailyHandler) ListDailies(w http.ResponseWriter, r *http.Request, userID string) {
 	userUUID, ok := h.parseUserID(w, userID)
 	if !ok {
@@ -169,20 +178,19 @@ func (h *DailyHandler) ListDailies(w http.ResponseWriter, r *http.Request, userI
 		filter.Status = &s
 	}
 
-	dateParam := q.Get("date")
-	if dateParam == "" {
-		dateParam = q.Get("due_date")
-	}
-	if dateParam != "" {
-		t, err := time.Parse("2006-01-02", dateParam)
-		if err != nil {
-			t, err = time.Parse(time.RFC3339, dateParam)
+	for name, target := range map[string]**time.Time{"from": &filter.From, "to": &filter.To} {
+		if value := q.Get(name); value != "" {
+			instant, err := time.Parse(time.RFC3339, value)
 			if err != nil {
-				sharedhttp.WriteValidationError(w, map[string]string{"date": "date must be YYYY-MM-DD or RFC3339"})
+				sharedhttp.WriteValidationError(w, map[string]string{name: "must be a valid RFC3339 timestamp"})
 				return
 			}
+			*target = &instant
 		}
-		filter.Date = &t
+	}
+	if filter.From != nil && filter.To != nil && !filter.From.Before(*filter.To) {
+		sharedhttp.WriteValidationError(w, map[string]string{"to": "must be after from"})
+		return
 	}
 
 	items, err := h.manager.List(r.Context(), userUUID, filter)
@@ -283,6 +291,9 @@ func (h *DailyHandler) UpdateDaily(w http.ResponseWriter, r *http.Request, userI
 	if dueDate != nil {
 		input.DueDate = dueDate
 	}
+	if req.TimeZone != "" {
+		input.TimeZone = &req.TimeZone
+	}
 
 	item, err := h.manager.Update(r.Context(), userUUID, dailyUUID, input)
 	if err != nil {
@@ -296,6 +307,10 @@ func (h *DailyHandler) UpdateDaily(w http.ResponseWriter, r *http.Request, userI
 		}
 		if errors.Is(err, daily.ErrInvalidDifficulty) {
 			sharedhttp.WriteValidationError(w, map[string]string{"difficulty": "must be one of: EASY, MEDIUM, HARD"})
+			return
+		}
+		if errors.Is(err, daily.ErrInvalidTimeZone) {
+			sharedhttp.WriteValidationError(w, map[string]string{"time_zone": "must be a valid IANA time zone"})
 			return
 		}
 		sharedhttp.WriteInternal(w, r, err, h.logger)
@@ -371,6 +386,11 @@ func validateCreateDailyRequest(req createDailyRequest) (map[string]string, time
 	if !daily.IsValidDifficulty(daily.Difficulty(req.Difficulty)) {
 		fieldErrors["difficulty"] = "must be one of: EASY, MEDIUM, HARD"
 	}
+	if req.TimeZone == "" {
+		fieldErrors["time_zone"] = "time_zone is required"
+	} else if _, err := time.LoadLocation(req.TimeZone); err != nil {
+		fieldErrors["time_zone"] = "must be a valid IANA time zone"
+	}
 	dueDate, err := time.Parse(time.RFC3339, req.DueDate)
 	if err != nil {
 		fieldErrors["due_date"] = "due_date must be a valid RFC3339 timestamp"
@@ -383,6 +403,11 @@ func validateUpdateDailyRequest(req updateDailyRequest) (map[string]string, *tim
 	if req.Difficulty != "" {
 		if !daily.IsValidDifficulty(daily.Difficulty(req.Difficulty)) {
 			fieldErrors["difficulty"] = "must be one of: EASY, MEDIUM, HARD"
+		}
+	}
+	if req.TimeZone != "" {
+		if _, err := time.LoadLocation(req.TimeZone); err != nil {
+			fieldErrors["time_zone"] = "must be a valid IANA time zone"
 		}
 	}
 	if req.DueDate == "" {
@@ -404,6 +429,7 @@ func dailyToResponse(item daily.Daily) dailyResponse {
 		Description: item.Description,
 		Difficulty:  string(item.Difficulty),
 		DueDate:     formatTime(item.DueDate),
+		TimeZone:    item.TimeZone,
 		Status:      string(item.Status),
 		CreatedAt:   formatTime(item.CreatedAt),
 		UpdatedAt:   formatTime(item.UpdatedAt),
@@ -434,10 +460,10 @@ func dailyHistoryToResponse(item daily.DailyHistory) dailyHistoryResponse {
 		Description: item.Description,
 		Difficulty:  string(item.Difficulty),
 		DueDate:     formatTime(item.DueDate),
+		TimeZone:    item.TimeZone,
 		Status:      string(item.Status),
 		CompletedAt: formatOptionalTime(item.CompletedAt),
 		MissedAt:    formatOptionalTime(item.MissedAt),
 		ArchivedAt:  formatTime(item.ArchivedAt),
 	}
 }
-

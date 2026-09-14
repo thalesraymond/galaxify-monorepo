@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
-
 	"github.com/thalesraymond/galaxify-monorepo/pkg/timestamptz"
 	"github.com/thalesraymond/galaxify-monorepo/workers/daily-cron/internal/database"
 )
@@ -17,8 +15,8 @@ type Tx interface {
 	ListPendingExpiredDailies(ctx context.Context, before time.Time, limit int32) ([]database.ListPendingExpiredDailiesRow, error)
 	GetDamageAmount(ctx context.Context, difficulty string) (int32, error)
 	RollOverPendingDaily(ctx context.Context, daily database.ListPendingExpiredDailiesRow, now time.Time) error
-	ListCompletedExpiredDailies(ctx context.Context, before time.Time, limit int32) ([]pgtype.UUID, error)
-	ResetCompletedDaily(ctx context.Context, id pgtype.UUID, now time.Time) error
+	ListCompletedExpiredDailies(ctx context.Context, before time.Time, limit int32) ([]database.ListCompletedExpiredDailiesRow, error)
+	ResetCompletedDaily(ctx context.Context, daily database.ListCompletedExpiredDailiesRow, now time.Time) error
 	InsertOutbox(ctx context.Context, arg database.InsertOutboxParams) error
 }
 
@@ -92,20 +90,26 @@ func (t *pgTx) RollOverPendingDaily(ctx context.Context, daily database.ListPend
 		Description: daily.Description,
 		Difficulty:  daily.Difficulty,
 		DueDate:     daily.DueDate,
+		TimeZone:    daily.TimeZone,
 		MissedAt:    nowTz,
 	}); err != nil {
 		return fmt.Errorf("create daily history for %v: %w", daily.ID, err)
 	}
+	nextDueDate, err := nextDailyDueDate(daily.DueDate.Time, now, daily.TimeZone)
+	if err != nil {
+		return err
+	}
 	if err := t.q.RollOverPendingDaily(ctx, database.RollOverPendingDailyParams{
-		Now: nowTz,
-		ID:  daily.ID,
+		DueDate: timestamptz.FromTime(nextDueDate),
+		Now:     nowTz,
+		ID:      daily.ID,
 	}); err != nil {
 		return fmt.Errorf("roll over pending daily %v: %w", daily.ID, err)
 	}
 	return nil
 }
 
-func (t *pgTx) ListCompletedExpiredDailies(ctx context.Context, before time.Time, limit int32) ([]pgtype.UUID, error) {
+func (t *pgTx) ListCompletedExpiredDailies(ctx context.Context, before time.Time, limit int32) ([]database.ListCompletedExpiredDailiesRow, error) {
 	rows, err := t.q.ListCompletedExpiredDailies(ctx, database.ListCompletedExpiredDailiesParams{
 		Before:    timestamptz.FromTime(before),
 		BatchSize: limit,
@@ -116,12 +120,17 @@ func (t *pgTx) ListCompletedExpiredDailies(ctx context.Context, before time.Time
 	return rows, nil
 }
 
-func (t *pgTx) ResetCompletedDaily(ctx context.Context, id pgtype.UUID, now time.Time) error {
+func (t *pgTx) ResetCompletedDaily(ctx context.Context, daily database.ListCompletedExpiredDailiesRow, now time.Time) error {
+	nextDueDate, err := nextDailyDueDate(daily.DueDate.Time, now, daily.TimeZone)
+	if err != nil {
+		return err
+	}
 	if err := t.q.ResetCompletedDaily(ctx, database.ResetCompletedDailyParams{
-		Now: timestamptz.FromTime(now),
-		ID:  id,
+		DueDate: timestamptz.FromTime(nextDueDate),
+		Now:     timestamptz.FromTime(now),
+		ID:      daily.ID,
 	}); err != nil {
-		return fmt.Errorf("reset completed daily %v: %w", id, err)
+		return fmt.Errorf("reset completed daily %v: %w", daily.ID, err)
 	}
 	return nil
 }

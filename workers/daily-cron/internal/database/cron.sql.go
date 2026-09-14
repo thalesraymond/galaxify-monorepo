@@ -13,9 +13,9 @@ import (
 
 const createDailyHistory = `-- name: CreateDailyHistory :exec
 INSERT INTO daily_history (
-    daily_id, user_id, title, description, difficulty, due_date, status, missed_at
+    daily_id, user_id, title, description, difficulty, due_date, time_zone, status, missed_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, 'MISSED', $7
+    $1, $2, $3, $4, $5, $6, $7, 'MISSED', $8
 )
 `
 
@@ -26,6 +26,7 @@ type CreateDailyHistoryParams struct {
 	Description string
 	Difficulty  string
 	DueDate     pgtype.Timestamptz
+	TimeZone    string
 	MissedAt    pgtype.Timestamptz
 }
 
@@ -37,6 +38,7 @@ func (q *Queries) CreateDailyHistory(ctx context.Context, arg CreateDailyHistory
 		arg.Description,
 		arg.Difficulty,
 		arg.DueDate,
+		arg.TimeZone,
 		arg.MissedAt,
 	)
 	return err
@@ -54,7 +56,7 @@ func (q *Queries) GetDamageAmount(ctx context.Context, difficulty string) (int32
 }
 
 const listCompletedExpiredDailies = `-- name: ListCompletedExpiredDailies :many
-SELECT id
+SELECT id, due_date, time_zone
 FROM dailies
 WHERE status = 'COMPLETED' AND due_date < $1
 ORDER BY due_date ASC
@@ -67,21 +69,27 @@ type ListCompletedExpiredDailiesParams struct {
 	BatchSize int32
 }
 
+type ListCompletedExpiredDailiesRow struct {
+	ID       pgtype.UUID
+	DueDate  pgtype.Timestamptz
+	TimeZone string
+}
+
 // Selects up to `batch_size` COMPLETED dailies whose due_date has passed,
 // locking them with SKIP LOCKED so concurrent worker instances don't collide.
-func (q *Queries) ListCompletedExpiredDailies(ctx context.Context, arg ListCompletedExpiredDailiesParams) ([]pgtype.UUID, error) {
+func (q *Queries) ListCompletedExpiredDailies(ctx context.Context, arg ListCompletedExpiredDailiesParams) ([]ListCompletedExpiredDailiesRow, error) {
 	rows, err := q.db.Query(ctx, listCompletedExpiredDailies, arg.Before, arg.BatchSize)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []pgtype.UUID
+	var items []ListCompletedExpiredDailiesRow
 	for rows.Next() {
-		var id pgtype.UUID
-		if err := rows.Scan(&id); err != nil {
+		var i ListCompletedExpiredDailiesRow
+		if err := rows.Scan(&i.ID, &i.DueDate, &i.TimeZone); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -90,7 +98,7 @@ func (q *Queries) ListCompletedExpiredDailies(ctx context.Context, arg ListCompl
 }
 
 const listPendingExpiredDailies = `-- name: ListPendingExpiredDailies :many
-SELECT id, user_id, title, description, difficulty, due_date
+SELECT id, user_id, title, description, difficulty, due_date, time_zone
 FROM dailies
 WHERE status = 'PENDING' AND due_date < $1
 ORDER BY due_date ASC
@@ -110,6 +118,7 @@ type ListPendingExpiredDailiesRow struct {
 	Description string
 	Difficulty  string
 	DueDate     pgtype.Timestamptz
+	TimeZone    string
 }
 
 // Selects up to `batch_size` PENDING dailies whose due_date has passed,
@@ -130,6 +139,7 @@ func (q *Queries) ListPendingExpiredDailies(ctx context.Context, arg ListPending
 			&i.Description,
 			&i.Difficulty,
 			&i.DueDate,
+			&i.TimeZone,
 		); err != nil {
 			return nil, err
 		}
@@ -144,36 +154,36 @@ func (q *Queries) ListPendingExpiredDailies(ctx context.Context, arg ListPending
 const resetCompletedDaily = `-- name: ResetCompletedDaily :exec
 UPDATE dailies
 SET status = 'PENDING',
-    due_date = due_date + INTERVAL '1 day',
-    updated_at = $1::timestamptz
-WHERE id = $2 AND status = 'COMPLETED'
+    due_date = $1::timestamptz,
+    updated_at = $2::timestamptz
+WHERE id = $3 AND status = 'COMPLETED'
 `
 
 type ResetCompletedDailyParams struct {
-	Now pgtype.Timestamptz
-	ID  pgtype.UUID
+	DueDate pgtype.Timestamptz
+	Now     pgtype.Timestamptz
+	ID      pgtype.UUID
 }
 
-// Resets COMPLETED daily back to PENDING and advances due_date by 1 day.
 func (q *Queries) ResetCompletedDaily(ctx context.Context, arg ResetCompletedDailyParams) error {
-	_, err := q.db.Exec(ctx, resetCompletedDaily, arg.Now, arg.ID)
+	_, err := q.db.Exec(ctx, resetCompletedDaily, arg.DueDate, arg.Now, arg.ID)
 	return err
 }
 
 const rollOverPendingDaily = `-- name: RollOverPendingDaily :exec
 UPDATE dailies
-SET due_date = due_date + CEIL(EXTRACT(EPOCH FROM ($1::timestamptz - due_date)) / 86400) * INTERVAL '1 day',
-    updated_at = $1::timestamptz
-WHERE id = $2 AND status = 'PENDING'
+SET due_date = $1::timestamptz,
+    updated_at = $2::timestamptz
+WHERE id = $3 AND status = 'PENDING'
 `
 
 type RollOverPendingDailyParams struct {
-	Now pgtype.Timestamptz
-	ID  pgtype.UUID
+	DueDate pgtype.Timestamptz
+	Now     pgtype.Timestamptz
+	ID      pgtype.UUID
 }
 
-// Snaps due_date forward in 24-hour increments until due_date > now while remaining PENDING.
 func (q *Queries) RollOverPendingDaily(ctx context.Context, arg RollOverPendingDailyParams) error {
-	_, err := q.db.Exec(ctx, rollOverPendingDaily, arg.Now, arg.ID)
+	_, err := q.db.Exec(ctx, rollOverPendingDaily, arg.DueDate, arg.Now, arg.ID)
 	return err
 }

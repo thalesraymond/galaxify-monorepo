@@ -63,7 +63,7 @@ func TestOpenAPIConformance(t *testing.T) {
 		Status: daily.StatusCompleted, CompletedAt: &completedAt, ArchivedAt: completedAt.Add(time.Second),
 	}
 
-	createBody := `{"title":"Explore Mars","description":"scan surface","difficulty":"MEDIUM","due_date":"2026-09-15T10:00:00Z"}`
+	createBody := `{"title":"Explore Mars","description":"scan surface","difficulty":"MEDIUM","due_date":"2026-09-15T10:00:00Z","time_zone":"UTC"}`
 
 	tests := []struct {
 		name         string
@@ -85,7 +85,7 @@ func TestOpenAPIConformance(t *testing.T) {
 		},
 		{
 			name: "create daily validation error", method: http.MethodPost, target: "/dailies",
-			body:         `{"difficulty":"EXTREME","due_date":"2026-09-15T10:00:00Z"}`,
+			body:         `{"difficulty":"EXTREME","due_date":"2026-09-15T10:00:00Z","time_zone":"UTC"}`,
 			wantStatus:   http.StatusUnprocessableEntity,
 			responseOnly: true,
 		},
