@@ -1,12 +1,12 @@
 module github.com/thalesraymond/galaxify-monorepo/workers/expedition-worker
 
-go 1.25.7
+go 1.26.0
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/joho/godotenv v1.5.1
-	github.com/thalesraymond/galaxify-monorepo/pkg v0.0.0-20260905215946-7379f00e5e87
+	github.com/thalesraymond/galaxify-monorepo/pkg v0.0.0-20260914233354-ee5f91622a39
 )
 
 require (
@@ -17,7 +17,7 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/rabbitmq/amqp091-go v1.14.0 // indirect
 	golang.org/x/crypto v0.14.0 // indirect
-	golang.org/x/sync v0.17.0 // indirect
-	golang.org/x/sys v0.13.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sys v0.26.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
 )
