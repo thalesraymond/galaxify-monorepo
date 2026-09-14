@@ -36,7 +36,7 @@ type Store interface {
 	MarkDailyComplete(ctx context.Context, arg database.MarkDailyCompleteParams) (database.Daily, error)
 	GetDifficultyReward(ctx context.Context, difficulty string) (database.DifficultyReward, error)
 	CreateDailyHistory(ctx context.Context, arg database.CreateDailyHistoryParams) error
-	ListDailyHistory(ctx context.Context, userID pgtype.UUID) ([]database.DailyHistory, error)
+	ListDailyHistory(ctx context.Context, arg database.ListDailyHistoryParams) ([]database.DailyHistory, error)
 	InsertOutbox(ctx context.Context, arg database.InsertOutboxParams) error
 }
 
@@ -45,7 +45,7 @@ type Manager interface {
 	Create(ctx context.Context, input CreateInput) (Daily, error)
 	Get(ctx context.Context, userID, id uuid.UUID) (Daily, error)
 	List(ctx context.Context, userID uuid.UUID, filter ListFilter) ([]Daily, error)
-	ListHistory(ctx context.Context, userID uuid.UUID) ([]DailyHistory, error)
+	ListHistory(ctx context.Context, userID uuid.UUID, query HistoryQuery) (HistoryPage, error)
 	Update(ctx context.Context, userID, id uuid.UUID, input UpdateInput) (Daily, error)
 	Delete(ctx context.Context, userID, id uuid.UUID) error
 	Complete(ctx context.Context, userID, id uuid.UUID) (Daily, error)
@@ -155,17 +155,65 @@ func (m *DailyManager) List(ctx context.Context, userID uuid.UUID, filter ListFi
 	return dailies, nil
 }
 
-// ListHistory returns all past daily history records for the user, ordered by due_date DESC.
-func (m *DailyManager) ListHistory(ctx context.Context, userID uuid.UUID) ([]DailyHistory, error) {
-	rows, err := m.baseStore.ListDailyHistory(ctx, pgtype.UUID{Bytes: userID, Valid: true})
+// DefaultHistoryPageSize is the page size used when a request does not specify
+// one. MaxHistoryPageSize caps an explicit page size so a single read can never
+// be unbounded.
+const (
+	DefaultHistoryPageSize = 20
+	MaxHistoryPageSize     = 100
+)
+
+// ListHistory returns one stable, descending page of the user's daily history.
+// Rows are ordered by (due_date, archived_at, id) desc; the tuple is unique
+// because id is, so NextCursor continues strictly after the last item and a
+// traversal neither duplicates nor omits entries. Concurrent newer inserts sort
+// before the cursor and therefore cannot shift the already-observed sequence.
+func (m *DailyManager) ListHistory(ctx context.Context, userID uuid.UUID, query HistoryQuery) (HistoryPage, error) {
+	pageSize := normalizeHistoryPageSize(query.Limit)
+
+	params := database.ListDailyHistoryParams{
+		UserID:   pgtype.UUID{Bytes: userID, Valid: true},
+		PageSize: int32(pageSize) + 1, // read one extra to detect a following page
+	}
+	if query.Cursor != "" {
+		cursor, err := decodeHistoryCursor(query.Cursor)
+		if err != nil {
+			return HistoryPage{}, err
+		}
+		params.CursorDueDate = pgtype.Timestamptz{Time: cursor.DueDate, Valid: true}
+		params.CursorArchivedAt = pgtype.Timestamptz{Time: cursor.ArchivedAt, Valid: true}
+		params.CursorID = pgtype.UUID{Bytes: cursor.ID, Valid: true}
+	}
+
+	rows, err := m.baseStore.ListDailyHistory(ctx, params)
 	if err != nil {
-		return nil, fmt.Errorf("list daily history: %w", err)
+		return HistoryPage{}, fmt.Errorf("list daily history: %w", err)
 	}
-	items := make([]DailyHistory, len(rows))
-	for i, r := range rows {
-		items[i] = toDomainDailyHistory(r)
+
+	page := HistoryPage{Items: make([]DailyHistory, 0, pageSize)}
+	if len(rows) > pageSize {
+		rows = rows[:pageSize]
+		last := rows[len(rows)-1]
+		page.NextCursor = encodeHistoryCursor(HistoryCursor{
+			DueDate:    last.DueDate.Time,
+			ArchivedAt: last.ArchivedAt.Time,
+			ID:         last.ID.Bytes,
+		})
 	}
-	return items, nil
+	for _, r := range rows {
+		page.Items = append(page.Items, toDomainDailyHistory(r))
+	}
+	return page, nil
+}
+
+func normalizeHistoryPageSize(limit int) int {
+	if limit <= 0 {
+		return DefaultHistoryPageSize
+	}
+	if limit > MaxHistoryPageSize {
+		return MaxHistoryPageSize
+	}
+	return limit
 }
 
 // Update mutates fields of a daily task atomically. Permitted even if the task is COMPLETED today.

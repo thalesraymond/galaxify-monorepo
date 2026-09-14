@@ -27,7 +27,7 @@ type mockDailyManager struct {
 	update      func(ctx context.Context, userID, id uuid.UUID, input daily.UpdateInput) (daily.Daily, error)
 	delete      func(ctx context.Context, userID, id uuid.UUID) error
 	complete    func(ctx context.Context, userID, id uuid.UUID) (daily.Daily, error)
-	listHistory func(ctx context.Context, userID uuid.UUID) ([]daily.DailyHistory, error)
+	listHistory func(ctx context.Context, userID uuid.UUID, query daily.HistoryQuery) (daily.HistoryPage, error)
 }
 
 func (m *mockDailyManager) Create(ctx context.Context, input daily.CreateInput) (daily.Daily, error) {
@@ -51,11 +51,11 @@ func (m *mockDailyManager) List(ctx context.Context, userID uuid.UUID, filter da
 	return nil, errors.New("unexpected List call")
 }
 
-func (m *mockDailyManager) ListHistory(ctx context.Context, userID uuid.UUID) ([]daily.DailyHistory, error) {
+func (m *mockDailyManager) ListHistory(ctx context.Context, userID uuid.UUID, query daily.HistoryQuery) (daily.HistoryPage, error) {
 	if m.listHistory != nil {
-		return m.listHistory(ctx, userID)
+		return m.listHistory(ctx, userID, query)
 	}
-	return nil, errors.New("unexpected ListHistory call")
+	return daily.HistoryPage{}, errors.New("unexpected ListHistory call")
 }
 
 func (m *mockDailyManager) Update(ctx context.Context, userID, id uuid.UUID, input daily.UpdateInput) (daily.Daily, error) {
@@ -1120,6 +1120,28 @@ func TestCompleteDaily(t *testing.T) {
 	}
 }
 
+type testDailyHistoryResponse struct {
+	ID           string  `json:"id"`
+	DailyID      string  `json:"daily_id"`
+	UserID       string  `json:"user_id"`
+	Title        string  `json:"title"`
+	Description  string  `json:"description"`
+	Difficulty   string  `json:"difficulty"`
+	DueDate      string  `json:"due_date"`
+	TimeZone     string  `json:"time_zone"`
+	DueLocalDate string  `json:"due_local_date"`
+	DueLocalTime string  `json:"due_local_time"`
+	Status       string  `json:"status"`
+	CompletedAt  *string `json:"completed_at"`
+	MissedAt     *string `json:"missed_at"`
+	ArchivedAt   string  `json:"archived_at"`
+}
+
+type testDailyHistoryPageResponse struct {
+	Items      []testDailyHistoryResponse `json:"items"`
+	NextCursor *string                    `json:"next_cursor"`
+}
+
 func TestListDailyHistory(t *testing.T) {
 	userID := uuid.New()
 	dailyID := uuid.New()
@@ -1128,61 +1150,53 @@ func TestListDailyHistory(t *testing.T) {
 	completedAt := time.Date(2026, 9, 15, 11, 0, 0, 0, time.UTC)
 	archivedAt := time.Date(2026, 9, 15, 11, 0, 1, 0, time.UTC)
 
-	type testDailyHistoryResponse struct {
-		ID           string  `json:"id"`
-		DailyID      string  `json:"daily_id"`
-		UserID       string  `json:"user_id"`
-		Title        string  `json:"title"`
-		Description  string  `json:"description"`
-		Difficulty   string  `json:"difficulty"`
-		DueDate      string  `json:"due_date"`
-		TimeZone     string  `json:"time_zone"`
-		DueLocalDate string  `json:"due_local_date"`
-		DueLocalTime string  `json:"due_local_time"`
-		Status       string  `json:"status"`
-		CompletedAt  *string `json:"completed_at"`
-		MissedAt     *string `json:"missed_at"`
-		ArchivedAt   string  `json:"archived_at"`
+	completedItem := daily.DailyHistory{
+		ID:          historyID,
+		DailyID:     dailyID,
+		UserID:      userID,
+		Title:       "Meditate",
+		Description: "15 min",
+		Difficulty:  daily.DifficultyMedium,
+		DueDate:     dueDate,
+		TimeZone:    "America/New_York",
+		Status:      daily.StatusCompleted,
+		CompletedAt: &completedAt,
+		MissedAt:    nil,
+		ArchivedAt:  archivedAt,
 	}
 
 	tests := []struct {
 		name           string
+		path           string
 		setupManager   func(m *mockDailyManager)
 		wantStatus     int
 		wantErrorCode  string
-		assertResponse func(t *testing.T, resp []testDailyHistoryResponse)
+		wantFieldError map[string]string
+		assertResponse func(t *testing.T, resp testDailyHistoryPageResponse)
 	}{
 		{
-			name: "returns history for user",
+			name: "returns a history page for user",
+			path: "/dailies/history",
 			setupManager: func(m *mockDailyManager) {
-				m.listHistory = func(ctx context.Context, uID uuid.UUID) ([]daily.DailyHistory, error) {
+				m.listHistory = func(ctx context.Context, uID uuid.UUID, query daily.HistoryQuery) (daily.HistoryPage, error) {
 					if uID != userID {
 						t.Errorf("user_id = %v, want %v", uID, userID)
 					}
-					return []daily.DailyHistory{
-						{
-							ID:          historyID,
-							DailyID:     dailyID,
-							UserID:      userID,
-							Title:       "Meditate",
-							Description: "15 min",
-							Difficulty:  daily.DifficultyMedium,
-							DueDate:     dueDate,
-							TimeZone:    "America/New_York",
-							Status:      daily.StatusCompleted,
-							CompletedAt: &completedAt,
-							MissedAt:    nil,
-							ArchivedAt:  archivedAt,
-						},
-					}, nil
+					if query.Limit != 0 || query.Cursor != "" {
+						t.Errorf("query = %+v, want the unset first-page query", query)
+					}
+					return daily.HistoryPage{Items: []daily.DailyHistory{completedItem}}, nil
 				}
 			},
 			wantStatus: http.StatusOK,
-			assertResponse: func(t *testing.T, resp []testDailyHistoryResponse) {
-				if len(resp) != 1 {
-					t.Fatalf("len(resp) = %d, want 1", len(resp))
+			assertResponse: func(t *testing.T, resp testDailyHistoryPageResponse) {
+				if len(resp.Items) != 1 {
+					t.Fatalf("len(items) = %d, want 1", len(resp.Items))
 				}
-				item := resp[0]
+				if resp.NextCursor != nil {
+					t.Errorf("next_cursor = %v, want null on the final page", resp.NextCursor)
+				}
+				item := resp.Items[0]
 				if item.ID != historyID.String() {
 					t.Errorf("id = %q, want %q", item.ID, historyID.String())
 				}
@@ -1221,30 +1235,91 @@ func TestListDailyHistory(t *testing.T) {
 			},
 		},
 		{
-			name: "returns empty list when user has no history",
+			name: "passes the bounded limit and opaque cursor to the manager",
+			path: "/dailies/history?limit=5&cursor=opaque-token",
 			setupManager: func(m *mockDailyManager) {
-				m.listHistory = func(ctx context.Context, uID uuid.UUID) ([]daily.DailyHistory, error) {
-					if uID != userID {
-						t.Errorf("user_id = %v, want %v", uID, userID)
+				m.listHistory = func(ctx context.Context, uID uuid.UUID, query daily.HistoryQuery) (daily.HistoryPage, error) {
+					if query.Limit != 5 {
+						t.Errorf("limit = %d, want 5", query.Limit)
 					}
-					return []daily.DailyHistory{}, nil
+					if query.Cursor != "opaque-token" {
+						t.Errorf("cursor = %q, want opaque-token", query.Cursor)
+					}
+					return daily.HistoryPage{}, nil
 				}
 			},
 			wantStatus: http.StatusOK,
-			assertResponse: func(t *testing.T, resp []testDailyHistoryResponse) {
-				if len(resp) != 0 {
-					t.Errorf("len(resp) = %d, want 0", len(resp))
+			assertResponse: func(t *testing.T, resp testDailyHistoryPageResponse) {
+				if len(resp.Items) != 0 {
+					t.Errorf("len(items) = %d, want 0", len(resp.Items))
 				}
 			},
 		},
 		{
-			name: "manager error returns 500",
+			name: "returns the next cursor supplied by the manager",
+			path: "/dailies/history?limit=5",
 			setupManager: func(m *mockDailyManager) {
-				m.listHistory = func(ctx context.Context, uID uuid.UUID) ([]daily.DailyHistory, error) {
+				m.listHistory = func(ctx context.Context, uID uuid.UUID, query daily.HistoryQuery) (daily.HistoryPage, error) {
+					return daily.HistoryPage{Items: []daily.DailyHistory{completedItem}, NextCursor: "next-token"}, nil
+				}
+			},
+			wantStatus: http.StatusOK,
+			assertResponse: func(t *testing.T, resp testDailyHistoryPageResponse) {
+				if resp.NextCursor == nil || *resp.NextCursor != "next-token" {
+					t.Errorf("next_cursor = %v, want next-token", resp.NextCursor)
+				}
+			},
+		},
+		{
+			name: "returns an empty page with a null next cursor",
+			path: "/dailies/history",
+			setupManager: func(m *mockDailyManager) {
+				m.listHistory = func(ctx context.Context, uID uuid.UUID, query daily.HistoryQuery) (daily.HistoryPage, error) {
+					return daily.HistoryPage{Items: []daily.DailyHistory{}}, nil
+				}
+			},
+			wantStatus: http.StatusOK,
+			assertResponse: func(t *testing.T, resp testDailyHistoryPageResponse) {
+				if len(resp.Items) != 0 {
+					t.Errorf("len(items) = %d, want 0", len(resp.Items))
+				}
+				if resp.NextCursor != nil {
+					t.Errorf("next_cursor = %v, want null", resp.NextCursor)
+				}
+			},
+		},
+		{
+			name:           "rejects a non-positive limit",
+			path:           "/dailies/history?limit=0",
+			wantStatus:     http.StatusUnprocessableEntity,
+			wantFieldError: map[string]string{"limit": "must be a positive integer"},
+		},
+		{
+			name:           "rejects a non-integer limit",
+			path:           "/dailies/history?limit=abc",
+			wantStatus:     http.StatusUnprocessableEntity,
+			wantFieldError: map[string]string{"limit": "must be a positive integer"},
+		},
+		{
+			name: "maps an invalid cursor to a field-scoped validation error",
+			path: "/dailies/history?cursor=tampered",
+			setupManager: func(m *mockDailyManager) {
+				m.listHistory = func(ctx context.Context, uID uuid.UUID, query daily.HistoryQuery) (daily.HistoryPage, error) {
+					return daily.HistoryPage{}, daily.ErrInvalidHistoryCursor
+				}
+			},
+			wantStatus:     http.StatusUnprocessableEntity,
+			wantFieldError: map[string]string{"cursor": "is invalid or expired"},
+		},
+		{
+			name: "manager error returns 500",
+			path: "/dailies/history",
+			setupManager: func(m *mockDailyManager) {
+				m.listHistory = func(ctx context.Context, uID uuid.UUID, query daily.HistoryQuery) (daily.HistoryPage, error) {
 					if uID != userID {
 						t.Errorf("user_id = %v, want %v", uID, userID)
 					}
-					return nil, errors.New("database down")
+					return daily.HistoryPage{}, errors.New("database down")
 				}
 			},
 			wantStatus:    http.StatusInternalServerError,
@@ -1261,12 +1336,19 @@ func TestListDailyHistory(t *testing.T) {
 
 			router, signer := newTestDailyRouter(t, mgr)
 			rec := httptest.NewRecorder()
-			req := sharedhttptest.NewRequest(t, http.MethodGet, "/dailies/history", "")
+			req := sharedhttptest.NewRequest(t, http.MethodGet, tt.path, "")
 			req.Header.Set("Authorization", "Bearer "+signer.Token(userID.String()))
 
 			router.ServeHTTP(rec, req)
 
 			sharedhttptest.WantStatus(t, rec, tt.wantStatus)
+
+			if tt.wantFieldError != nil {
+				for field, wantMessage := range tt.wantFieldError {
+					sharedhttptest.WantFieldError(t, rec, field, wantMessage)
+				}
+				return
+			}
 
 			if tt.wantErrorCode != "" {
 				sharedhttptest.WantErrorCode(t, rec, tt.wantErrorCode)
@@ -1274,7 +1356,7 @@ func TestListDailyHistory(t *testing.T) {
 			}
 
 			if tt.assertResponse != nil {
-				var resp []testDailyHistoryResponse
+				var resp testDailyHistoryPageResponse
 				sharedhttptest.DecodeBody(t, rec, &resp)
 				tt.assertResponse(t, resp)
 			}

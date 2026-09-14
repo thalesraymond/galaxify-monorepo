@@ -209,11 +209,37 @@ func (q *Queries) ListDailies(ctx context.Context, arg ListDailiesParams) ([]Dai
 const listDailyHistory = `-- name: ListDailyHistory :many
 SELECT id, daily_id, user_id, title, description, difficulty, due_date, status, completed_at, missed_at, archived_at, time_zone FROM daily_history
 WHERE user_id = $1
-ORDER BY due_date DESC, archived_at DESC
+  AND (
+    $2::timestamptz IS NULL
+    OR (due_date, archived_at, id) < (
+        $2::timestamptz,
+        $3::timestamptz,
+        $4::uuid
+    )
+  )
+ORDER BY due_date DESC, archived_at DESC, id DESC
+LIMIT $5::int
 `
 
-func (q *Queries) ListDailyHistory(ctx context.Context, userID pgtype.UUID) ([]DailyHistory, error) {
-	rows, err := q.db.Query(ctx, listDailyHistory, userID)
+type ListDailyHistoryParams struct {
+	UserID           pgtype.UUID
+	CursorDueDate    pgtype.Timestamptz
+	CursorArchivedAt pgtype.Timestamptz
+	CursorID         pgtype.UUID
+	PageSize         int32
+}
+
+// Stable descending keyset page over the (due_date, archived_at, id) tuple.
+// `id` is the unique tie-breaker required by the continuation contract. The
+// cursor nargs are all-or-nothing: when they are NULL the first page is read.
+func (q *Queries) ListDailyHistory(ctx context.Context, arg ListDailyHistoryParams) ([]DailyHistory, error) {
+	rows, err := q.db.Query(ctx, listDailyHistory,
+		arg.UserID,
+		arg.CursorDueDate,
+		arg.CursorArchivedAt,
+		arg.CursorID,
+		arg.PageSize,
+	)
 	if err != nil {
 		return nil, err
 	}

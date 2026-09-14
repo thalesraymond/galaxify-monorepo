@@ -17,4 +17,9 @@ var (
 
 	// ErrInvalidTimeZone indicates an unsupported IANA time zone.
 	ErrInvalidTimeZone = errors.New("invalid daily time zone")
+
+	// ErrInvalidHistoryCursor indicates a continuation token that is malformed,
+	// tampered with, or no longer structurally recognisable. The handler maps it
+	// to a field-scoped validation error without echoing the token's contents.
+	ErrInvalidHistoryCursor = errors.New("invalid daily history cursor")
 )

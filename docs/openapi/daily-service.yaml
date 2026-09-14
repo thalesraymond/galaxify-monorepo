@@ -168,13 +168,14 @@ paths:
       operationId: dailyHistory
       summary: List archived Daily outcomes, newest first.
       description: |
-        Today this returns the full unbounded array. The planned response is a
-        stable descending cursor page `{items, next_cursor}`.
+        Returns one stable descending cursor page ordered by occurrence
+        (`due_date`), then archive time, then record id as the unique
+        tie-breaker. `next_cursor` is `null` exactly on the final page; pass it
+        back as `cursor` to continue without duplicates or omissions. An
+        invalid or tampered cursor returns `422 VALIDATION_FAILED` with a
+        `cursor` field error.
       tags: [dailies]
       x-implementation-status: implemented
-      x-planned-changes: >-
-        Replace the unbounded array with stable descending cursor pagination
-        returning items plus an optional next cursor.
       x-ticket: "#150"
       security:
         - bearerAuth: []
@@ -183,33 +184,31 @@ paths:
         - name: cursor
           in: query
           required: false
-          description: Planned opaque cursor returned as `next_cursor`.
-          x-implementation-status: planned
+          description: Opaque continuation token from a previous page's `next_cursor`.
           schema:
             type: string
         - name: limit
           in: query
           required: false
-          description: Planned page size for cursor pagination.
-          x-implementation-status: planned
+          description: Page size. Defaults to 20 and is capped at 100.
           schema:
             type: integer
             format: int32
             minimum: 1
       responses:
         "200":
-          description: Archived Daily outcomes.
+          description: One stable descending page of archived Daily outcomes.
           headers:
             X-Request-Id:
               $ref: "#/components/headers/XRequestId"
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/DailyHistory"
+                $ref: "#/components/schemas/DailyHistoryPage"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
         "500":
           $ref: "#/components/responses/InternalError"
         "503":
@@ -621,9 +620,8 @@ components:
 
     DailyHistoryPage:
       type: object
-      description: Planned cursor page shaping Daily history.
-      x-implementation-status: planned
-      required: [items]
+      description: One stable descending page of Daily history.
+      required: [items, next_cursor]
       additionalProperties: false
       properties:
         items:
@@ -632,7 +630,7 @@ components:
             $ref: "#/components/schemas/DailyHistory"
         next_cursor:
           type: [string, "null"]
-          description: Opaque cursor for the next page; null at the end.
+          description: Opaque cursor for the next page; null on the final page.
 
     DailyDifficulty:
       type: object

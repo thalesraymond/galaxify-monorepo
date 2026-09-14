@@ -25,7 +25,10 @@ type Querier interface {
 	InsertOutbox(ctx context.Context, arg InsertOutboxParams) error
 	InsertProcessedEvent(ctx context.Context, eventID pgtype.UUID) (int64, error)
 	ListDailies(ctx context.Context, arg ListDailiesParams) ([]Daily, error)
-	ListDailyHistory(ctx context.Context, userID pgtype.UUID) ([]DailyHistory, error)
+	// Stable descending keyset page over the (due_date, archived_at, id) tuple.
+	// `id` is the unique tie-breaker required by the continuation contract. The
+	// cursor nargs are all-or-nothing: when they are NULL the first page is read.
+	ListDailyHistory(ctx context.Context, arg ListDailyHistoryParams) ([]DailyHistory, error)
 	ListPendingOutbox(ctx context.Context, limit int32) ([]Outbox, error)
 	ListTestTables(ctx context.Context) ([]TestTable, error)
 	MarkDailyComplete(ctx context.Context, arg MarkDailyCompleteParams) (Daily, error)

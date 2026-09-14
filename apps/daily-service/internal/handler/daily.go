@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,7 +20,7 @@ type dailyManager interface {
 	Create(ctx context.Context, input daily.CreateInput) (daily.Daily, error)
 	Get(ctx context.Context, userID, id uuid.UUID) (daily.Daily, error)
 	List(ctx context.Context, userID uuid.UUID, filter daily.ListFilter) ([]daily.Daily, error)
-	ListHistory(ctx context.Context, userID uuid.UUID) ([]daily.DailyHistory, error)
+	ListHistory(ctx context.Context, userID uuid.UUID, query daily.HistoryQuery) (daily.HistoryPage, error)
 	Update(ctx context.Context, userID, id uuid.UUID, input daily.UpdateInput) (daily.Daily, error)
 	Delete(ctx context.Context, userID, id uuid.UUID) error
 	Complete(ctx context.Context, userID, id uuid.UUID) (daily.Daily, error)
@@ -84,6 +85,13 @@ type dailyHistoryResponse struct {
 	CompletedAt  *string `json:"completed_at"`
 	MissedAt     *string `json:"missed_at"`
 	ArchivedAt   string  `json:"archived_at"`
+}
+
+// dailyHistoryPageResponse is the on-the-wire shape for one history page.
+// next_cursor is null exactly when items is the final page.
+type dailyHistoryPageResponse struct {
+	Items      []dailyHistoryResponse `json:"items"`
+	NextCursor *string                `json:"next_cursor"`
 }
 
 type createDailyRequest struct {
@@ -250,22 +258,42 @@ func (h *DailyHandler) ListDailies(w http.ResponseWriter, r *http.Request, userI
 	sharedhttp.WriteJSON(w, http.StatusOK, resp)
 }
 
-// ListDailyHistory returns all past daily task executions from daily_history ordered by due_date DESC.
+// ListDailyHistory returns one stable descending page of the user's archived
+// daily outcomes. A request may carry a bounded `limit` and the opaque `cursor`
+// from a previous page's `next_cursor`.
 func (h *DailyHandler) ListDailyHistory(w http.ResponseWriter, r *http.Request, userID string) {
 	userUUID, ok := h.parseUserID(w, userID)
 	if !ok {
 		return
 	}
 
-	items, err := h.manager.ListHistory(r.Context(), userUUID)
+	query := daily.HistoryQuery{Cursor: r.URL.Query().Get("cursor")}
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		limit, err := strconv.ParseInt(raw, 10, 32)
+		if err != nil || limit < 1 {
+			sharedhttp.WriteValidationError(w, map[string]string{"limit": "must be a positive integer"})
+			return
+		}
+		query.Limit = int(limit)
+	}
+
+	page, err := h.manager.ListHistory(r.Context(), userUUID, query)
 	if err != nil {
+		if errors.Is(err, daily.ErrInvalidHistoryCursor) {
+			sharedhttp.WriteValidationError(w, map[string]string{"cursor": "is invalid or expired"})
+			return
+		}
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return
 	}
 
-	resp := make([]dailyHistoryResponse, len(items))
-	for i, item := range items {
-		resp[i] = dailyHistoryToResponse(item)
+	resp := dailyHistoryPageResponse{Items: make([]dailyHistoryResponse, 0, len(page.Items))}
+	for _, item := range page.Items {
+		resp.Items = append(resp.Items, dailyHistoryToResponse(item))
+	}
+	if page.NextCursor != "" {
+		cursor := page.NextCursor
+		resp.NextCursor = &cursor
 	}
 
 	sharedhttp.WriteJSON(w, http.StatusOK, resp)

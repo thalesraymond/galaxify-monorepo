@@ -98,6 +98,33 @@ type ListFilter struct {
 	To     *time.Time
 }
 
+// HistoryQuery bounds one Daily History page. Limit is clamped to
+// [1, MaxHistoryPageSize]; a non-positive Limit selects DefaultHistoryPageSize.
+// Cursor is the opaque continuation token returned as the previous page's
+// NextCursor; an empty Cursor starts at the newest occurrence.
+type HistoryQuery struct {
+	Limit  int
+	Cursor string
+}
+
+// HistoryPage is one stable descending page of a user's Daily History. Items
+// never overlap or skip entries when traversed with NextCursor. NextCursor is
+// empty exactly when this is the final page, so clients stop unambiguously on
+// both an empty page and a partially-filled last page.
+type HistoryPage struct {
+	Items      []DailyHistory
+	NextCursor string
+}
+
+// HistoryCursor is the unique, tie-breaker-complete position of the last item
+// on a page: the (DueDate, ArchivedAt, ID) sort key the next page continues
+// strictly after.
+type HistoryCursor struct {
+	DueDate    time.Time
+	ArchivedAt time.Time
+	ID         uuid.UUID
+}
+
 // UpdateInput defines optional fields when editing a pending daily task.
 type UpdateInput struct {
 	Title       *string

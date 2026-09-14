@@ -149,18 +149,41 @@ func TestOpenAPIConformance(t *testing.T) {
 		},
 		{name: "list dailies missing auth", method: http.MethodGet, target: "/dailies", noAuth: true, wantStatus: http.StatusUnauthorized},
 		{
-			name: "history", method: http.MethodGet, target: "/dailies/history",
+			name: "history page", method: http.MethodGet, target: "/dailies/history?limit=5",
 			configure: func(m *mockDailyManager) {
-				m.listHistory = func(context.Context, uuid.UUID) ([]daily.DailyHistory, error) {
-					return []daily.DailyHistory{history}, nil
+				m.listHistory = func(_ context.Context, _ uuid.UUID, query daily.HistoryQuery) (daily.HistoryPage, error) {
+					if query.Limit != 5 {
+						return daily.HistoryPage{}, errors.New("unexpected limit")
+					}
+					return daily.HistoryPage{Items: []daily.DailyHistory{history}, NextCursor: "next-token"}, nil
 				}
 			},
 			wantStatus: http.StatusOK,
 		},
 		{
+			name: "history final page", method: http.MethodGet, target: "/dailies/history",
+			configure: func(m *mockDailyManager) {
+				m.listHistory = func(_ context.Context, _ uuid.UUID, query daily.HistoryQuery) (daily.HistoryPage, error) {
+					return daily.HistoryPage{Items: []daily.DailyHistory{}}, nil
+				}
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "history invalid cursor", method: http.MethodGet, target: "/dailies/history?cursor=tampered",
+			configure: func(m *mockDailyManager) {
+				m.listHistory = func(context.Context, uuid.UUID, daily.HistoryQuery) (daily.HistoryPage, error) {
+					return daily.HistoryPage{}, daily.ErrInvalidHistoryCursor
+				}
+			},
+			wantStatus: http.StatusUnprocessableEntity, responseOnly: true,
+		},
+		{
 			name: "history internal error", method: http.MethodGet, target: "/dailies/history",
 			configure: func(m *mockDailyManager) {
-				m.listHistory = func(context.Context, uuid.UUID) ([]daily.DailyHistory, error) { return nil, errors.New("db down") }
+				m.listHistory = func(context.Context, uuid.UUID, daily.HistoryQuery) (daily.HistoryPage, error) {
+					return daily.HistoryPage{}, errors.New("db down")
+				}
 			},
 			wantStatus: http.StatusInternalServerError,
 		},
