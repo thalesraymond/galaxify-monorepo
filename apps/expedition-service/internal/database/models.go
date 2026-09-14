@@ -20,11 +20,11 @@ type Expedition struct {
 }
 
 type ExpeditionResult struct {
-	ID            pgtype.UUID
-	ExpeditionID  pgtype.UUID
-	Outcome       string
-	RewardSummary []byte
-	CreatedAt     pgtype.Timestamptz
+	ID              pgtype.UUID
+	ExpeditionID    pgtype.UUID
+	Outcome         string
+	CreatedAt       pgtype.Timestamptz
+	MaterialsReward int32
 }
 
 type Outbox struct {

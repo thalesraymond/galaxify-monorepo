@@ -13,20 +13,20 @@ import (
 
 const insertExpeditionResult = `-- name: InsertExpeditionResult :exec
 INSERT INTO expedition_results (
-    expedition_id, outcome, reward_summary
+    expedition_id, outcome, materials_reward
 ) VALUES (
     $1, $2, $3
 )
 `
 
 type InsertExpeditionResultParams struct {
-	ExpeditionID  pgtype.UUID
-	Outcome       string
-	RewardSummary []byte
+	ExpeditionID    pgtype.UUID
+	Outcome         string
+	MaterialsReward int32
 }
 
 func (q *Queries) InsertExpeditionResult(ctx context.Context, arg InsertExpeditionResultParams) error {
-	_, err := q.db.Exec(ctx, insertExpeditionResult, arg.ExpeditionID, arg.Outcome, arg.RewardSummary)
+	_, err := q.db.Exec(ctx, insertExpeditionResult, arg.ExpeditionID, arg.Outcome, arg.MaterialsReward)
 	return err
 }
 

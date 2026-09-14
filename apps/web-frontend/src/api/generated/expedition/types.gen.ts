@@ -20,14 +20,14 @@ export type LaunchExpeditionRequest = {
     materials_invested: number;
 };
 
+/**
+ * The typed result recorded for Success and Failure, carrying a material reward for both outcomes.
+ */
 export type ExpeditionResult = {
     id: string;
     expedition_id: string;
     outcome: Outcome;
-    /**
-     * Arbitrary JSON today. Planned: replaced by a typed material reward.
-     */
-    reward_summary: unknown;
+    material_reward: MaterialReward;
     created_at: string;
 };
 
@@ -53,28 +53,20 @@ export type Expedition = {
 };
 
 /**
- * Planned typed material reward.
+ * The typed material reward recorded with an Expedition result.
  */
 export type MaterialReward = {
     materials: number;
 };
 
 /**
- * Planned typed result for Success and Failure, replacing the arbitrary reward_summary JSON.
- */
-export type ExpeditionResultTyped = {
-    id: string;
-    expedition_id: string;
-    outcome: Outcome;
-    material_reward: MaterialReward;
-    created_at: string;
-};
-
-/**
- * Planned live launch quote.
+ * Live launch quote sharing launch's authoritative calculation and eligibility rules.
  */
 export type ExpeditionQuote = {
     materials_invested: number;
+    /**
+     * The investment factor materials_invested / (materials_invested + 10).
+     */
     normalized_investment: number;
     projected_balance: number;
     success_chance: number;
@@ -85,6 +77,9 @@ export type ExpeditionQuote = {
     blocker?: string | null;
     cooldown_until?: string | null;
     estimated_resolve_at: string;
+    /**
+     * Full width of the resolve jitter window around the estimate.
+     */
     estimated_resolve_window_seconds?: number;
 };
 
@@ -170,7 +165,7 @@ export type ExpeditionCurrentErrors = {
      */
     500: ErrorResponse;
     /**
-     * **Planned.** Service-specific retryable not-ready error while Ship state provisions. Code EXPEDITION_SHIP_STATE_NOT_READY.
+     * Service-specific retryable not-ready error while Ship state provisions. Code EXPEDITION_SHIP_STATE_NOT_READY.
      */
     503: ErrorResponse;
     /**
@@ -226,7 +221,7 @@ export type ExpeditionListErrors = {
      */
     500: ErrorResponse;
     /**
-     * **Planned.** Service-specific retryable not-ready error while Ship state provisions. Code EXPEDITION_SHIP_STATE_NOT_READY.
+     * Service-specific retryable not-ready error while Ship state provisions. Code EXPEDITION_SHIP_STATE_NOT_READY.
      */
     503: ErrorResponse;
     /**
@@ -275,7 +270,7 @@ export type ExpeditionQuoteErrors = {
      */
     500: ErrorResponse;
     /**
-     * **Planned.** Service-specific retryable not-ready error while Ship state provisions. Code EXPEDITION_SHIP_STATE_NOT_READY.
+     * Service-specific retryable not-ready error while Ship state provisions. Code EXPEDITION_SHIP_STATE_NOT_READY.
      */
     503: ErrorResponse;
     /**
@@ -331,7 +326,7 @@ export type ExpeditionGetErrors = {
      */
     500: ErrorResponse;
     /**
-     * **Planned.** Service-specific retryable not-ready error while Ship state provisions. Code EXPEDITION_SHIP_STATE_NOT_READY.
+     * Service-specific retryable not-ready error while Ship state provisions. Code EXPEDITION_SHIP_STATE_NOT_READY.
      */
     503: ErrorResponse;
     /**
@@ -386,7 +381,7 @@ export type ExpeditionLaunchErrors = {
      */
     500: ErrorResponse;
     /**
-     * **Planned.** Service-specific retryable not-ready error while Ship state provisions. Code EXPEDITION_SHIP_STATE_NOT_READY.
+     * Service-specific retryable not-ready error while Ship state provisions. Code EXPEDITION_SHIP_STATE_NOT_READY.
      */
     503: ErrorResponse;
     /**

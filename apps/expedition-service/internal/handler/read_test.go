@@ -24,6 +24,7 @@ type mockExpeditionManager struct {
 	current func(context.Context, uuid.UUID) (expedition.Record, error)
 	get     func(context.Context, uuid.UUID, uuid.UUID) (expedition.Record, error)
 	list    func(context.Context, uuid.UUID, expedition.ListFilter) ([]expedition.Record, error)
+	quote   func(context.Context, uuid.UUID, int32) (expedition.Quote, error)
 }
 
 func (m *mockExpeditionManager) Current(ctx context.Context, userID uuid.UUID) (expedition.Record, error) {
@@ -45,6 +46,13 @@ func (m *mockExpeditionManager) List(ctx context.Context, userID uuid.UUID, filt
 		return nil, errors.New("unexpected List call")
 	}
 	return m.list(ctx, userID, filter)
+}
+
+func (m *mockExpeditionManager) Quote(ctx context.Context, userID uuid.UUID, materialsInvested int32) (expedition.Quote, error) {
+	if m.quote == nil {
+		return expedition.Quote{}, errors.New("unexpected Quote call")
+	}
+	return m.quote(ctx, userID, materialsInvested)
 }
 
 type expeditionTestTokenSigner struct {
@@ -96,6 +104,7 @@ func TestExpeditionReadHandlerCurrent(t *testing.T) {
 	}{
 		{name: "returns active expedition", wantStatus: http.StatusOK},
 		{name: "returns not found", currentErr: expedition.ErrNotFound, wantStatus: http.StatusNotFound, wantErrorCode: expeditionNotFoundCode},
+		{name: "returns ship state not ready", currentErr: expedition.ErrShipStateNotReady, wantStatus: http.StatusServiceUnavailable, wantErrorCode: expeditionShipStateNotReadyCode},
 		{name: "returns internal error", currentErr: errors.New("database unavailable"), wantStatus: http.StatusInternalServerError, wantErrorCode: "INTERNAL_ERROR"},
 		{name: "requires authentication", noAuthHeader: true, wantStatus: http.StatusUnauthorized, wantErrorCode: "AUTH_MISSING_HEADER"},
 	}
@@ -137,7 +146,7 @@ func TestExpeditionReadHandlerGet(t *testing.T) {
 	record := testExpeditionRecord(userID)
 	record.ID = expeditionID
 	resultID := uuid.New()
-	record.Result = &expedition.Result{ID: resultID, ExpeditionID: expeditionID, Outcome: "SUCCESS", RewardSummary: []byte(`{"materials_reward":20}`), CreatedAt: record.CreatedAt}
+	record.Result = &expedition.Result{ID: resultID, ExpeditionID: expeditionID, Outcome: "SUCCESS", MaterialsReward: 20, CreatedAt: record.CreatedAt}
 
 	tests := []struct {
 		name          string
@@ -184,6 +193,9 @@ func TestExpeditionReadHandlerGet(t *testing.T) {
 			assertExpeditionResponse(t, response, record)
 			if response.Result == nil || response.Result.Outcome != "SUCCESS" {
 				t.Errorf("result = %+v, want success result", response.Result)
+			}
+			if response.Result != nil && response.Result.MaterialReward.Materials != 20 {
+				t.Errorf("material_reward.materials = %d, want 20", response.Result.MaterialReward.Materials)
 			}
 		})
 	}
@@ -242,6 +254,124 @@ func TestExpeditionReadHandlerList(t *testing.T) {
 			}
 			assertExpeditionResponse(t, response[0], record)
 		})
+	}
+}
+
+func TestExpeditionReadHandlerQuote(t *testing.T) {
+	userID := uuid.New()
+	now := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	cooldownUntil := now.Add(7 * 24 * time.Hour)
+	quote := expedition.Quote{
+		MaterialsInvested:      10,
+		NormalizedInvestment:   0.5,
+		ProjectedBalance:       15,
+		SuccessChance:          0.4,
+		Eligible:               true,
+		EstimatedResolveAt:     now.Add(7 * 24 * time.Hour),
+		EstimatedResolveWindow: 24 * time.Hour,
+	}
+
+	tests := []struct {
+		name          string
+		target        string
+		quote         expedition.Quote
+		quoteErr      error
+		noAuthHeader  bool
+		wantStatus    int
+		wantErrorCode string
+		wantManager   bool
+	}{
+		{name: "returns eligible quote", target: "/expeditions/quote?materials_invested=10", quote: quote, wantStatus: http.StatusOK, wantManager: true},
+		{
+			name: "returns blocked quote", target: "/expeditions/quote?materials_invested=30",
+			quote: expedition.Quote{
+				MaterialsInvested: 30, NormalizedInvestment: 0.75, ProjectedBalance: -5, SuccessChance: 0.6,
+				Blocker: expedition.BlockerInsufficientMaterials, EstimatedResolveAt: now.Add(7 * 24 * time.Hour),
+			},
+			wantStatus: http.StatusOK, wantManager: true,
+		},
+		{
+			name: "returns cooldown quote", target: "/expeditions/quote?materials_invested=10",
+			quote: expedition.Quote{
+				MaterialsInvested: 10, NormalizedInvestment: 0.5, ProjectedBalance: 15, SuccessChance: 0.4,
+				Blocker: expedition.BlockerCooldown, CooldownUntil: &cooldownUntil,
+				EstimatedResolveAt: now.Add(7 * 24 * time.Hour),
+			},
+			wantStatus: http.StatusOK, wantManager: true,
+		},
+		{name: "rejects missing materials", target: "/expeditions/quote", wantStatus: http.StatusUnprocessableEntity, wantErrorCode: "VALIDATION_FAILED"},
+		{name: "rejects zero materials", target: "/expeditions/quote?materials_invested=0", wantStatus: http.StatusUnprocessableEntity, wantErrorCode: "VALIDATION_FAILED"},
+		{name: "rejects materials outside database range", target: "/expeditions/quote?materials_invested=2147483648", wantStatus: http.StatusUnprocessableEntity, wantErrorCode: "VALIDATION_FAILED"},
+		{name: "rejects non-numeric materials", target: "/expeditions/quote?materials_invested=abc", wantStatus: http.StatusUnprocessableEntity, wantErrorCode: "VALIDATION_FAILED"},
+		{name: "maps ship state not ready", target: "/expeditions/quote?materials_invested=10", quoteErr: expedition.ErrShipStateNotReady, wantStatus: http.StatusServiceUnavailable, wantErrorCode: expeditionShipStateNotReadyCode, wantManager: true},
+		{name: "maps internal error", target: "/expeditions/quote?materials_invested=10", quoteErr: errors.New("database unavailable"), wantStatus: http.StatusInternalServerError, wantErrorCode: "INTERNAL_ERROR", wantManager: true},
+		{name: "requires authentication", target: "/expeditions/quote?materials_invested=10", noAuthHeader: true, wantStatus: http.StatusUnauthorized, wantErrorCode: "AUTH_MISSING_HEADER"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			called := false
+			router, signer := newTestExpeditionReadRouter(t, &mockExpeditionManager{quote: func(_ context.Context, gotUserID uuid.UUID, materialsInvested int32) (expedition.Quote, error) {
+				called = true
+				if gotUserID != userID {
+					t.Errorf("Quote user_id = %s, want %s", gotUserID, userID)
+				}
+				if materialsInvested <= 0 {
+					t.Errorf("Quote materials = %d, want positive", materialsInvested)
+				}
+				return test.quote, test.quoteErr
+			}})
+			req := httptest.NewRequest(http.MethodGet, test.target, nil)
+			if !test.noAuthHeader {
+				req.Header.Set("Authorization", "Bearer "+signer.token(t, userID.String()))
+			}
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			sharedhttptest.WantStatus(t, rec, test.wantStatus)
+			if called != test.wantManager {
+				t.Errorf("manager called = %t, want %t", called, test.wantManager)
+			}
+			if test.wantErrorCode != "" {
+				sharedhttptest.WantErrorCode(t, rec, test.wantErrorCode)
+				return
+			}
+			var response expeditionQuoteResponse
+			sharedhttptest.DecodeBody(t, rec, &response)
+			if response.MaterialsInvested != test.quote.MaterialsInvested ||
+				response.NormalizedInvestment != test.quote.NormalizedInvestment ||
+				response.ProjectedBalance != test.quote.ProjectedBalance ||
+				response.SuccessChance != test.quote.SuccessChance ||
+				response.Eligible != test.quote.Eligible ||
+				response.EstimatedResolveAt != test.quote.EstimatedResolveAt.Format(time.RFC3339Nano) {
+				t.Errorf("quote response = %+v, want %+v", response, test.quote)
+			}
+			assertQuoteBlocker(t, response, test.quote)
+		})
+	}
+}
+
+func assertQuoteBlocker(t *testing.T, response expeditionQuoteResponse, quote expedition.Quote) {
+	t.Helper()
+	switch {
+	case quote.Blocker == expedition.BlockerNone:
+		if response.Blocker != nil {
+			t.Errorf("blocker = %q, want null", *response.Blocker)
+		}
+	case response.Blocker == nil:
+		t.Errorf("blocker = null, want %q", quote.Blocker)
+	case *response.Blocker != string(quote.Blocker):
+		t.Errorf("blocker = %q, want %q", *response.Blocker, quote.Blocker)
+	}
+	switch {
+	case quote.CooldownUntil == nil:
+		if response.CooldownUntil != nil {
+			t.Errorf("cooldown_until = %q, want null", *response.CooldownUntil)
+		}
+	case response.CooldownUntil == nil:
+		t.Error("cooldown_until = null, want a timestamp")
+	case *response.CooldownUntil != quote.CooldownUntil.Format(time.RFC3339Nano):
+		t.Errorf("cooldown_until = %q, want %q", *response.CooldownUntil, quote.CooldownUntil.Format(time.RFC3339Nano))
 	}
 }
 

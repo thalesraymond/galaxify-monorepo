@@ -15,16 +15,16 @@ CREATE TABLE expeditions (
 );
 
 CREATE TABLE expedition_results (
-    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    expedition_id  UUID NOT NULL REFERENCES expeditions(id) ON DELETE CASCADE,
-    outcome        TEXT NOT NULL CHECK (outcome IN ('SUCCESS', 'FAILURE')),
-    reward_summary JSONB NOT NULL,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    expedition_id    UUID NOT NULL REFERENCES expeditions(id) ON DELETE CASCADE,
+    outcome          TEXT NOT NULL CHECK (outcome IN ('SUCCESS', 'FAILURE')),
+    materials_reward INTEGER NOT NULL DEFAULT 0,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Mirrors apps/expedition-service/sql/schema/003_expedition_domain.sql and
--- 004_outbox_request_id.sql. Staged here only so sqlc can generate the outbox
--- queries the expedition worker needs.
+-- Mirrors apps/expedition-service/sql/schema/003_expedition_domain.sql,
+-- 004_outbox_request_id.sql, and 005_typed_expedition_reward.sql. Staged here
+-- only so sqlc can generate the outbox queries the expedition worker needs.
 CREATE TABLE outbox (
     id           BIGSERIAL PRIMARY KEY,
     event_id     UUID NOT NULL UNIQUE,

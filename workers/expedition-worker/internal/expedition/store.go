@@ -16,7 +16,7 @@ import (
 type Tx interface {
 	ListPendingExpeditions(ctx context.Context, before time.Time, limit int32) ([]database.ListPendingExpeditionsRow, error)
 	ResolveExpedition(ctx context.Context, id pgtype.UUID, status string, now time.Time) error
-	InsertExpeditionResult(ctx context.Context, expeditionID pgtype.UUID, outcome string, rewardSummary []byte) error
+	InsertExpeditionResult(ctx context.Context, expeditionID pgtype.UUID, outcome string, materialsReward int32) error
 	InsertOutbox(ctx context.Context, arg database.InsertOutboxParams) error
 }
 
@@ -84,11 +84,11 @@ func (t *pgTx) ResolveExpedition(ctx context.Context, id pgtype.UUID, status str
 	return nil
 }
 
-func (t *pgTx) InsertExpeditionResult(ctx context.Context, expeditionID pgtype.UUID, outcome string, rewardSummary []byte) error {
+func (t *pgTx) InsertExpeditionResult(ctx context.Context, expeditionID pgtype.UUID, outcome string, materialsReward int32) error {
 	if err := t.q.InsertExpeditionResult(ctx, database.InsertExpeditionResultParams{
-		ExpeditionID:  expeditionID,
-		Outcome:       outcome,
-		RewardSummary: rewardSummary,
+		ExpeditionID:    expeditionID,
+		Outcome:         outcome,
+		MaterialsReward: materialsReward,
 	}); err != nil {
 		return fmt.Errorf("insert expedition result for %v: %w", expeditionID, err)
 	}

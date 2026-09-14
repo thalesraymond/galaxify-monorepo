@@ -16,9 +16,12 @@ import (
 )
 
 const (
-	expeditionAlreadyActiveCode         = "EXPEDITION_ALREADY_ACTIVE"
-	expeditionCooldownCode              = "EXPEDITION_COOLDOWN"
-	expeditionInsufficientMaterialsCode = "EXPEDITION_INSUFFICIENT_MATERIALS"
+	// Launch error codes are the wire form of the domain blocker constants so
+	// the launch rejection and the quote blocker can never drift apart.
+	expeditionAlreadyActiveCode         = string(expedition.BlockerAlreadyActive)
+	expeditionCooldownCode              = string(expedition.BlockerCooldown)
+	expeditionInsufficientMaterialsCode = string(expedition.BlockerInsufficientMaterials)
+	expeditionShipStateNotReadyCode     = "EXPEDITION_SHIP_STATE_NOT_READY"
 )
 
 type expeditionLauncher interface {
@@ -101,6 +104,8 @@ func (h *ExpeditionLaunchHandler) writeLaunchError(w http.ResponseWriter, r *htt
 		sharedhttp.WriteError(w, http.StatusConflict, expeditionAlreadyActiveCode, "An expedition is already active")
 	case errors.Is(err, expedition.ErrCooldown):
 		sharedhttp.WriteError(w, http.StatusUnprocessableEntity, expeditionCooldownCode, "Expedition launch is on cooldown")
+	case errors.Is(err, expedition.ErrShipStateNotReady):
+		sharedhttp.WriteError(w, http.StatusServiceUnavailable, expeditionShipStateNotReadyCode, "Ship state is not ready")
 	default:
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 	}

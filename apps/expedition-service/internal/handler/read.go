@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -20,6 +21,7 @@ type expeditionManager interface {
 	Current(context.Context, uuid.UUID) (expedition.Record, error)
 	Get(context.Context, uuid.UUID, uuid.UUID) (expedition.Record, error)
 	List(context.Context, uuid.UUID, expedition.ListFilter) ([]expedition.Record, error)
+	Quote(context.Context, uuid.UUID, int32) (expedition.Quote, error)
 }
 
 // ExpeditionReadHandler translates authenticated expedition read requests.
@@ -37,6 +39,7 @@ func NewExpeditionReadHandler(manager expeditionManager, authHandshake *sharedht
 // RegisterExpeditionReadRoutes wires authenticated expedition read routes into mux.
 func (h *ExpeditionReadHandler) RegisterExpeditionReadRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /expeditions/current", h.authHandshake.RequireAuth(h.Current))
+	mux.Handle("GET /expeditions/quote", h.authHandshake.RequireAuth(h.Quote))
 	mux.Handle("GET /expeditions/{id}", h.authHandshake.RequireAuth(h.Get))
 	mux.Handle("GET /expeditions", h.authHandshake.RequireAuth(h.List))
 }
@@ -66,6 +69,27 @@ func (h *ExpeditionReadHandler) Get(w http.ResponseWriter, r *http.Request, user
 	h.writeRecord(w, r, record, err)
 }
 
+// Quote returns the authoritative launch quote for a proposed investment.
+// It reports eligibility instead of rejecting ineligible launches, so the
+// frontend can explain the blocker before the Player acts.
+func (h *ExpeditionReadHandler) Quote(w http.ResponseWriter, r *http.Request, userID string) {
+	parsedUserID, ok := parseExpeditionUserID(w, userID)
+	if !ok {
+		return
+	}
+	materialsInvested, err := parseQuoteMaterials(r)
+	if err != nil {
+		sharedhttp.WriteValidationError(w, map[string]string{"materials_invested": err.Error()})
+		return
+	}
+	quote, err := h.manager.Quote(r.Context(), parsedUserID, materialsInvested)
+	if err != nil {
+		h.writeQuoteError(w, r, err)
+		return
+	}
+	sharedhttp.WriteJSON(w, http.StatusOK, quoteToResponse(quote))
+}
+
 // List returns the authenticated user's expedition history.
 func (h *ExpeditionReadHandler) List(w http.ResponseWriter, r *http.Request, userID string) {
 	parsedUserID, ok := parseExpeditionUserID(w, userID)
@@ -91,14 +115,28 @@ func (h *ExpeditionReadHandler) List(w http.ResponseWriter, r *http.Request, use
 
 func (h *ExpeditionReadHandler) writeRecord(w http.ResponseWriter, r *http.Request, record expedition.Record, err error) {
 	if err != nil {
-		if errors.Is(err, expedition.ErrNotFound) {
+		switch {
+		case errors.Is(err, expedition.ErrNotFound):
 			sharedhttp.WriteError(w, http.StatusNotFound, expeditionNotFoundCode, "Expedition not found")
-			return
+		case errors.Is(err, expedition.ErrShipStateNotReady):
+			sharedhttp.WriteError(w, http.StatusServiceUnavailable, expeditionShipStateNotReadyCode, "Ship state is not ready")
+		default:
+			sharedhttp.WriteInternal(w, r, err, h.logger)
 		}
-		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return
 	}
 	sharedhttp.WriteJSON(w, http.StatusOK, expeditionToResponse(record))
+}
+
+func (h *ExpeditionReadHandler) writeQuoteError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, expedition.ErrShipStateNotReady):
+		sharedhttp.WriteError(w, http.StatusServiceUnavailable, expeditionShipStateNotReadyCode, "Ship state is not ready")
+	case errors.Is(err, expedition.ErrInvalidMaterials):
+		sharedhttp.WriteValidationError(w, map[string]string{"materials_invested": "must be greater than 0"})
+	default:
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+	}
 }
 
 func parseExpeditionUserID(w http.ResponseWriter, userID string) (uuid.UUID, bool) {
@@ -138,6 +176,21 @@ func parseNonNegativeQueryInt(r *http.Request, key string, fallback int) (int, e
 	return int(value), nil
 }
 
+func parseQuoteMaterials(r *http.Request) (int32, error) {
+	raw := r.URL.Query().Get("materials_invested")
+	if raw == "" {
+		return 0, errors.New("must be provided")
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value < 1 {
+		return 0, errors.New("must be greater than 0")
+	}
+	if value > math.MaxInt32 {
+		return 0, errors.New("must be at most 2147483647")
+	}
+	return int32(value), nil
+}
+
 type expeditionResponse struct {
 	ID                string                    `json:"id"`
 	UserID            string                    `json:"user_id"`
@@ -151,11 +204,27 @@ type expeditionResponse struct {
 }
 
 type expeditionResultResponse struct {
-	ID            string `json:"id"`
-	ExpeditionID  string `json:"expedition_id"`
-	Outcome       string `json:"outcome"`
-	RewardSummary any    `json:"reward_summary"`
-	CreatedAt     string `json:"created_at"`
+	ID             string                 `json:"id"`
+	ExpeditionID   string                 `json:"expedition_id"`
+	Outcome        string                 `json:"outcome"`
+	MaterialReward materialRewardResponse `json:"material_reward"`
+	CreatedAt      string                 `json:"created_at"`
+}
+
+type materialRewardResponse struct {
+	Materials int32 `json:"materials"`
+}
+
+type expeditionQuoteResponse struct {
+	MaterialsInvested             int32   `json:"materials_invested"`
+	NormalizedInvestment          float64 `json:"normalized_investment"`
+	ProjectedBalance              int32   `json:"projected_balance"`
+	SuccessChance                 float64 `json:"success_chance"`
+	Eligible                      bool    `json:"eligible"`
+	Blocker                       *string `json:"blocker"`
+	CooldownUntil                 *string `json:"cooldown_until"`
+	EstimatedResolveAt            string  `json:"estimated_resolve_at"`
+	EstimatedResolveWindowSeconds int64   `json:"estimated_resolve_window_seconds"`
 }
 
 func expeditionToResponse(record expedition.Record) expeditionResponse {
@@ -174,12 +243,33 @@ func expeditionToResponse(record expedition.Record) expeditionResponse {
 	}
 	if record.Result != nil {
 		response.Result = &expeditionResultResponse{
-			ID:            record.Result.ID.String(),
-			ExpeditionID:  record.Result.ExpeditionID.String(),
-			Outcome:       record.Result.Outcome,
-			RewardSummary: record.Result.RewardSummary,
-			CreatedAt:     record.Result.CreatedAt.Format(time.RFC3339Nano),
+			ID:             record.Result.ID.String(),
+			ExpeditionID:   record.Result.ExpeditionID.String(),
+			Outcome:        record.Result.Outcome,
+			MaterialReward: materialRewardResponse{Materials: record.Result.MaterialsReward},
+			CreatedAt:      record.Result.CreatedAt.Format(time.RFC3339Nano),
 		}
+	}
+	return response
+}
+
+func quoteToResponse(quote expedition.Quote) expeditionQuoteResponse {
+	response := expeditionQuoteResponse{
+		MaterialsInvested:             quote.MaterialsInvested,
+		NormalizedInvestment:          quote.NormalizedInvestment,
+		ProjectedBalance:              quote.ProjectedBalance,
+		SuccessChance:                 quote.SuccessChance,
+		Eligible:                      quote.Eligible,
+		EstimatedResolveAt:            quote.EstimatedResolveAt.Format(time.RFC3339Nano),
+		EstimatedResolveWindowSeconds: int64(quote.EstimatedResolveWindow / time.Second),
+	}
+	if quote.Blocker != expedition.BlockerNone {
+		blocker := string(quote.Blocker)
+		response.Blocker = &blocker
+	}
+	if quote.CooldownUntil != nil {
+		cooldownUntil := quote.CooldownUntil.Format(time.RFC3339Nano)
+		response.CooldownUntil = &cooldownUntil
 	}
 	return response
 }

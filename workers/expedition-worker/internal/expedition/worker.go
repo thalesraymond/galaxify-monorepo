@@ -149,14 +149,10 @@ func (w *Worker) resolveBatch(ctx context.Context, now time.Time) (int, error) {
 
 		for _, expedition := range expeditions {
 			status, outcome, reward := settleExpedition(expedition, w.roll)
-			summary, err := json.Marshal(rewardSummary{MaterialsReward: reward})
-			if err != nil {
-				return fmt.Errorf("marshal reward summary for %v: %w", expedition.ID, err)
-			}
 			if err := tx.ResolveExpedition(ctx, expedition.ID, status, now); err != nil {
 				return err
 			}
-			if err := tx.InsertExpeditionResult(ctx, expedition.ID, outcome, summary); err != nil {
+			if err := tx.InsertExpeditionResult(ctx, expedition.ID, outcome, int32(reward)); err != nil {
 				return err
 			}
 			payload, err := json.Marshal(events.ExpeditionCompleted{
@@ -197,9 +193,4 @@ func settleExpedition(expedition database.ListPendingExpeditionsRow, roll func()
 	}
 	multiplier := rewardMultiplierBase + (roll() - rewardMultiplierJitter)
 	return StatusResolved, OutcomeSuccess, int(math.Round(float64(expedition.MaterialsInvested) * multiplier))
-}
-
-// rewardSummary is the JSONB shape stored in expedition_results.reward_summary.
-type rewardSummary struct {
-	MaterialsReward int `json:"materials_reward"`
 }

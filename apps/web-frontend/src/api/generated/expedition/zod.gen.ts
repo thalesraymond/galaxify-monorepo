@@ -19,11 +19,21 @@ export const zLaunchExpeditionRequest = z.object({
     materials_invested: z.coerce.bigint().gte(BigInt(1)).lte(BigInt(2147483647))
 });
 
+/**
+ * The typed material reward recorded with an Expedition result.
+ */
+export const zMaterialReward = z.object({
+    materials: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' })
+});
+
+/**
+ * The typed result recorded for Success and Failure, carrying a material reward for both outcomes.
+ */
 export const zExpeditionResult = z.object({
     id: z.uuid(),
     expedition_id: z.uuid(),
     outcome: zOutcome,
-    reward_summary: z.unknown(),
+    material_reward: zMaterialReward,
     created_at: z.iso.datetime()
 });
 
@@ -40,25 +50,7 @@ export const zExpedition = z.object({
 });
 
 /**
- * Planned typed material reward.
- */
-export const zMaterialReward = z.object({
-    materials: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' })
-});
-
-/**
- * Planned typed result for Success and Failure, replacing the arbitrary reward_summary JSON.
- */
-export const zExpeditionResultTyped = z.object({
-    id: z.uuid(),
-    expedition_id: z.uuid(),
-    outcome: zOutcome,
-    material_reward: zMaterialReward,
-    created_at: z.iso.datetime()
-});
-
-/**
- * Planned live launch quote.
+ * Live launch quote sharing launch's authoritative calculation and eligibility rules.
  */
 export const zExpeditionQuote = z.object({
     materials_invested: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
