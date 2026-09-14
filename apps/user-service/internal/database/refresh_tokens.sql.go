@@ -51,6 +51,27 @@ func (q *Queries) GetRefreshTokenByToken(ctx context.Context, token string) (Ref
 	return i, err
 }
 
+const getRefreshTokenByTokenForUpdate = `-- name: GetRefreshTokenByTokenForUpdate :one
+SELECT id, user_id, token, family_id, used, expires_at, created_at FROM refresh_tokens
+WHERE token = $1
+FOR UPDATE
+`
+
+func (q *Queries) GetRefreshTokenByTokenForUpdate(ctx context.Context, token string) (RefreshToken, error) {
+	row := q.db.QueryRow(ctx, getRefreshTokenByTokenForUpdate, token)
+	var i RefreshToken
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Token,
+		&i.FamilyID,
+		&i.Used,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const insertRefreshToken = `-- name: InsertRefreshToken :one
 INSERT INTO refresh_tokens (user_id, token, family_id, expires_at)
 VALUES ($1, $2, $3, $4)

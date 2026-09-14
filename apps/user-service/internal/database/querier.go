@@ -17,6 +17,7 @@ type Querier interface {
 	DeleteUserByID(ctx context.Context, id pgtype.UUID) error
 	GetLatestSigningKey(ctx context.Context) (JwtKey, error)
 	GetRefreshTokenByToken(ctx context.Context, token string) (RefreshToken, error)
+	GetRefreshTokenByTokenForUpdate(ctx context.Context, token string) (RefreshToken, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 	InsertOutbox(ctx context.Context, arg InsertOutboxParams) error

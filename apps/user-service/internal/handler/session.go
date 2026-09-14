@@ -10,27 +10,22 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/database"
+	"github.com/thalesraymond/galaxify-monorepo/apps/user-service/internal/session"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/auth"
 	"github.com/thalesraymond/galaxify-monorepo/pkg/sharedhttp"
 )
 
-// sessionStore is the narrow database surface used by SessionHandler.
+// sessionStore is the narrow database surface used by SessionHandler's login flow.
 type sessionStore interface {
 	GetUserByEmail(ctx context.Context, email string) (database.User, error)
-	// For POST /auth/refresh:
-	GetRefreshTokenByToken(ctx context.Context, token string) (database.RefreshToken, error)
-	MarkRefreshTokenUsed(ctx context.Context, id int64) error
-	DeleteRefreshTokensByFamilyID(ctx context.Context, familyID pgtype.UUID) error
-	InsertRefreshToken(ctx context.Context, arg database.InsertRefreshTokenParams) (database.RefreshToken, error)
-	GetUserByID(ctx context.Context, id pgtype.UUID) (database.User, error)
 }
 
 // SessionHandler handles authentication sessions (login and refresh).
 type SessionHandler struct {
 	store       sessionStore
+	manager     session.Manager
 	tokenIssuer *TokenIssuer
 	logger      *slog.Logger
 }
@@ -38,11 +33,13 @@ type SessionHandler struct {
 // NewSessionHandler creates a SessionHandler.
 func NewSessionHandler(
 	store sessionStore,
+	manager session.Manager,
 	tokenIssuer *TokenIssuer,
 	logger *slog.Logger,
 ) *SessionHandler {
 	return &SessionHandler{
 		store:       store,
+		manager:     manager,
 		tokenIssuer: tokenIssuer,
 		logger:      logger,
 	}
@@ -52,6 +49,7 @@ func NewSessionHandler(
 func (h *SessionHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /auth/login", h.Login)
 	mux.HandleFunc("POST /auth/refresh", h.Refresh)
+	mux.HandleFunc("POST /auth/logout", h.Logout)
 }
 
 type loginRequest struct {
@@ -153,23 +151,21 @@ func (h *SessionHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newToken, userID, err := h.tokenIssuer.RotateSession(r.Context(), h.store, req.RefreshToken)
+	rotation, err := h.manager.Rotate(r.Context(), req.RefreshToken)
 	if err != nil {
-		if errors.Is(err, auth.ErrInvalidRefreshToken) {
+		if errors.Is(err, session.ErrInvalidRefreshToken) {
 			sharedhttp.WriteError(w, http.StatusUnauthorized, "AUTH_INVALID_TOKEN", "Invalid or expired refresh token")
+			return
+		}
+		if errors.Is(err, session.ErrRefreshUnavailable) {
+			sharedhttp.WriteError(w, http.StatusServiceUnavailable, "AUTH_SERVICE_UNAVAILABLE", "Refresh service temporarily unavailable")
 			return
 		}
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return
 	}
 
-	user, err := h.store.GetUserByID(r.Context(), userID)
-	if err != nil {
-		sharedhttp.WriteInternal(w, r, err, h.logger)
-		return
-	}
-
-	accessToken, err := auth.IssueAccessToken(h.tokenIssuer.privateKey, h.tokenIssuer.kid, sharedhttp.UUIDToString(user.ID), user.Email)
+	accessToken, err := auth.IssueAccessToken(h.tokenIssuer.privateKey, h.tokenIssuer.kid, rotation.UserID.String(), rotation.Email)
 	if err != nil {
 		sharedhttp.WriteInternal(w, r, err, h.logger)
 		return
@@ -177,6 +173,25 @@ func (h *SessionHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	sharedhttp.WriteJSON(w, http.StatusOK, refreshResponse{
 		AccessToken:  accessToken,
-		RefreshToken: newToken,
+		RefreshToken: rotation.RefreshToken,
 	})
+}
+
+// Logout revokes only the presented refresh-token family. It intentionally
+// requires no access token and is idempotent to avoid existence disclosure.
+func (h *SessionHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	var req refreshRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sharedhttp.WriteValidationError(w, map[string]string{"body": "invalid JSON body"})
+		return
+	}
+	if req.RefreshToken == "" {
+		sharedhttp.WriteValidationError(w, map[string]string{"refresh_token": "refresh_token is required"})
+		return
+	}
+	if err := h.manager.Logout(r.Context(), req.RefreshToken); err != nil {
+		sharedhttp.WriteInternal(w, r, err, h.logger)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
