@@ -290,10 +290,6 @@ func (h *DailyHandler) UpdateDaily(w http.ResponseWriter, r *http.Request, userI
 			sharedhttp.WriteError(w, http.StatusNotFound, "DAILY_NOT_FOUND", "Daily not found")
 			return
 		}
-		if errors.Is(err, daily.ErrDailyNotPending) {
-			sharedhttp.WriteError(w, http.StatusConflict, "DAILY_NOT_EDITABLE", "Daily can only be edited while pending")
-			return
-		}
 		if errors.Is(err, daily.ErrInvalidDifficulty) {
 			sharedhttp.WriteValidationError(w, map[string]string{"difficulty": "must be one of: EASY, MEDIUM, HARD"})
 			return
@@ -321,10 +317,6 @@ func (h *DailyHandler) DeleteDaily(w http.ResponseWriter, r *http.Request, userI
 	if err != nil {
 		if errors.Is(err, daily.ErrDailyNotFound) {
 			sharedhttp.WriteError(w, http.StatusNotFound, "DAILY_NOT_FOUND", "Daily not found")
-			return
-		}
-		if errors.Is(err, daily.ErrDailyNotPending) {
-			sharedhttp.WriteError(w, http.StatusConflict, "DAILY_NOT_EDITABLE", "Daily can only be deleted while pending")
 			return
 		}
 		sharedhttp.WriteInternal(w, r, err, h.logger)
@@ -440,4 +432,3 @@ func dailyHistoryToResponse(item daily.DailyHistory) dailyHistoryResponse {
 		ArchivedAt:  formatTime(item.ArchivedAt),
 	}
 }
-

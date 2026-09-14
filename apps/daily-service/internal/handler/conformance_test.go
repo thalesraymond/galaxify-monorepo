@@ -175,14 +175,16 @@ func TestOpenAPIConformance(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name: "update daily conflict", method: http.MethodPatch, target: "/dailies/" + dailyID.String(),
+			name: "update completed daily", method: http.MethodPatch, target: "/dailies/" + dailyID.String(),
 			body: `{"title":"Colonize Mars"}`,
 			configure: func(m *mockDailyManager) {
 				m.update = func(context.Context, uuid.UUID, uuid.UUID, daily.UpdateInput) (daily.Daily, error) {
-					return daily.Daily{}, daily.ErrDailyNotPending
+					completed := item
+					completed.Status = daily.StatusCompleted
+					return completed, nil
 				}
 			},
-			wantStatus: http.StatusConflict,
+			wantStatus: http.StatusOK,
 		},
 		{
 			name: "update daily invalid difficulty", method: http.MethodPatch, target: "/dailies/" + dailyID.String(),
@@ -207,11 +209,11 @@ func TestOpenAPIConformance(t *testing.T) {
 			wantStatus: http.StatusNoContent,
 		},
 		{
-			name: "delete daily conflict", method: http.MethodDelete, target: "/dailies/" + dailyID.String(),
+			name: "delete completed daily", method: http.MethodDelete, target: "/dailies/" + dailyID.String(),
 			configure: func(m *mockDailyManager) {
-				m.delete = func(context.Context, uuid.UUID, uuid.UUID) error { return daily.ErrDailyNotPending }
+				m.delete = func(context.Context, uuid.UUID, uuid.UUID) error { return nil }
 			},
-			wantStatus: http.StatusConflict,
+			wantStatus: http.StatusNoContent,
 		},
 		{
 			name: "delete daily not found", method: http.MethodDelete, target: "/dailies/" + dailyID.String(),
