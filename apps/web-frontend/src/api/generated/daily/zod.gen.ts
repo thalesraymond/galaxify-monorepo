@@ -32,14 +32,15 @@ export const zDateOrDateTime = z.union([
  */
 export const zClockTime = z.string().regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/);
 
-export const zCreateDailyRequest = z.object({
+export const zCreateDailyRequest = z.intersection(z.unknown(), z.object({
     title: z.string().min(1),
     description: z.string().optional(),
     difficulty: zDifficulty,
-    due_date: z.iso.datetime(),
-    time_zone: z.string().optional(),
+    due_date: z.iso.datetime().optional(),
+    time_zone: z.string(),
+    due_local_date: z.iso.date().optional(),
     due_local_time: zClockTime.optional()
-});
+}));
 
 export const zUpdateDailyRequest = z.object({
     title: z.string().optional(),
@@ -47,6 +48,7 @@ export const zUpdateDailyRequest = z.object({
     difficulty: zDifficulty.optional(),
     due_date: z.iso.datetime().optional(),
     time_zone: z.string().optional(),
+    due_local_date: z.iso.date().optional(),
     due_local_time: zClockTime.optional()
 });
 
@@ -60,7 +62,9 @@ export const zDaily = z.object({
     status: zDailyStatus,
     created_at: z.iso.datetime(),
     updated_at: z.iso.datetime(),
-    time_zone: z.string().optional()
+    time_zone: z.string(),
+    due_local_date: z.iso.date(),
+    due_local_time: zClockTime
 });
 
 export const zDailyHistory = z.object({
@@ -71,6 +75,9 @@ export const zDailyHistory = z.object({
     description: z.string(),
     difficulty: zDifficulty,
     due_date: z.iso.datetime(),
+    time_zone: z.string(),
+    due_local_date: z.iso.date(),
+    due_local_time: zClockTime,
     status: zDailyStatus,
     completed_at: z.iso.datetime().nullable(),
     missed_at: z.iso.datetime().nullable(),
@@ -153,10 +160,10 @@ export const zDailyListHeaders = z.object({
 
 export const zDailyListQuery = z.object({
     status: zDailyStatus.optional(),
-    date: zDateOrDateTime.optional(),
-    due_date: zDateOrDateTime.optional(),
     from: z.iso.datetime().optional(),
-    to: z.iso.datetime().optional()
+    to: z.iso.datetime().optional(),
+    date: zDateOrDateTime.optional(),
+    due_date: zDateOrDateTime.optional()
 });
 
 /**

@@ -30,9 +30,6 @@ export type RefreshRequest = {
     refresh_token: string;
 };
 
-/**
- * Planned request body for POST /auth/logout.
- */
 export type LogoutRequest = {
     refresh_token: string;
 };
@@ -263,7 +260,7 @@ export type UserRefreshErrors = {
      */
     500: ErrorResponse;
     /**
-     * **Planned.** Retryable infrastructure failure while refreshing. The refresh token is preserved; code AUTH_SERVICE_UNAVAILABLE. Today a database error is incorrectly reported as AUTH_INVALID_TOKEN.
+     * Refresh-token infrastructure is temporarily unavailable. The presented refresh token was not consumed; retry with the same token. Code AUTH_SERVICE_UNAVAILABLE.
      */
     503: ErrorResponse;
     /**

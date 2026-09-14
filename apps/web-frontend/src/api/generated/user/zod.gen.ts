@@ -22,9 +22,6 @@ export const zRefreshRequest = z.object({
     refresh_token: z.string()
 });
 
-/**
- * Planned request body for POST /auth/logout.
- */
 export const zLogoutRequest = z.object({
     refresh_token: z.string()
 });

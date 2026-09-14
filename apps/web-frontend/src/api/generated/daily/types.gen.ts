@@ -23,20 +23,26 @@ export type DateOrDateTime = string | string;
  */
 export type ClockTime = string;
 
-export type CreateDailyRequest = {
+export type CreateDailyRequest = unknown & {
     title: string;
     description?: string;
     difficulty: Difficulty;
     /**
-     * RFC3339 instant today. Planned: a local deadline interpreted with `time_zone`.
+     * Legacy RFC3339 deadline instant. New clients should send `due_local_date` + `due_local_time` + `time_zone` and let the backend resolve DST.
+     *
+     * @deprecated
      */
-    due_date: string;
+    due_date?: string;
     /**
-     * Planned IANA time zone, e.g. Europe/Paris.
+     * IANA time zone retained across recurrence, e.g. Europe/Paris.
      */
-    time_zone?: string;
+    time_zone: string;
     /**
-     * Planned local due time paired with `time_zone`.
+     * Local calendar date paired with `due_local_time` and `time_zone`.
+     */
+    due_local_date?: string;
+    /**
+     * Local wall-clock deadline resolved by the backend using `time_zone`. An ambiguous fall-back time selects its first occurrence; a nonexistent spring-forward time moves to the first valid local instant after it.
      */
     due_local_time?: ClockTime;
 };
@@ -45,13 +51,22 @@ export type UpdateDailyRequest = {
     title?: string;
     description?: string;
     difficulty?: Difficulty;
+    /**
+     * Legacy RFC3339 deadline instant; prefer the local deadline pair.
+     *
+     * @deprecated
+     */
     due_date?: string;
     /**
-     * Planned IANA time zone.
+     * Replacement IANA time zone. Omit to retain the configured zone.
      */
     time_zone?: string;
     /**
-     * Planned local due time paired with `time_zone`.
+     * Local calendar date; requires `due_local_time` and `time_zone`.
+     */
+    due_local_date?: string;
+    /**
+     * Local wall-clock deadline; requires `due_local_date` and `time_zone`.
      */
     due_local_time?: ClockTime;
 };
@@ -70,9 +85,17 @@ export type Daily = {
     created_at: string;
     updated_at: string;
     /**
-     * Planned IANA zone retained until edited.
+     * IANA zone retained until explicitly edited.
      */
-    time_zone?: string;
+    time_zone: string;
+    /**
+     * Local deadline calendar date derived from `due_date` in `time_zone`.
+     */
+    due_local_date: string;
+    /**
+     * Local deadline wall-clock time derived from `due_date` in `time_zone`.
+     */
+    due_local_time: ClockTime;
 };
 
 export type DailyHistory = {
@@ -83,6 +106,18 @@ export type DailyHistory = {
     description: string;
     difficulty: Difficulty;
     due_date: string;
+    /**
+     * IANA zone snapshot for grouping and display of this occurrence.
+     */
+    time_zone: string;
+    /**
+     * Local occurrence calendar date derived from `due_date` in `time_zone`.
+     */
+    due_local_date: string;
+    /**
+     * Local occurrence wall-clock time derived from `due_date` in `time_zone`.
+     */
+    due_local_time: ClockTime;
     status: DailyStatus;
     completed_at: string | null;
     missed_at: string | null;
@@ -200,21 +235,25 @@ export type DailyListData = {
     query?: {
         status?: DailyStatus;
         /**
-         * A `YYYY-MM-DD` date or an RFC3339 instant.
-         */
-        date?: DateOrDateTime;
-        /**
-         * Legacy alias for `date`; used only when `date` is absent.
-         */
-        due_date?: DateOrDateTime;
-        /**
-         * Planned inclusive lower bound instant (RFC3339).
+         * Inclusive lower bound instant (RFC3339).
          */
         from?: string;
         /**
-         * Planned exclusive upper bound instant (RFC3339).
+         * Exclusive upper bound instant (RFC3339).
          */
         to?: string;
+        /**
+         * Legacy filter superseded by explicit RFC3339 `from`/`to`. Accepts a `YYYY-MM-DD` date or an RFC3339 instant and selects that UTC calendar day. `date` wins over its `due_date` alias.
+         *
+         * @deprecated
+         */
+        date?: DateOrDateTime;
+        /**
+         * Legacy alias for `date`, used only when `date` is absent.
+         *
+         * @deprecated
+         */
+        due_date?: DateOrDateTime;
     };
     url: '/dailies';
 };
@@ -419,10 +458,6 @@ export type DailyDeleteErrors = {
      */
     404: ErrorResponse;
     /**
-     * The Daily is not mutable in its current state. Codes: DAILY_NOT_EDITABLE, DAILY_ALREADY_COMPLETED.
-     */
-    409: ErrorResponse;
-    /**
      * Request validation failed. `details.field_errors` is populated; the malformed-JSON field is `body`.
      */
     422: ErrorResponse;
@@ -531,10 +566,6 @@ export type DailyUpdateErrors = {
      */
     404: ErrorResponse;
     /**
-     * The Daily is not mutable in its current state. Codes: DAILY_NOT_EDITABLE, DAILY_ALREADY_COMPLETED.
-     */
-    409: ErrorResponse;
-    /**
      * Request validation failed. `details.field_errors` is populated; the malformed-JSON field is `body`.
      */
     422: ErrorResponse;
@@ -587,7 +618,7 @@ export type DailyCompleteErrors = {
      */
     404: ErrorResponse;
     /**
-     * The Daily is not mutable in its current state. Codes: DAILY_NOT_EDITABLE, DAILY_ALREADY_COMPLETED.
+     * The Daily is not mutable in its current state. Codes: DAILY_ALREADY_COMPLETED.
      */
     409: ErrorResponse;
     /**
