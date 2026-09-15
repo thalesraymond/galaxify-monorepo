@@ -2,7 +2,7 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { useMemo, type ReactNode } from 'react'
 import { Link } from 'react-router'
 
-import type { DailyDifficulty, DailyHistory, Difficulty } from '@/api/generated/daily/types.gen'
+import type { DailyHistory } from '@/api/generated/daily/types.gen'
 import { useApiTransport } from '@/shared/api/TransportContext'
 import {
   ContentSurface,
@@ -22,6 +22,7 @@ import {
   listDailyHistory,
   listDifficulties,
 } from '../api/dailyApi'
+import { difficultyRewardsMap, type DifficultyRewards } from '../lib/difficulties'
 import { dueTimeContext, formatOccurrenceDate, formatTimeInZone } from '../lib/dailyTime'
 import { dailyTabs } from '../navigation'
 import styles from './DailyHistoryPage.module.css'
@@ -51,10 +52,7 @@ export function DailyHistoryPage() {
     retry: false,
   })
   const difficultyMap = useMemo(
-    () =>
-      new Map<Difficulty, DailyDifficulty>(
-        (difficultiesQuery.data ?? []).map((meta) => [meta.difficulty, meta]),
-      ),
+    () => difficultyRewardsMap(difficultiesQuery.data),
     [difficultiesQuery.data],
   )
 
@@ -185,7 +183,7 @@ function HistoryRow({
   difficultyMeta,
 }: {
   item: DailyHistory
-  difficultyMeta: DailyDifficulty | undefined
+  difficultyMeta: DifficultyRewards | undefined
 }) {
   const effect = effectFor(item, difficultyMeta)
   const outcomeAt =
@@ -231,14 +229,14 @@ function HistoryRow({
 
 function effectFor(
   item: DailyHistory,
-  difficultyMeta: DailyDifficulty | undefined,
+  difficultyMeta: DifficultyRewards | undefined,
 ): Effect | undefined {
   if (item.status === 'COMPLETED') {
-    const reward = difficultyMeta?.reward_materials
+    const reward = difficultyMeta?.reward
     return reward === undefined ? undefined : { text: `+${reward} materials`, tone: 'reward' }
   }
   if (item.status === 'MISSED') {
-    const damage = difficultyMeta?.damage_amount
+    const damage = difficultyMeta?.damage
     return damage === undefined ? undefined : { text: `−${damage} hull`, tone: 'damage' }
   }
   return undefined

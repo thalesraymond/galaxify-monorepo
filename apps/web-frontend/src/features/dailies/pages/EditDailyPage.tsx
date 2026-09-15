@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router'
 
 import { isApiHttpError } from '@/api/transport'
 import { useApiTransport } from '@/shared/api/TransportContext'
-import { ContentSurface, Skeleton, UnavailableState } from '@/shared/ui'
+import { Button, ContentSurface, Skeleton, StatusBadge, UnavailableState } from '@/shared/ui'
 import { PageHeader } from '@/shared/ui/PageHeader'
 
 import { dailyQueryKey, getDaily, updateDaily } from '../api/dailyApi'
@@ -33,6 +33,29 @@ export function EditDailyPage() {
           <Link className={styles.backLink} to="/dailies">
             Back to Dailies
           </Link>
+        </ContentSurface>
+      </div>
+    )
+  }
+
+  if (isApiHttpError(dailyQuery.error, 'DAILY_PLAYER_NOT_READY')) {
+    return (
+      <div className={styles.page}>
+        <PageHeader title="Edit a Daily" description="Update the Daily and its schedule." />
+        <ContentSurface aria-labelledby="preparing-daily-heading" tone="raised">
+          <StatusBadge status="preparing" />
+          <h2 className={styles.heading} id="preparing-daily-heading">
+            Preparing your Dailies
+          </h2>
+          <p>Your Daily roster is still being prepared. This usually takes a few moments.</p>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              void dailyQuery.refetch()
+            }}
+          >
+            Retry
+          </Button>
         </ContentSurface>
       </div>
     )

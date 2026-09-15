@@ -1,10 +1,11 @@
 import { Link } from 'react-router'
 
-import type { Daily, DailyDifficulty } from '@/api/generated/daily/types.gen'
+import type { Daily } from '@/api/generated/daily/types.gen'
 import { Button, LiveRegion, StatusBadge } from '@/shared/ui'
 
 import type { CompletionFailure, ReconciliationState } from '../hooks/useDailyCompletion'
 import { dueTimeContext } from '../lib/dailyTime'
+import type { DifficultyRewards } from '../lib/difficulties'
 import styles from './DailyRow.module.css'
 
 /**
@@ -26,7 +27,7 @@ export function DailyRow({
   onRetryReconciliation,
 }: {
   daily: Daily
-  difficultyMeta: DailyDifficulty | undefined
+  difficultyMeta: DifficultyRewards | undefined
   isCurrent: boolean
   titleRef: (element: HTMLHeadingElement | null) => void
   completing: boolean
@@ -36,7 +37,7 @@ export function DailyRow({
   onDelete: () => void
   onRetryReconciliation: () => void
 }) {
-  const reward = difficultyMeta?.reward_materials
+  const reward = difficultyMeta?.reward
   const stakes =
     reward === undefined ? daily.difficulty : `${daily.difficulty} · +${reward} materials`
 

@@ -1,4 +1,11 @@
 import { ApiTransport } from '@/api/transport'
+import {
+  createDaily as fixtureDaily,
+  createDailyHistory,
+  FIXED_DAILY_IDS,
+  FIXED_DIFFICULTY_METADATA,
+  fixedUuid,
+} from '@/mocks/fixtures'
 import { describe, expect, it } from 'vitest'
 
 import type { CreateDailyInput, DailyListFilters } from './dailyApi'
@@ -176,11 +183,7 @@ describe('dailies API adapter', () => {
 
   it('lists difficulty metadata', async () => {
     let url = ''
-    const difficulties = [
-      { difficulty: 'EASY', reward_materials: 10, damage_amount: 5 },
-      { difficulty: 'MEDIUM', reward_materials: 25, damage_amount: 15 },
-      { difficulty: 'HARD', reward_materials: 50, damage_amount: 30 },
-    ]
+    const difficulties = FIXED_DIFFICULTY_METADATA
     const transport = new ApiTransport({
       fetch: (input) => {
         url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
@@ -194,37 +197,9 @@ describe('dailies API adapter', () => {
   })
 })
 
-const daily = {
-  id: '0f8fad5b-d9cb-469f-a165-70867728950e',
-  user_id: '1f8fad5b-d9cb-469f-a165-70867728950e',
-  title: 'Calibrate sensors',
-  description: 'Before launch',
-  difficulty: 'EASY',
-  due_date: '2026-01-01T12:00:00Z',
-  status: 'PENDING',
-  created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-01T00:00:00Z',
-  time_zone: 'UTC',
-  due_local_date: '2026-01-01',
-  due_local_time: '12:00',
-}
+const daily = fixtureDaily(FIXED_DAILY_IDS.calibrate)
 
-const historyItem = {
-  id: '00000003-0000-4000-8000-000000000001',
-  daily_id: daily.id,
-  user_id: daily.user_id,
-  title: 'Calibrate sensors',
-  description: 'Before launch',
-  difficulty: 'EASY',
-  due_date: '2026-01-14T10:00:00Z',
-  time_zone: 'UTC',
-  due_local_date: '2026-01-14',
-  due_local_time: '10:00',
-  status: 'COMPLETED',
-  completed_at: '2026-01-14T10:30:00Z',
-  missed_at: null,
-  archived_at: '2026-01-14T10:30:00Z',
-}
+const historyItem = createDailyHistory(fixedUuid(3, 1))
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } })

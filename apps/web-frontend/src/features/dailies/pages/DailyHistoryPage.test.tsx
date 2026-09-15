@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { SESSION_REFRESH_STORAGE_KEY } from '@/features/auth'
 import { createMockTestServer, onUnhandledMockRequest } from '@/mocks'
-import { FIXED_MOCK_EPOCH_MS, fixedUuid } from '@/mocks/fixtures'
+import { createDailyHistory, FIXED_MOCK_EPOCH_MS, fixedUuid } from '@/mocks/fixtures'
 import { renderAppAt } from '@/test/renderApp'
 
 const server = createMockTestServer({ scenario: 'established-player' })
@@ -200,21 +200,8 @@ describe('/dailies/history', () => {
   })
 })
 
-function olderOutcome(title: string, index: number): Record<string, unknown> {
-  return {
-    id: fixedUuid(9, index),
-    daily_id: '00000001-0000-4000-8000-000000000001',
-    user_id: '1f8fad5b-d9cb-469f-a165-70867728950e',
-    title,
-    description: '',
-    difficulty: 'MEDIUM',
-    due_date: '2026-01-10T12:00:00Z',
-    time_zone: 'UTC',
-    due_local_date: '2026-01-10',
-    due_local_time: '12:00',
-    status: 'COMPLETED',
-    completed_at: '2026-01-10T12:30:00Z',
-    missed_at: null,
-    archived_at: '2026-01-10T12:30:00Z',
-  }
+function olderOutcome(title: string, index: number) {
+  // Reuse the shared DailyHistory fixture; only the identity/title differ per
+  // page so the assertion keys stay unique.
+  return createDailyHistory(fixedUuid(9, index), { title })
 }

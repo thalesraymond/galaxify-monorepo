@@ -215,6 +215,26 @@ describe('/dailies/:dailyId/edit', () => {
     expect(screen.getByRole('link', { name: 'Back to Dailies' })).toBeInTheDocument()
   })
 
+  it('shows Preparing… for DAILY_PLAYER_NOT_READY and recovers on Retry', async () => {
+    const user = userEvent.setup()
+    server.server.use(
+      http.get('/api/daily/dailies/:id', () =>
+        HttpResponse.json(
+          { error: { code: 'DAILY_PLAYER_NOT_READY', message: 'Daily state is provisioning.' } },
+          { status: 503 },
+        ),
+      ),
+    )
+    await renderAt(`/dailies/${FIXED_DAILY_IDS.calibrate}/edit`, 'Edit a Daily')
+
+    expect(await screen.findByText('Preparing your Dailies')).toBeInTheDocument()
+    expect(screen.getByText('Preparing…')).toBeInTheDocument()
+
+    server.server.resetHandlers()
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByLabelText('Title')).toHaveValue('Calibrate sensors')
+  })
+
   it('shows an unavailable state on load failure and recovers on Retry', async () => {
     const user = userEvent.setup()
     server.server.use(

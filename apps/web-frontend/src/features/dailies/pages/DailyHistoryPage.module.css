@@ -29,7 +29,7 @@
 .groupZone {
   color: var(--color-text-muted-light);
   font-family: 'Avenir Next', 'Trebuchet MS', sans-serif;
-  font-size: 0.75rem;
+  font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -79,7 +79,7 @@
 
 .facts dt {
   color: var(--color-text-muted-light);
-  font-size: 0.75rem;
+  font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;

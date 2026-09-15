@@ -2,13 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router'
 
-import type {
-  Daily,
-  DailyDifficulty,
-  DailyStatus,
-  Difficulty,
-} from '@/api/generated/daily/types.gen'
-import { isApiHttpError, isApiTransportError } from '@/api/transport'
+import type { Daily, DailyStatus } from '@/api/generated/daily/types.gen'
+import { isApiHttpError } from '@/api/transport'
 import { useApiTransport } from '@/shared/api/TransportContext'
 import {
   Button,
@@ -42,6 +37,8 @@ import {
   localDayRange,
   todayDateInput,
 } from '../lib/dailyTime'
+import { difficultyRewardsMap } from '../lib/difficulties'
+import { requestFailureMessage } from '../lib/message'
 import { dailyTabs } from '../navigation'
 import styles from './DailiesListPage.module.css'
 
@@ -63,18 +60,6 @@ function parseStatusParam(value: string | null): StatusFilter {
 
 function byLocalDueTime(left: Daily, right: Daily): number {
   return left.due_local_time.localeCompare(right.due_local_time)
-}
-
-function deleteErrorMessage(error: unknown): string {
-  if (isApiTransportError(error)) {
-    if (error.kind === 'network') {
-      return 'Could not reach the Daily service.'
-    }
-    if (error.kind === 'api') {
-      return error.message
-    }
-  }
-  return 'The Daily could not be deleted.'
 }
 
 type DailyFocusState = {
@@ -117,10 +102,7 @@ export function DailiesListPage() {
     retry: false,
   })
   const difficultyMap = useMemo(
-    () =>
-      new Map<Difficulty, DailyDifficulty>(
-        (difficultiesQuery.data ?? []).map((meta) => [meta.difficulty, meta]),
-      ),
+    () => difficultyRewardsMap(difficultiesQuery.data),
     [difficultiesQuery.data],
   )
 
@@ -141,7 +123,7 @@ export function DailiesListPage() {
       void queryClient.invalidateQueries({ queryKey: dailiesQueryKey(filters) })
     },
     onError: (error) => {
-      setDeleteError(deleteErrorMessage(error))
+      setDeleteError(requestFailureMessage(error, 'The Daily could not be deleted.'))
     },
   })
 

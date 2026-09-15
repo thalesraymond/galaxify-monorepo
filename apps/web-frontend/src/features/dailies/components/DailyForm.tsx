@@ -11,6 +11,7 @@ import { Button, ConfirmationDialog, Field, FormError, Skeleton } from '@/shared
 
 import { difficultiesQueryKey, listDifficulties, type CreateDailyInput } from '../api/dailyApi'
 import { isValidDateInput, todayDateInput } from '../lib/dailyTime'
+import { difficultyLabel, difficultyRewardsMap } from '../lib/difficulties'
 import styles from './DailyForm.module.css'
 
 const FORM_FIELDS = [
@@ -79,13 +80,10 @@ export function DailyForm({
     queryFn: ({ signal }) => listDifficulties(transport, signal),
     retry: false,
   })
-  const difficultyMetadata = useMemo(() => {
-    const map = new Map<Difficulty, { reward: number; damage: number }>()
-    for (const meta of difficultiesQuery.data ?? []) {
-      map.set(meta.difficulty, { reward: meta.reward_materials, damage: meta.damage_amount })
-    }
-    return map
-  }, [difficultiesQuery.data])
+  const difficultyMetadata = useMemo(
+    () => difficultyRewardsMap(difficultiesQuery.data),
+    [difficultiesQuery.data],
+  )
 
   const {
     register,
@@ -222,8 +220,8 @@ export function DailyForm({
             const meta = difficultyMetadata.get(option)
             const label =
               meta === undefined
-                ? optionLabel(option)
-                : `${optionLabel(option)} — rewards ${meta.reward}, missed damage ${meta.damage}`
+                ? difficultyLabel(option)
+                : `${difficultyLabel(option)} — rewards ${meta.reward}, missed damage ${meta.damage}`
             return (
               <label className={styles.radio} key={option}>
                 <input type="radio" value={option} {...register('difficulty')} />
@@ -310,16 +308,6 @@ export function dailyRequestBody(values: DailyFormValues): CreateDailyInput {
 }
 
 const DIFFICULTY_OPTIONS = ['EASY', 'MEDIUM', 'HARD'] as const
-
-function optionLabel(difficulty: Difficulty): string {
-  if (difficulty === 'EASY') {
-    return 'Easy'
-  }
-  if (difficulty === 'MEDIUM') {
-    return 'Medium'
-  }
-  return 'Hard'
-}
 
 function isFormField(field: string): field is FormField {
   return (FORM_FIELDS as readonly string[]).includes(field)
