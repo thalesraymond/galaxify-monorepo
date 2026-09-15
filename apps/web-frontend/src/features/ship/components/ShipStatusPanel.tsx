@@ -17,30 +17,21 @@ import {
 } from '@/shared/ui'
 
 import { formatUpdatedAt } from '../format'
-import {
-  getShip,
-  probeExpeditionReadiness,
-  repairShip,
-  shipQueryKey,
-  type ShipState,
-} from '../api/shipApi'
+import { getShip, repairShip, shipQueryKey, type ShipState } from '../api/shipApi'
+import { useShipRepairReconciliation } from './useShipRepairReconciliation'
 import styles from './ShipStatusPanel.module.css'
 
-/** Bounded reconciliation schedule (`web-frontend.md` §3.4): 1, 2, 4, and 8 s. */
-const FIRST_PROBE_DELAY_MS = 1_000
-const PROBE_DELAY_STEPS_MS: readonly number[] = [2_000, 4_000, 8_000]
-/** While the tab is hidden or offline, wait briefly and re-check before probing. */
-const PAUSED_PROBE_POLL_MS = 250
+/** Why the Repair control is presently unavailable; shared by eligibility and typed errors. */
+type RepairBlocker = 'hull_full' | 'no_materials'
 
 type RepairOutcome =
   | { readonly kind: 'none' }
-  | { readonly kind: 'hull_full' }
-  | { readonly kind: 'no_materials' }
-  | { readonly kind: 'form'; readonly message: string }
+  | { readonly kind: 'blocked'; readonly blocker: RepairBlocker }
+  | { readonly kind: 'rejected'; readonly message: string }
   | { readonly kind: 'unavailable' }
 
-type ReconciliationState =
-  { readonly kind: 'idle' } | { readonly kind: 'updating' } | { readonly kind: 'delayed' }
+/** How often the relative "Updated …" label recomputes while the tab is visible. */
+const UPDATED_AT_REFRESH_MS = 30_000
 
 /**
  * Feature-owned Ship status and repair composite (`web-frontend.md` §5.5).
@@ -56,15 +47,20 @@ export function ShipStatusPanel() {
     queryFn: ({ signal }) => getShip(transport, signal),
   })
 
+  const { reconciliation, beginReconciliation, retryReconciliation } =
+    useShipRepairReconciliation(transport)
+
   const repairMutation = useMutation({
     mutationFn: () => repairShip(transport),
     onSuccess: (ship) => {
       queryClient.setQueryData(shipQueryKey, { kind: 'ready', ship } satisfies ShipState)
+      // The Expedition service caches Ship state privately; invalidate its
+      // queries so visible downstream data reconciles (`web-frontend.md` §3.4).
+      void queryClient.invalidateQueries({ queryKey: ['expeditions'] })
       setRepairOutcome({ kind: 'none' })
       setAnnouncement('The Ship was repaired.')
-      setReconciliation({ kind: 'updating' })
-      setReconcileBalance(ship.materials_balance)
-      setReconcileRound((round) => round + 1)
+      setRepairSucceededAt((round) => round + 1)
+      beginReconciliation(ship.materials_balance)
     },
     onError: (error: unknown) => {
       setRepairOutcome(classifyRepairError(error))
@@ -73,15 +69,11 @@ export function ShipStatusPanel() {
 
   const [announcement, setAnnouncement] = useState<string>()
   const [repairOutcome, setRepairOutcome] = useState<RepairOutcome>({ kind: 'none' })
-  const [reconcileBalance, setReconcileBalance] = useState<number>()
-  const [reconcileRound, setReconcileRound] = useState(0)
-  const [reconciliation, setReconciliation] = useState<ReconciliationState>({ kind: 'idle' })
-  // Snapshot of "now" at mount so the relative updated-at label renders
-  // deterministically without reading the clock during re-renders.
-  const [mountedAtMs] = useState<number>(() => Date.now())
+  const [repairSucceededAt, setRepairSucceededAt] = useState(0)
 
   const repairButtonRef = useRef<HTMLButtonElement>(null)
   const outcomeRegionRef = useRef<HTMLDivElement>(null)
+  const statusHeadingRef = useRef<HTMLHeadingElement>(null)
 
   // Clear the announcement so an identical later outcome is announced again.
   useEffect(() => {
@@ -96,7 +88,7 @@ export function ShipStatusPanel() {
     }
   }, [announcement])
 
-  // Move focus into the failure outcome (its Retry button or Dailies link).
+  // On failure, move focus into the outcome (its Retry button or Dailies link).
   useEffect(() => {
     if (repairOutcome.kind === 'none') {
       return
@@ -104,81 +96,19 @@ export function ShipStatusPanel() {
     outcomeRegionRef.current?.querySelector<HTMLElement>('a, button')?.focus()
   }, [repairOutcome])
 
-  // Bounded Expedition-readiness reconciliation after a successful repair.
+  // On success the Ship typically fills its hull, which disables the Repair
+  // control; move focus to the status summary so it never disappears silently.
   useEffect(() => {
-    if (reconcileBalance === undefined) {
+    if (repairSucceededAt === 0) {
       return
     }
-    const balance = reconcileBalance
-    // Object indirection keeps flow analysis from narrowing `cancelled` to
-    // false inside the probe closures (it is only cleared on cleanup).
-    const control: { cancelled: boolean } = { cancelled: false }
-    const isCancelled = (): boolean => control.cancelled
-    let timer: number | undefined
-    let step = 0
-
-    const isPaused = (): boolean => document.visibilityState !== 'visible' || !navigator.onLine
-
-    async function runProbe(): Promise<void> {
-      if (isCancelled()) {
-        return
-      }
-      setReconciliation({ kind: 'updating' })
-      let succeeded = false
-      try {
-        succeeded = await probeExpeditionReadiness(transport, balance)
-      } catch {
-        succeeded = false
-      }
-      if (isCancelled()) {
-        return
-      }
-      if (succeeded) {
-        setReconciliation({ kind: 'idle' })
-        return
-      }
-      step += 1
-      if (step > PROBE_DELAY_STEPS_MS.length) {
-        setReconciliation({ kind: 'delayed' })
-        return
-      }
-      scheduleProbe()
-    }
-
-    function scheduleProbe(): void {
-      const delayMs = isPaused()
-        ? PAUSED_PROBE_POLL_MS
-        : step === 0
-          ? FIRST_PROBE_DELAY_MS
-          : (PROBE_DELAY_STEPS_MS[step - 1] ?? 8_000)
-      timer = window.setTimeout(() => {
-        if (isPaused()) {
-          scheduleProbe()
-          return
-        }
-        void runProbe()
-      }, delayMs)
-    }
-
-    scheduleProbe()
-
-    return () => {
-      control.cancelled = true
-      if (timer !== undefined) {
-        window.clearTimeout(timer)
-      }
-    }
-  }, [reconcileBalance, reconcileRound, transport])
+    statusHeadingRef.current?.focus()
+  }, [repairSucceededAt])
 
   const retryRepair = (): void => {
     setRepairOutcome({ kind: 'none' })
     repairButtonRef.current?.focus()
     repairMutation.mutate()
-  }
-
-  const retryReconciliation = (): void => {
-    setReconciliation({ kind: 'updating' })
-    setReconcileRound((round) => round + 1)
   }
 
   const shipState = shipQuery.data
@@ -215,7 +145,7 @@ export function ShipStatusPanel() {
 
   const ship = shipState.ship
   const isStale = shipQuery.isError
-  const repairBlocked: 'hull_full' | 'no_materials' | undefined =
+  const repairBlocked: RepairBlocker | undefined =
     ship.hull_health >= 100 ? 'hull_full' : ship.materials_balance <= 0 ? 'no_materials' : undefined
   const repairDescribedBy =
     repairOutcome.kind !== 'none'
@@ -226,7 +156,9 @@ export function ShipStatusPanel() {
 
   return (
     <ContentSurface tone="raised" aria-labelledby="ship-status-heading" className={styles.panel}>
-      <h2 id="ship-status-heading">Ship status</h2>
+      <h2 ref={statusHeadingRef} id="ship-status-heading" tabIndex={-1}>
+        Ship status
+      </h2>
 
       {isStale ? (
         <div className={styles.stale}>
@@ -271,22 +203,10 @@ export function ShipStatusPanel() {
         <div className={styles.repair}>
           {repairBlocked !== undefined ? (
             <p id="repair-guidance" className={styles.copy}>
-              {repairBlocked === 'hull_full' ? (
-                <>
-                  Hull is full. Repair becomes available when the hull is damaged — complete Dailies
-                  to keep the Ship healthy.{' '}
-                  <Link to="/dailies" className={styles.link}>
-                    Open Dailies
-                  </Link>
-                </>
-              ) : (
-                <>
-                  No materials. Complete Dailies to earn materials for repair.{' '}
-                  <Link to="/dailies" className={styles.link}>
-                    Open Dailies
-                  </Link>
-                </>
-              )}
+              {blockerMessage(repairBlocked, 'eligibility')}{' '}
+              <Link to="/dailies" className={styles.link}>
+                Open Dailies
+              </Link>
             </p>
           ) : null}
           <Button
@@ -311,7 +231,7 @@ export function ShipStatusPanel() {
       </section>
 
       <p className={styles.secondary}>
-        Level {ship.level} · {formatUpdatedAt(ship.updated_at, mountedAtMs)}
+        Level {ship.level} · <ShipUpdatedAt key={ship.updated_at} updatedAt={ship.updated_at} />
       </p>
 
       {reconciliation.kind === 'delayed' ? (
@@ -322,6 +242,28 @@ export function ShipStatusPanel() {
   )
 }
 
+/**
+ * Relative "Updated …" label that recomputes on an interval while the tab is
+ * visible, so a long session does not freeze at "just now". `key`ed by the
+ * timestamp in the parent so a repaired Ship restarts the label immediately.
+ */
+function ShipUpdatedAt({ updatedAt }: { updatedAt: string }) {
+  const [label, setLabel] = useState<string>(() => formatUpdatedAt(updatedAt, Date.now()))
+
+  useEffect(() => {
+    const handle = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        setLabel(formatUpdatedAt(updatedAt, Date.now()))
+      }
+    }, UPDATED_AT_REFRESH_MS)
+    return () => {
+      window.clearInterval(handle)
+    }
+  }, [updatedAt])
+
+  return label
+}
+
 function RepairOutcomeMessage({
   outcome,
   onRetry,
@@ -330,26 +272,16 @@ function RepairOutcomeMessage({
   onRetry: () => void
 }) {
   switch (outcome.kind) {
-    case 'hull_full':
+    case 'blocked':
       return (
         <p role="alert" className={styles.copy}>
-          Repair becomes available when the hull is damaged — complete Dailies to keep the Ship
-          healthy.{' '}
+          {blockerMessage(outcome.blocker, 'outcome')}{' '}
           <Link to="/dailies" className={styles.link}>
             Open Dailies
           </Link>
         </p>
       )
-    case 'no_materials':
-      return (
-        <p role="alert" className={styles.copy}>
-          There are no materials to spend. Complete Dailies to earn materials.{' '}
-          <Link to="/dailies" className={styles.link}>
-            Open Dailies
-          </Link>
-        </p>
-      )
-    case 'form':
+    case 'rejected':
       return (
         <>
           <FormError>{outcome.message}</FormError>
@@ -372,21 +304,35 @@ function RepairOutcomeMessage({
   }
 }
 
+/** One copy source for the shared `RepairBlocker` union, per view context. */
+function blockerMessage(blocker: RepairBlocker, view: 'eligibility' | 'outcome'): string {
+  if (blocker === 'hull_full') {
+    return view === 'eligibility'
+      ? 'Hull is full. Repair becomes available when the hull is damaged — complete Dailies to keep the Ship healthy.'
+      : 'Repair becomes available when the hull is damaged — complete Dailies to keep the Ship healthy.'
+  }
+  return view === 'eligibility'
+    ? 'No materials. Complete Dailies to earn materials.'
+    : 'There are no materials to spend. Complete Dailies to earn materials.'
+}
+
 function classifyRepairError(error: unknown): RepairOutcome {
   if (isApiHttpError(error, 'SHIP_HULL_FULL')) {
-    return { kind: 'hull_full' }
+    return { kind: 'blocked', blocker: 'hull_full' }
   }
   if (isApiHttpError(error, 'SHIP_INSUFFICIENT_MATERIALS')) {
-    return { kind: 'no_materials' }
+    return { kind: 'blocked', blocker: 'no_materials' }
   }
   if (!isApiTransportError(error)) {
-    return { kind: 'form', message: 'Something went wrong. Try again.' }
+    return { kind: 'rejected', message: 'Something went wrong. Try again.' }
   }
   if (error.kind === 'aborted') {
     return { kind: 'none' }
   }
   if (error.kind === 'api') {
-    return error.status >= 500 ? { kind: 'unavailable' } : { kind: 'form', message: error.message }
+    return error.status >= 500
+      ? { kind: 'unavailable' }
+      : { kind: 'rejected', message: error.message }
   }
   return { kind: 'unavailable' }
 }

@@ -1,4 +1,5 @@
 import { ApiTransport } from '@/api/transport'
+import { createDamagedShip, createExpeditionQuote } from '@/mocks'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -21,14 +22,13 @@ describe('ship API adapter', () => {
         seen.url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
         seen.method = init?.method ?? 'GET'
         seen.body = init?.body as string | undefined
-        return Promise.resolve(jsonResponse(ship))
+        return Promise.resolve(jsonResponse(createDamagedShip()))
       },
     })
 
     const state: ShipState = await getShip(transport)
     expect(shipQueryKey).toEqual(['ship'])
-    expect(state).toMatchObject({ kind: 'ready' })
-    expect(state.kind === 'ready' ? state.ship.hull_health : -1).toBe(42)
+    expect(state).toMatchObject({ kind: 'ready', ship: { hull_health: 42 } })
     expect(seen).toEqual({ url: '/api/ship/ships/me', method: 'GET', body: undefined })
   })
 
@@ -43,7 +43,9 @@ describe('ship API adapter', () => {
         seen.url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
         seen.method = init?.method ?? 'GET'
         seen.body = init?.body as string | undefined
-        return Promise.resolve(jsonResponse(repairedShip))
+        return Promise.resolve(
+          jsonResponse(createDamagedShip({ hull_health: 100, materials_balance: 62 })),
+        )
       },
     })
 
@@ -80,10 +82,11 @@ describe('ship API adapter', () => {
     const transport = new ApiTransport({
       fetch: (input) => {
         url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-        return Promise.resolve(jsonResponse(quote(120)))
+        return Promise.resolve(jsonResponse(createExpeditionQuote()))
       },
     })
 
+    // The fixture's projected balance matches a fresh damaged Ship's balance.
     await expect(probeExpeditionReadiness(transport, 120)).resolves.toBe(true)
     await expect(probeExpeditionReadiness(transport, 62)).resolves.toBe(false)
     expect(url).toBe('/api/expedition/expeditions/quote?materials_invested=0')
@@ -105,30 +108,6 @@ describe('ship API adapter', () => {
     await expect(probeExpeditionReadiness(transport, 120)).resolves.toBe(false)
   })
 })
-
-const ship = {
-  user_id: '1f8fad5b-d9cb-469f-a165-70867728950e',
-  hull_health: 42,
-  materials_balance: 120,
-  level: 3,
-  updated_at: '2026-01-15T09:00:00Z',
-}
-
-const repairedShip = { ...ship, hull_health: 100, materials_balance: 62 }
-
-function quote(projectedBalance: number) {
-  return {
-    materials_invested: 0,
-    normalized_investment: 0,
-    projected_balance: projectedBalance,
-    success_chance: 0,
-    eligible: false,
-    blocker: 'EXPEDITION_INSUFFICIENT_MATERIALS',
-    cooldown_until: null,
-    estimated_resolve_at: '2026-01-15T10:00:00Z',
-    estimated_resolve_window_seconds: 3600,
-  }
-}
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } })

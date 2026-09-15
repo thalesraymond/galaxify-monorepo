@@ -16,6 +16,7 @@ export {
   createResolvedDailyHistory,
   createDamagedShip,
   createHealthyShip,
+  createExpeditionQuote,
   createActiveExpedition,
   createResolvedExpedition,
   createResolvedExpeditionHistory,

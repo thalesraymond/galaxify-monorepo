@@ -1,4 +1,4 @@
-import { act, fireEvent, screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -13,6 +13,7 @@ import {
   onUnhandledMockRequest,
 } from '@/mocks'
 import { renderAppAt } from '@/test/renderApp'
+import { advanceFake, enableFakeTimers, waitForUi } from '@/test/fakeTimers'
 
 const scheduler = new ManualMockScheduler(FIXED_MOCK_EPOCH_MS)
 const server = createMockTestServer({ scenario: 'established-player', scheduler })
@@ -76,24 +77,7 @@ async function renderShipFake(
   window.localStorage.clear()
   await seedAuthenticatedSession()
   renderAppAt('/ship')
-  await waitForUiFake(() => screen.queryByRole('button', { name: 'Repair Ship' }) !== null)
-}
-
-/** Settles async work under fake timers (RTL cannot auto-advance these). */
-async function settleForeground(): Promise<void> {
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(0)
-  })
-}
-
-async function waitForUiFake(ready: () => boolean, attempts = 60): Promise<void> {
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    if (ready()) {
-      return
-    }
-    await settleForeground()
-  }
-  throw new Error('Timed out waiting for the UI under fake timers.')
+  await waitForUi(() => screen.queryByRole('button', { name: 'Repair Ship' }) !== null)
 }
 
 function bearerOf(request: Request): string | undefined {
@@ -136,13 +120,12 @@ describe('Ship page', () => {
     expect(await screen.findByText('The Ship was repaired.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Repair Ship' })).toBeDisabled()
     expect(screen.getByText(/Hull is full/)).toBeInTheDocument()
+    // The now-disabled Repair control hands focus to the status summary.
+    expect(screen.getByRole('heading', { name: 'Ship status' })).toHaveFocus()
   })
 
   it('disables only the repair control while pending and keeps navigation usable', async () => {
-    vi.useFakeTimers({
-      now: FIXED_MOCK_EPOCH_MS,
-      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
-    })
+    enableFakeTimers(FIXED_MOCK_EPOCH_MS)
     await renderShipFake('damaged-ship', () => {
       server.server.use(
         http.post('/api/ship/ships/repair', async ({ request }) => {
@@ -160,12 +143,11 @@ describe('Ship page', () => {
     expect(screen.getByRole('button', { name: 'Working…' })).toBeDisabled()
     fireEvent.click(screen.getByRole('link', { name: 'Dailies' }))
 
-    await waitForUiFake(() => screen.queryByRole('heading', { level: 1, name: 'Dailies' }) !== null)
+    await waitForUi(() => screen.queryByRole('heading', { level: 1, name: 'Dailies' }) !== null)
     expect(screen.getByRole('heading', { level: 1, name: 'Dailies' })).toBeInTheDocument()
 
     // Resolve the in-flight repair so no request stays dangling.
-    await settleForeground()
-    await vi.advanceTimersByTimeAsync(1_000)
+    await advanceFake(1_000)
   })
 
   it('explains a full hull typed error and points to Dailies', async () => {
@@ -254,8 +236,10 @@ describe('Ship page', () => {
       )
     })
 
+    // Covers the query's single retry (1 s exponential backoff) before it
+    // settles into the unavailable state.
     expect(
-      await screen.findByText('Ship status is unavailable', undefined, { timeout: 3_000 }),
+      await screen.findByText('Ship status is unavailable', undefined, { timeout: 2_000 }),
     ).toBeInTheDocument()
 
     server.server.resetHandlers()
