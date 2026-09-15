@@ -749,12 +749,13 @@ export class MockBackend {
     userId: string,
     familyId: string = `family-${FIXED_USER_ID}`,
   ): { session: NonNullable<MockPersistedState['session']>; record: MockRefreshTokenRecord } {
-    // Access-token lifetime is anchored to the injectable scenario clock so
-    // session expiry and domain time always agree: `requireSession` compares
-    // against `this.scheduler.now()`, so issuance must use the same timeline.
-    // With the default `SystemMockScheduler` the value tracks the wall clock,
-    // so production behavior is unchanged.
-    const issuedAt = this.scheduler.now()
+    // Browser MSW sessions must use wall-clock expiry because the frontend
+    // decodes the JWT `exp` against `Date.now()`, while fixture/domain time is
+    // deliberately anchored to a stable epoch. Deterministic test schedulers,
+    // however, advance independently from fake browser time, so their tokens
+    // must remain on the scheduler timeline used by `requireSession`.
+    const issuedAt =
+      this.scheduler instanceof SystemMockScheduler ? Date.now() : this.scheduler.now()
     const accessTokenExpiresAt = issuedAt + ACCESS_TOKEN_TTL_MS
     const familySuffix = familyId.slice(-6)
     this.tokenCounter += 1
