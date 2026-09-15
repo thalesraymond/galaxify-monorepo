@@ -145,6 +145,22 @@ test.describe('real user-service convergence (RUN_REAL_STACK=1)', () => {
 
   test.use({ baseURL: REAL_BASE_URL })
 
+  // Detached user-service processes this suite respawns during the outage
+  // scenario are tracked here so an aborted run can never orphan a live
+  // service: afterAll terminates every child we spawned, plus any service
+  // process the outage test restarted.
+  const spawnedServices: ReturnType<typeof spawn>[] = []
+
+  test.afterAll(() => {
+    for (const child of spawnedServices) {
+      try {
+        child.kill('SIGTERM')
+      } catch {
+        // already exited
+      }
+    }
+  })
+
   test('wire contract: every user route conforms to the generated OpenAPI shapes', async ({
     page,
   }) => {
@@ -320,13 +336,14 @@ test.describe('real user-service convergence (RUN_REAL_STACK=1)', () => {
     const email = uniqueEmail('ui-bootstrap')
     await signupThroughUi(page, email, uniqueUsername('ui_bootstrap'))
 
-    // Only the versioned refresh-token key is persisted; no access token.
+    // Exclusivity: the only persisted key is the versioned refresh-token key.
+    // Anything else (an access token, cache, or drafts) would fail the equality.
     const keys = await page.evaluate(() =>
       Array.from({ length: window.localStorage.length }, (_, index) =>
         window.localStorage.key(index),
       ),
     )
-    expect(keys.filter((key) => key === SESSION_REFRESH_STORAGE_KEY)).toHaveLength(1)
+    expect(keys).toEqual([SESSION_REFRESH_STORAGE_KEY])
 
     const refreshRequests: string[] = []
     page.on('request', (request) => {
@@ -383,22 +400,28 @@ test.describe('real user-service convergence (RUN_REAL_STACK=1)', () => {
     await signupThroughUi(page, uniqueEmail('ui-reactive'), username)
 
     let refreshCount = 0
-    const meRequests: string[] = []
+    const patchAttempts: string[] = []
     page.on('request', (request) => {
       if (request.url().includes('/api/user/auth/refresh')) {
         refreshCount += 1
       }
-      if (request.url().endsWith('/users/me')) {
-        meRequests.push(request.url())
+      if (request.method() === 'PATCH' && request.url().endsWith('/users/me')) {
+        patchAttempts.push(request.url())
       }
     })
 
-    // Fault injection at the browser network boundary ONLY: the first GET
-    // /users/me is answered with an AUTH_INVALID_TOKEN envelope. The refresh
-    // (real rotation) and the replay (real exchange) follow.
+    await page.getByRole('button', { name: 'Account' }).first().click()
+    await page.getByRole('menuitem', { name: 'Profile' }).click()
+    await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible()
+    await expect(page.getByLabel('Username')).toHaveValue(username)
+
+    // Fault injection at the browser network boundary ONLY: the first PATCH
+    // /users/me (a user-triggered mutation, so it has no React Query
+    // double-mount/abort race) is answered with an AUTH_INVALID_TOKEN envelope.
+    // The refresh (real rotation) and the replay (real exchange) follow.
     let injected = 0
     await page.route('**/api/user/users/me', async (route) => {
-      if (route.request().method() === 'GET' && injected === 0) {
+      if (route.request().method() === 'PATCH' && injected === 0) {
         injected += 1
         await route.fulfill({
           status: 401,
@@ -413,15 +436,17 @@ test.describe('real user-service convergence (RUN_REAL_STACK=1)', () => {
       await route.continue()
     })
 
-    await page.getByRole('button', { name: 'Account' }).first().click()
-    await page.getByRole('menuitem', { name: 'Profile' }).click()
-    await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible()
+    const updated = uniqueUsername('ui_reactive_v2')
+    await page.getByLabel('Username').fill(updated)
+    await page.getByRole('button', { name: 'Save username' }).click()
 
-    // Exactly one refresh and exactly two /users/me attempts (401 + replay).
+    // The mutation succeeds through exactly one refresh and one replay: the
+    // replay is a real PATCH, so the username change persists.
+    await expect(page.getByText('Your username was updated.')).toBeAttached()
     expect(injected).toBe(1)
     expect(refreshCount).toBe(1)
-    expect(meRequests.length).toBe(2)
-    await expect(page.getByLabel('Username')).toHaveValue(username)
+    expect(patchAttempts.length).toBe(2)
+    await expect(page.getByLabel('Username')).toHaveValue(updated)
   })
 
   test('cross-tab serialization: concurrent reloads share one refresh lineage without reuse', async ({
@@ -536,8 +561,15 @@ test.describe('real user-service convergence (RUN_REAL_STACK=1)', () => {
     await page.getByRole('menuitem', { name: 'Profile' }).click()
     await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible()
 
-    // Read-only identity and editable username come from the real /users/me.
+    // Read-only identity and editable username come from the real /users/me:
+    // email, member-since rendered from created_at, and the editable username.
     await expect(page.getByText(email)).toBeVisible()
+    await expect(page.getByText('Member since')).toBeVisible()
+    await expect(
+      page.getByText(
+        /^(January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}$/,
+      ),
+    ).toBeVisible()
     await expect(page.getByLabel('Username')).toHaveValue(username)
 
     // Inline validation error (client and server agree on the 3–30 rule).
@@ -625,12 +657,14 @@ test.describe('real user-service convergence (RUN_REAL_STACK=1)', () => {
     const beforeOutage = await readStoredRefreshToken(page)
     expect(beforeOutage).not.toBeNull()
 
-    const listenerPids = (): number[] => {
+    // The real service process, matched by its command line so unrelated
+    // connections to :8081 are never touched.
+    const servicePids = (): number[] => {
       try {
-        const out = execSync('lsof -ti tcp:8081 -sTCP:LISTEN', { encoding: 'utf8' }).trim()
+        const out = execSync("pgrep -f 'bin/user-service'", { encoding: 'utf8' }).trim()
         return out === '' ? [] : out.split('\n').map(Number)
       } catch (error: unknown) {
-        throw new Error(`cannot enumerate the user-service listener: ${String(error)}`)
+        throw new Error(`cannot enumerate the user-service process: ${String(error)}`)
       }
     }
 
@@ -667,7 +701,7 @@ test.describe('real user-service convergence (RUN_REAL_STACK=1)', () => {
     }
 
     // Stop the real service (process-level outage, not a mock).
-    for (const pid of listenerPids()) {
+    for (const pid of servicePids()) {
       try {
         process.kill(pid, 'SIGTERM')
       } catch {
@@ -687,12 +721,14 @@ test.describe('real user-service convergence (RUN_REAL_STACK=1)', () => {
     expect(await readStoredRefreshToken(page)).toBe(beforeOutage)
 
     // Bring the service back and Retry: a real bootstrap rotation restores the
-    // session with no sign-out in between.
+    // session with no sign-out in between. The respawn is tracked so afterAll
+    // cleanup terminates it when the suite finishes (or fails).
     const child = spawn('nohup', ['./bin/user-service'], {
       cwd: userServiceDir,
       detached: true,
       stdio: 'ignore',
     })
+    spawnedServices.push(child)
     child.unref()
     await waitUntilHealthy()
 
