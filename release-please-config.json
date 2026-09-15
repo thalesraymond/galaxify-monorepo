@@ -25,6 +25,12 @@
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true
     },
+    "apps/web-frontend": {
+      "release-type": "node",
+      "package-name": "web-frontend",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true
+    },
     "pkg": {
       "release-type": "go",
       "package-name": "pkg",
