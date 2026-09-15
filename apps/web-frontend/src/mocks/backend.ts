@@ -223,6 +223,11 @@ export class MockBackend {
   }
 
   public async awaitResponseDelay(): Promise<void> {
+    // The persisted store is the source of truth across tabs. Re-read it before
+    // answering so a second tab never serves a single-use refresh token that
+    // another tab has already consumed while its async sync signal was in
+    // flight.
+    this.syncFromStore()
     await this.scheduler.delay(this.responseDelayMs)
   }
 
@@ -632,6 +637,19 @@ export class MockBackend {
 
   // --- Internals -----------------------------------------------------------
 
+  /** Adopts a newer persisted snapshot written by another tab, if any. */
+  private syncFromStore(): void {
+    const persisted = this.store.load()
+    if (
+      persisted !== undefined &&
+      persisted.scenario === this.state.scenario &&
+      persisted.revision > this.state.revision
+    ) {
+      this.state = persisted
+      this.definition = SCENARIO_DEFINITIONS[persisted.scenario]
+    }
+  }
+
   private handleExternalState(external: MockPersistedState | undefined): void {
     if (external === undefined) {
       this.definition = SCENARIO_DEFINITIONS[this.state.scenario]
@@ -722,11 +740,19 @@ export class MockBackend {
     userId: string,
     familyId: string = `family-${FIXED_USER_ID}`,
   ): { session: NonNullable<MockPersistedState['session']>; record: MockRefreshTokenRecord } {
-    const issuedAt = this.scheduler.now()
+    // Access-token lifetime tracks the wall clock so the frontend's proactive
+    // expiry check matches service behavior. Domain fixtures remain anchored to
+    // the fixed mock epoch; `requireSession` still compares against the
+    // scenario clock, so normal tokens stay valid and `expired-session` still
+    // overrides the stored expiry explicitly.
+    const issuedAt = Date.now()
     const accessTokenExpiresAt = issuedAt + ACCESS_TOKEN_TTL_MS
     const familySuffix = familyId.slice(-6)
     this.tokenCounter += 1
-    const token = `mock-refresh-${familySuffix}-${this.tokenCounter}`
+    // Include the clock so a rotation always changes the persisted value.
+    // Otherwise a reload that resets the counter can mint the same string as
+    // the token just consumed, suppressing the cross-tab `storage` signal.
+    const token = `mock-refresh-${familySuffix}-${issuedAt}-${this.tokenCounter}`
     return {
       session: {
         userId,

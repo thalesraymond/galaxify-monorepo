@@ -1,0 +1,41 @@
+.page {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.identity {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+}
+
+.identity > div {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.identity dt {
+  color: var(--color-text-muted-light);
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.identity dd {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.form {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 22rem;
+}
+
+.dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}

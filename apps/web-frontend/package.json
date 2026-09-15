@@ -22,7 +22,7 @@
     "test:coverage": "vitest run --coverage",
     "test:orchestration": "node --test ../../scripts/dev.test.mjs",
     "test:e2e": "playwright test e2e/smoke.spec.ts",
-    "test:e2e:mock": "playwright test e2e/mock-smoke.spec.ts",
+    "test:e2e:mock": "playwright test e2e/mock-smoke.spec.ts e2e/auth.spec.ts e2e/session-outage.spec.ts",
     "test:visual": "playwright test e2e/visual.spec.ts",
     "test:a11y": "playwright test e2e/a11y.spec.ts",
     "perf": "node scripts/run-lhci.mjs",

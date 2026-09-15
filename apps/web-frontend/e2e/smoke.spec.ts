@@ -1,11 +1,14 @@
 import { expect, test } from '@playwright/test'
 
+import { expectAuthenticatedDashboard, seedAuthenticated } from './session'
+
 const primaryNavLabels = ['Dashboard', 'Dailies', 'Ship', 'Expeditions'] as const
 
 test.describe('application shell', () => {
   test('keeps primary navigation and content usable from 320 px through desktop', async ({
     page,
   }) => {
+    await seedAuthenticated(page)
     for (const viewport of [
       { width: 320, height: 700 },
       { width: 390, height: 844 },
@@ -18,10 +21,11 @@ test.describe('application shell', () => {
     }
   })
 
-  test('boots the app shell with the primary navigation', async ({ page }) => {
+  test('boots the authenticated app shell with the primary navigation', async ({ page }) => {
+    await seedAuthenticated(page)
     await page.goto('/dashboard')
+    await expectAuthenticatedDashboard(page)
 
-    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
     await expect(page.getByRole('link', { name: /skip to main content/i })).toHaveAttribute(
       'href',
       '#main-content',
@@ -35,6 +39,7 @@ test.describe('application shell', () => {
   })
 
   test('navigates between primary routes', async ({ page }) => {
+    await seedAuthenticated(page)
     await page.goto('/dashboard')
 
     await page
@@ -45,7 +50,15 @@ test.describe('application shell', () => {
     await expect(page).toHaveURL(/\/dailies$/)
   })
 
-  test('shows a contextual not-found state for an unknown route', async ({ page }) => {
+  test('redirects anonymous visitors to Signup at the root', async ({ page }) => {
+    await page.goto('/')
+
+    await expect(page.getByRole('heading', { level: 1, name: 'Create your account' })).toBeVisible()
+    await expect(page).toHaveURL(/\/signup$/)
+  })
+
+  test('shows a contextual not-found state inside the app shell', async ({ page }) => {
+    await seedAuthenticated(page)
     await page.goto('/this-route-does-not-exist')
 
     await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible()

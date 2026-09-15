@@ -1,0 +1,26 @@
+.page {
+  display: grid;
+  gap: var(--space-6);
+  max-width: 28rem;
+  margin: 0 auto;
+}
+
+.form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.actions {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: stretch;
+}
+
+.crossLink {
+  color: var(--color-ink);
+}
+
+.crossLink a {
+  color: var(--color-ink);
+  font-weight: 700;
+}

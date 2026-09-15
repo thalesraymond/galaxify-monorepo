@@ -3,6 +3,10 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 
 import { renderAppAt } from './renderApp'
+import {
+  createAnonymousSessionRuntime,
+  createAuthenticatedSessionRuntime,
+} from './sessionTestUtils'
 
 const primaryNavLabels = ['Dashboard', 'Dailies', 'Ship', 'Expeditions'] as const
 
@@ -25,8 +29,8 @@ const authRoutes = [
 ] as const
 
 describe('application shell and route tree', () => {
-  it('exposes the skip link and primary navigation on shell routes', async () => {
-    renderAppAt('/dashboard')
+  it('exposes the skip link and primary navigation on authenticated shell routes', async () => {
+    renderAppAt('/dashboard', { sessionRuntime: createAuthenticatedSessionRuntime() })
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /skip to main content/i })).toHaveAttribute(
@@ -44,7 +48,7 @@ describe('application shell and route tree', () => {
   it.each(shellRoutes)(
     'renders $path with one $heading heading in the app shell',
     async ({ path, heading }) => {
-      renderAppAt(path)
+      renderAppAt(path, { sessionRuntime: createAuthenticatedSessionRuntime() })
 
       expect(await screen.findByRole('heading', { level: 1, name: heading })).toBeInTheDocument()
       expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
@@ -53,7 +57,7 @@ describe('application shell and route tree', () => {
   )
 
   it.each(authRoutes)('renders $path in the focused auth shell', async ({ path, heading }) => {
-    renderAppAt(path)
+    renderAppAt(path, { sessionRuntime: createAnonymousSessionRuntime() })
 
     expect(await screen.findByRole('heading', { level: 1, name: heading })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /skip to main content/i })).toHaveAttribute(
@@ -65,7 +69,7 @@ describe('application shell and route tree', () => {
 
   it('navigates between primary routes through the nav links', async () => {
     const user = userEvent.setup()
-    renderAppAt('/dashboard')
+    renderAppAt('/dashboard', { sessionRuntime: createAuthenticatedSessionRuntime() })
     await screen.findByRole('heading', { level: 1, name: 'Dashboard' })
 
     const primaryNav = screen.getByRole('navigation', { name: /primary/i })
@@ -75,15 +79,23 @@ describe('application shell and route tree', () => {
   })
 
   it('redirects the root route to signup for anonymous visitors', async () => {
-    renderAppAt('/')
+    renderAppAt('/', { sessionRuntime: createAnonymousSessionRuntime() })
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Create your account' }),
     ).toBeInTheDocument()
   })
 
+  it('redirects an authenticated visit to the root route to Dashboard', async () => {
+    renderAppAt('/', { sessionRuntime: createAuthenticatedSessionRuntime() })
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument()
+  })
+
   it('renders a contextual not-found state inside the app shell', async () => {
-    renderAppAt('/this-route-does-not-exist')
+    renderAppAt('/this-route-does-not-exist', {
+      sessionRuntime: createAuthenticatedSessionRuntime(),
+    })
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Page not found' }),

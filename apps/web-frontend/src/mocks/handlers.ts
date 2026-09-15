@@ -321,7 +321,10 @@ export function createMockHandlers(backend: MockBackend): RequestHandler[] {
     ),
 
     // --- Strict unhandled API failure ------------------------------------
-    http.all(/\/api\/.+/u, ({ request }) =>
+    // Match only browser-facing service prefixes. A broad `/api/` regex would
+    // also intercept Vite source modules under any `.../api/...` folder and
+    // break dynamic imports.
+    http.all('/api/*', ({ request }) =>
       HttpResponse.json(
         {
           error: {

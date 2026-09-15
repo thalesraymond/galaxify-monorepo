@@ -2,7 +2,7 @@ import { useId, type InputHTMLAttributes, type ReactNode } from 'react'
 import styles from './Field.module.css'
 export type FieldProps = InputHTMLAttributes<HTMLInputElement> & {
   label: string
-  error?: string
+  error?: string | undefined
   hint?: ReactNode
 }
 export function Field({ error, hint, id, label, ...input }: FieldProps) {

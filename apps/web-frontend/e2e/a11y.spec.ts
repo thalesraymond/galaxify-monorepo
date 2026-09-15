@@ -1,6 +1,8 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
+import { expectAuthenticatedDashboard, seedAuthenticated } from './session'
+
 /** WCAG A/AA rule tags. A violation on any of these blocks the gate. */
 const wcagLevelAaTags = new Set(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
 
@@ -21,12 +23,36 @@ async function expectNoWcagAaViolations(page: Page) {
 }
 
 test('the responsive shell has no WCAG A/AA accessibility violations', async ({ page }) => {
+  await seedAuthenticated(page)
   for (const viewport of representativeViewports) {
     await page.setViewportSize(viewport)
     await page.goto('/dashboard')
-    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
+    await expectAuthenticatedDashboard(page)
     await expectNoWcagAaViolations(page)
   }
+})
+
+test('signup, login, and Profile have no WCAG A/AA accessibility violations', async ({ page }) => {
+  for (const viewport of representativeViewports) {
+    await page.setViewportSize(viewport)
+
+    await page.goto('/signup')
+    await expect(page.getByRole('heading', { level: 1, name: 'Create your account' })).toBeVisible()
+    await expectNoWcagAaViolations(page)
+
+    await page.goto('/login')
+    await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible()
+    await expectNoWcagAaViolations(page)
+  }
+
+  await seedAuthenticated(page)
+  await page.goto('/profile')
+  await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible()
+  await expectNoWcagAaViolations(page)
+
+  await page.getByRole('button', { name: 'Delete account' }).click()
+  await expect(page.getByRole('dialog', { name: 'Delete your account' })).toBeVisible()
+  await expectNoWcagAaViolations(page)
 })
 
 test('form, loading, empty, error, and dialog states have no WCAG A/AA violations', async ({

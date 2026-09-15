@@ -1,5 +1,6 @@
-import { Link, NavLink, Outlet } from 'react-router'
+import { Link, NavLink, Outlet, useNavigate } from 'react-router'
 
+import { useSession } from '@/features/auth'
 import { Menu } from '@/shared/ui'
 import { SkipLink } from '@/shared/ui/SkipLink'
 import { classNames } from '@/shared/ui/classNames'
@@ -37,6 +38,33 @@ function PrimaryNavigation({ mobile = false }: { mobile?: boolean }) {
   )
 }
 
+/**
+ * Account menu shared by the desktop sidebar and mobile header. Logout always
+ * completes locally, even when revocation cannot be confirmed
+ * (`web-frontend.md` §4.2).
+ */
+function AccountMenu() {
+  const { manager } = useSession()
+  const navigate = useNavigate()
+
+  return (
+    <Menu label="Account">
+      <Link role="menuitem" to="/profile">
+        Profile
+      </Link>
+      <button
+        role="menuitem"
+        type="button"
+        onClick={() => {
+          void manager.logout().then(() => navigate('/login', { replace: true }))
+        }}
+      >
+        Log out
+      </button>
+    </Menu>
+  )
+}
+
 /** Responsive authenticated shell with persistent desktop navigation and a mobile task-first bottom bar. */
 export function AppShell() {
   return (
@@ -48,28 +76,14 @@ export function AppShell() {
         </Link>
         <PrimaryNavigation />
         <div className={styles.sidebarAccount}>
-          <Menu label="Account">
-            <Link role="menuitem" to="/profile">
-              Profile
-            </Link>
-            <button role="menuitem" type="button">
-              Log out
-            </button>
-          </Menu>
+          <AccountMenu />
         </div>
       </aside>
       <header className={styles.mobileHeader}>
         <Link className={styles.brand} to="/dashboard">
           <span aria-hidden="true">✦</span> Galaxify
         </Link>
-        <Menu label="Account">
-          <Link role="menuitem" to="/profile">
-            Profile
-          </Link>
-          <button role="menuitem" type="button">
-            Log out
-          </button>
-        </Menu>
+        <AccountMenu />
       </header>
       <main className={styles.main} id="main-content" tabIndex={-1}>
         <Outlet />

@@ -16,3 +16,12 @@
   color: var(--color-text-muted-dark);
   font-size: 1.125rem;
 }
+
+/* Warm logbook surfaces need ink text to keep WCAG AA contrast. */
+.on-light .title {
+  color: var(--color-ink);
+}
+
+.on-light .description {
+  color: var(--color-text-muted-light);
+}

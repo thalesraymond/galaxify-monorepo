@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { seedAuthenticated } from './session'
+
 const shellViewports = [
   { name: 'reflow', width: 320, height: 700 },
   { name: 'mobile', width: 390, height: 844 },
@@ -16,6 +18,7 @@ test.describe('shell visual baselines', () => {
       page,
     }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height })
+      await seedAuthenticated(page)
       await page.goto('/dashboard')
       await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
 
