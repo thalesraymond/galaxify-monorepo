@@ -4,17 +4,26 @@
 # formatting, strict types, zero-warning lint, coverage, production build,
 # mock-backed E2E, accessibility, visual regression, and performance. All E2E
 # journeys are MSW-backed (the real stack is never required in CI).
+#
+# Dependency-propagation rule: the gate also consumes repository inputs
+# outside apps/web-frontend — docs/openapi/*.yaml via `api:check` and the
+# root scripts/dev.test.mjs via `test:orchestration` — so changes to those
+# paths trigger the gate too.
 name: CI web-frontend
 
 on:
   pull_request:
     paths:
       - 'apps/web-frontend/**'
+      - 'docs/openapi/**'
+      - 'scripts/**'
   push:
     branches:
       - main
     paths:
       - 'apps/web-frontend/**'
+      - 'docs/openapi/**'
+      - 'scripts/**'
   workflow_dispatch:
 
 concurrency:
@@ -46,12 +55,15 @@ jobs:
           filters: |
             affected:
               - 'apps/web-frontend/**'
+              - 'docs/openapi/**'
+              - 'scripts/**'
 
   gate:
     name: Frontend gate
     needs: changes
     if: needs.changes.outputs.affected == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v7

@@ -68,6 +68,4 @@ jobs:
       - name: Verify web frontend build
         if: ${{ steps.release.outputs.releases_created && contains(steps.release.outputs.paths_released, 'apps/web-frontend') }}
         run: |
-          cd apps/web-frontend
-          npm ci
-          npm run build
+          (cd apps/web-frontend && npm ci && npm run build)
