@@ -48,6 +48,13 @@ async function seedAuthenticatedSession(): Promise<void> {
 /**
  * Renders at `/ship` with real timers. Handler overrides registered through
  * `setupHandlers` are applied after the server reset so they are not cleared.
+ *
+ * The mock anchors session tokens to the injectable scheduler clock (mock
+ * change landed via #156), so the browser clock is aligned with the
+ * scheduler's fixed epoch before seeding — otherwise the frontend session
+ * layer would see the issued access token as already expired (real wall clock
+ * is far past the fixed epoch). Fake-timer renders anchor the clock through
+ * `enableFakeTimers(FIXED_MOCK_EPOCH_MS)` instead.
  */
 async function renderShip(
   scenario: MockScenarioName = 'established-player',
@@ -59,6 +66,7 @@ async function renderShip(
     setupHandlers()
   }
   window.localStorage.clear()
+  vi.setSystemTime(new Date(FIXED_MOCK_EPOCH_MS))
   await seedAuthenticatedSession()
   renderAppAt('/ship')
   expect(await screen.findByRole('heading', { level: 1, name: 'Ship' })).toBeInTheDocument()
@@ -125,6 +133,11 @@ describe('Ship page', () => {
   })
 
   it('disables only the repair control while pending and keeps navigation usable', async () => {
+    // Pre-load the Dailies route chunk: a first-time dynamic import of the
+    // large dailies module graph resolves through Vite's asynchronous module
+    // transforms, which stall under Vitest fake timers. Loading the module
+    // before enabling fake timers keeps the in-test navigation deterministic.
+    await import('@/features/dailies')
     enableFakeTimers(FIXED_MOCK_EPOCH_MS)
     await renderShipFake('damaged-ship', () => {
       server.server.use(
