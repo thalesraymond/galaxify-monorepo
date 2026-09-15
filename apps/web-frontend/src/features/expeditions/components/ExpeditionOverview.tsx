@@ -17,28 +17,24 @@ import {
 import { ExpeditionProgress } from './ExpeditionProgress'
 import { LaunchForm } from './LaunchForm'
 import { MaterialsBalance, type MaterialsSync } from './MaterialsBalance'
+import { boundedResolvePollMs } from './polling'
 import { PreparingPanel, ResultPanel } from './ResultPanel'
+import { StaleNotice } from './StaleNotice'
 import { useShipReconciliation } from './useShipReconciliation'
 import styles from './overview.module.css'
 
-const NO_DETAIL_QUERY_KEY = ['expeditions', 'detail', 'none'] as const
-
-/**
- * Bounded current-Expedition poll derived from `resolve_at`: it never polls
- * when there is no in-flight Expedition, and it tightens near resolution.
- */
+/** Bounded current-Expedition poll: stops once there is no in-flight Expedition. */
 function currentPollInterval(data: CurrentExpedition | undefined): number | false {
   if (data?.kind !== 'current' || data.expedition.status !== 'IN_FLIGHT') {
     return false
   }
-  const remaining = Date.parse(data.expedition.resolve_at) - Date.now()
-  return Math.max(1_000, Math.min(60_000, remaining))
+  return boundedResolvePollMs(data.expedition.resolve_at)
 }
 
 /**
  * `/expeditions` — mutually exclusive launch vs in-flight state driven by the
  * authoritative current Expedition, with bounded Ship reconciliation on launch
- * and at resolution (§5.6, §3.4).
+ * and at resolution (§5.6, §3.4) and stale-refresh labeling (§3.2).
  */
 export function ExpeditionOverview() {
   const transport = useApiTransport()
@@ -79,27 +75,7 @@ export function ExpeditionOverview() {
     }
   }, [currentQuery.data, shipQuery.data])
 
-  const resolvedDetail = useQuery({
-    queryKey:
-      resolved === undefined ? NO_DETAIL_QUERY_KEY : expeditionDetailQueryKeyFor(resolved.base.id),
-    queryFn: ({ signal }) => getExpeditionById(transport, resolved?.base.id ?? '', signal),
-    enabled: resolved !== undefined,
-  })
-
-  // Bounded Ship reward reconciliation after a newly observed resolution.
-  const rewardExpected =
-    resolved?.balanceAtResolution !== undefined && resolvedDetail.data?.result !== undefined
-      ? resolved.balanceAtResolution + resolvedDetail.data.result.material_reward.materials
-      : undefined
-  const rewardProbe = useShipReconciliation({
-    enabled: rewardExpected !== undefined,
-    expectedBalance: rewardExpected,
-  })
-  const rewardSync: MaterialsSync = {
-    balance,
-    phase: rewardProbe.phase,
-    onRetry: rewardProbe.retry,
-  }
+  const currentStale = currentQuery.isRefetchError
 
   // Bounded Ship deduction reconciliation after a launch (§3.4).
   const [deduction, setDeduction] = useState<{ expectedBalance: number | undefined } | undefined>(
@@ -108,6 +84,7 @@ export function ExpeditionOverview() {
   const deductionProbe = useShipReconciliation({
     enabled: deduction !== undefined,
     expectedBalance: deduction?.expectedBalance,
+    direction: 'decrease',
   })
   const deductionSync: MaterialsSync = {
     balance,
@@ -127,7 +104,7 @@ export function ExpeditionOverview() {
   if (currentQuery.isPending) {
     return <Skeleton lines={4} />
   }
-  if (currentQuery.isError) {
+  if (currentQuery.isError && currentQuery.data === undefined) {
     return (
       <UnavailableState
         title="Expeditions are unavailable"
@@ -152,7 +129,20 @@ export function ExpeditionOverview() {
   if (current.kind === 'current') {
     if (current.expedition.status === 'IN_FLIGHT') {
       return (
-        <ExpeditionProgress expedition={current.expedition} showLinks balanceSync={deductionSync} />
+        <div className={styles.overview}>
+          {currentStale ? (
+            <StaleNotice
+              onRetry={() => {
+                void currentQuery.refetch()
+              }}
+            />
+          ) : null}
+          <ExpeditionProgress
+            expedition={current.expedition}
+            showLinks
+            balanceSync={deductionSync}
+          />
+        </div>
       )
     }
     // Defensive: an authoritative current Expedition that is already resolved
@@ -163,13 +153,62 @@ export function ExpeditionOverview() {
   // No Expedition is current.
   return (
     <div className={styles.overview}>
+      {currentStale ? (
+        <StaleNotice
+          onRetry={() => {
+            void currentQuery.refetch()
+          }}
+        />
+      ) : null}
       {resolved !== undefined ? (
-        <>
-          <ResultPanel expeditionId={resolved.base.id} celebrate />
-          <MaterialsBalance sync={rewardSync} />
-        </>
+        <ResolvedMission
+          balance={balance}
+          base={resolved.base}
+          balanceAtResolution={resolved.balanceAtResolution}
+        />
       ) : null}
       <LaunchForm balance={balance} onLaunched={handleLaunched} />
     </div>
+  )
+}
+
+/**
+ * Result + bounded Ship reward reconciliation for an Expedition that resolved
+ * while this overview was mounted. The detail query shares the cache with
+ * `ResultPanel`, so only one request is issued.
+ */
+function ResolvedMission({
+  base,
+  balanceAtResolution,
+  balance,
+}: {
+  base: Expedition
+  balanceAtResolution: number | undefined
+  balance: number | undefined
+}) {
+  const transport = useApiTransport()
+  const detail = useQuery({
+    queryKey: expeditionDetailQueryKeyFor(base.id),
+    queryFn: ({ signal }) => getExpeditionById(transport, base.id, signal),
+  })
+  const rewardExpected =
+    balanceAtResolution !== undefined && detail.data?.result !== undefined
+      ? balanceAtResolution + detail.data.result.material_reward.materials
+      : undefined
+  const rewardProbe = useShipReconciliation({
+    enabled: rewardExpected !== undefined,
+    expectedBalance: rewardExpected,
+    direction: 'increase',
+  })
+  const rewardSync: MaterialsSync = {
+    balance,
+    phase: rewardProbe.phase,
+    onRetry: rewardProbe.retry,
+  }
+  return (
+    <>
+      <ResultPanel expeditionId={base.id} celebrate />
+      <MaterialsBalance sync={rewardSync} />
+    </>
   )
 }

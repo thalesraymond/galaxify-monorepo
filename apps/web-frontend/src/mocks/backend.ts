@@ -57,6 +57,15 @@ const PROVISIONING_WINDOW_MS = 5_000
 const PROPAGATION_WINDOW_MS = 2_000
 
 /**
+ * Deterministic Expedition resolution rewards: a successful Expedition pays
+ * twice the investment; a failed one returns a recovery of half the invested
+ * materials (floored). Both are fixed rules, never random
+ * (`web-frontend-delivery.md` §7).
+ */
+export const SUCCESS_REWARD_MULTIPLIER = 2
+export const FAILURE_REWARD_RECOVERY_RATIO = 0.5
+
+/**
  * The frontend's bounded reconciliation window (web-frontend.md §3.4) is ~8s.
  * The `delayed-propagation` scenario pushes its window far beyond it so the UI
  * must surface an explicit `Update delayed` / stale state.
@@ -893,9 +902,12 @@ export class MockBackend {
 
   /**
    * Resolves an in-flight current Expedition deterministically once the clock
-   * passes its `resolve_at`: outcome is always SUCCESS, the reward is twice the
-   * investment (matching `createResolvedExpedition`), and the current pointer
-   * is cleared so `GET /expeditions/current` becomes a typed `none`. The Ship
+   * passes its `resolve_at`: the outcome follows `success_chance` without
+   * randomness (at least 50% succeeds, otherwise it fails), success pays
+   * `SUCCESS_REWARD_MULTIPLIER` × the investment (matching
+   * `createResolvedExpedition`), and failure returns a deterministic recovery
+   * of `FAILURE_REWARD_RECOVERY_RATIO` × the investment. The current pointer is
+   * cleared so `GET /expeditions/current` becomes a typed `none`; the Ship
    * reward lands through the configured propagation window via
    * `mutations.expeditionResolvedAt`/`expeditionReward`.
    */
@@ -910,18 +922,22 @@ export class MockBackend {
     }
     const resolvedAt = new Date(resolveAtMs).toISOString()
     const index = this.state.expeditions.findIndex((expedition) => expedition.id === current.id)
-    current.status = 'RESOLVED'
+    const succeeded = current.success_chance >= 0.5
+    const reward = succeeded
+      ? current.materials_invested * SUCCESS_REWARD_MULTIPLIER
+      : Math.floor(current.materials_invested * FAILURE_REWARD_RECOVERY_RATIO)
+    current.status = succeeded ? 'RESOLVED' : 'FAILED'
     current.resolved_at = resolvedAt
     current.result = {
       id: fixedUuid(8, index + 1),
       expedition_id: current.id,
-      outcome: 'SUCCESS',
-      material_reward: { materials: current.materials_invested * 2 },
+      outcome: succeeded ? 'SUCCESS' : 'FAILURE',
+      material_reward: { materials: reward },
       created_at: resolvedAt,
     }
     this.state.currentExpeditionId = null
     this.state.mutations.expeditionResolvedAt = resolveAtMs
-    this.state.mutations.expeditionReward = current.materials_invested * 2
+    this.state.mutations.expeditionReward = reward
     this.persist()
   }
 

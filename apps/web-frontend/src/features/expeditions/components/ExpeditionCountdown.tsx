@@ -9,8 +9,10 @@ function remainingMsUntil(resolveAt: string): number {
 
 /**
  * Accessible remaining-time countdown. The visible text ticks every second but
- * the element carries a static `aria-label`, so screen readers never announce
- * individual ticks (`web-frontend.md` §5.6; `DESIGN.md` accessibility).
+ * the element is never a live region: screen readers read the current value
+ * from the visually-hidden "Time remaining:" label plus the ticking digits
+ * (e.g. on focus) and are never announced individual ticks
+ * (`web-frontend.md` §5.6; `DESIGN.md` accessibility).
  */
 export function ExpeditionCountdown({ resolveAt }: { resolveAt: string }) {
   const [remainingMs, setRemainingMs] = useState(() => remainingMsUntil(resolveAt))
@@ -27,8 +29,11 @@ export function ExpeditionCountdown({ resolveAt }: { resolveAt: string }) {
   }, [resolveAt])
 
   return (
-    <p className={styles.countdown} aria-label="Time remaining">
-      <span className={styles.prefix}>Resolves in</span>
+    <p className={styles.countdown}>
+      <span className={styles.srOnly}>Time remaining: </span>
+      <span aria-hidden="true" className={styles.prefix}>
+        Resolves in
+      </span>
       <span className={styles.digits}>{formatCountdown(remainingMs)}</span>
     </p>
   )

@@ -1,76 +1,49 @@
-import { useEffect, useState } from 'react'
-
 import { useQueryClient } from '@tanstack/react-query'
 
 import { shipQueryKey, type ShipState } from '@/features/ship'
 
-export type ShipReconciliationPhase = 'idle' | 'updating' | 'delayed'
+import { useBoundedProbe, type BoundedProbePhase } from './useProbeSchedule'
+
+export type ShipReconciliationPhase = BoundedProbePhase
 
 /**
- * Bounded downstream reconciliation of a Ship balance change (§3.4,
- * web-frontend.md): probes the authoritative Ship query at approximately 1, 2,
- * 4, and 8 seconds while the page is visible and online, stops as soon as
- * `expectedBalance` is observed, and expires into a local `delayed` state with
- * a player-initiated retry. Never replays a command.
+ * Which direction the authoritative balance must move for the expected change
+ * to count as observed: `decrease` for a launch deduction, `increase` for a
+ * resolution reward.
+ */
+export type ShipReconciliationDirection = 'decrease' | 'increase'
+
+/**
+ * Bounded Ship balance reconciliation through the shared §3.4 probe schedule:
+ * immediate then ≈1/2/4/8s cumulative, pausing while the tab is hidden or
+ * offline, stopping only when the authoritative balance reflects the expected
+ * change (a deduction drops to the post-launch balance; a reward rises to the
+ * post-resolution balance), and expiring into `Update delayed` with a local
+ * Retry (§3.4, §3.2).
  */
 export function useShipReconciliation({
   enabled,
   expectedBalance,
+  direction,
 }: {
   enabled: boolean
   expectedBalance: number | undefined
+  direction: ShipReconciliationDirection
 }): { phase: ShipReconciliationPhase; retry: () => void } {
   const queryClient = useQueryClient()
-  const [phase, setPhase] = useState<ShipReconciliationPhase>('idle')
-  const [attempt, setAttempt] = useState(0)
 
-  useEffect(() => {
-    if (!enabled || expectedBalance === undefined) {
-      return
-    }
-    let cancelled = false
-
-    const run = async (): Promise<void> => {
-      setPhase('updating')
-      for (const delay of [1_000, 2_000, 4_000, 8_000]) {
-        await sleep(delay)
-        if (cancelled) {
-          return
-        }
-        // Pause reconciliation while the tab is hidden or the player offline.
-        if (document.visibilityState !== 'visible' || !navigator.onLine) {
-          continue
-        }
-        await queryClient.invalidateQueries({ queryKey: shipQueryKey })
-        await queryClient.refetchQueries({ queryKey: shipQueryKey })
-        const ship = queryClient.getQueryData<ShipState>(shipQueryKey)
-        if (ship?.kind === 'ready' && ship.ship.materials_balance >= expectedBalance) {
-          setPhase('idle')
-          return
-        }
+  return useBoundedProbe({
+    enabled: enabled && expectedBalance !== undefined,
+    probe: async () => {
+      await queryClient.invalidateQueries({ queryKey: shipQueryKey })
+      await queryClient.refetchQueries({ queryKey: shipQueryKey })
+      const ship = queryClient.getQueryData<ShipState>(shipQueryKey)
+      if (ship?.kind !== 'ready' || expectedBalance === undefined) {
+        return false
       }
-      setPhase('delayed')
-    }
-
-    void run()
-    return () => {
-      cancelled = true
-    }
-  }, [enabled, expectedBalance, attempt, queryClient])
-
-  const effectivePhase: ShipReconciliationPhase =
-    enabled && expectedBalance !== undefined ? phase : 'idle'
-
-  return {
-    phase: effectivePhase,
-    retry: () => {
-      setAttempt((value) => value + 1)
+      return direction === 'decrease'
+        ? ship.ship.materials_balance <= expectedBalance
+        : ship.ship.materials_balance >= expectedBalance
     },
-  }
-}
-
-function sleep(delayMs: number): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, delayMs)
   })
 }

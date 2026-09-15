@@ -90,9 +90,11 @@
 
 /* Restrained 300–500 ms celebration for a newly observed Expedition result
    (DESIGN.md §Motion). Never required for comprehension; disabled for reduced
-   motion. */
+   motion. `--celebration-duration` is the single visual source of truth and is
+   mirrored by CELEBRATION_DURATION_MS in useCelebration.ts. */
 .celebrate {
-  animation: result-celebration 450ms var(--ease-out);
+  --celebration-duration: 450ms;
+  animation: result-celebration var(--celebration-duration) var(--ease-out);
 }
 
 @keyframes result-celebration {
@@ -111,4 +113,32 @@
   .celebrate {
     animation: none;
   }
+}
+
+/* Stale-refresh label: keeps confirmed data visible with a non-color cue (§3.2). */
+.staleNotice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-control);
+  background: var(--color-danger-surface);
+  color: var(--color-text-on-danger);
+}
+
+.staleNotice span {
+  font-weight: 700;
+}
+
+/* Result-lag reconciliation surface while the typed result is pending. */
+.pendingResult {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.pendingResult p {
+  margin: 0;
 }

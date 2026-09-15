@@ -38,7 +38,6 @@ const BLOCKER_MESSAGES: Readonly<Record<string, string>> = {
 
 type LaunchError =
   | { readonly kind: 'conflict'; readonly message: string }
-  | { readonly kind: 'blocker'; readonly message: string }
   | { readonly kind: 'preparing' }
   | { readonly kind: 'unavailable'; readonly message: string }
 
@@ -140,7 +139,11 @@ export function LaunchForm({
         })
         return
       }
-      const freshQuote = quoteQuery.data
+      // Read the POST-revalidation quote from the cache, never the pre-click
+      // render's closure.
+      const freshQuote = queryClient.getQueryData<ExpeditionQuote>(
+        expeditionQuoteQueryKeyFor(investment),
+      )
       if (freshQuote !== undefined && (freshQuote.blocker !== null || !freshQuote.eligible)) {
         setLaunchError({
           kind: 'conflict',
@@ -166,9 +169,18 @@ export function LaunchForm({
             'Another Expedition started before yours. Review the updated facts and launch again.',
         })
       } else if (isApiHttpError(error, 'EXPEDITION_INSUFFICIENT_MATERIALS')) {
+        // Stale private cache rejection: refresh the authoritative facts and
+        // require an explicit player-initiated retry — never auto-replay.
+        void queryClient.invalidateQueries({ queryKey: shipQueryKey })
+        if (quoteEnabled) {
+          void queryClient.invalidateQueries({
+            queryKey: expeditionQuoteQueryKeyFor(investment),
+          })
+        }
         setLaunchError({
-          kind: 'blocker',
-          message: 'You do not have enough materials to invest that amount.',
+          kind: 'conflict',
+          message:
+            'You do not have enough materials to invest that amount. Review your updated balance and launch again.',
         })
       } else if (isApiHttpError(error, 'EXPEDITION_SHIP_STATE_NOT_READY')) {
         setLaunchError({ kind: 'preparing' })
@@ -260,7 +272,6 @@ export function LaunchForm({
             </Button>
           </div>
         ) : null}
-        {launchError?.kind === 'blocker' ? <FormError>{launchError.message}</FormError> : null}
         {launchError?.kind === 'preparing' ? (
           <div className={styles.errorBlock}>
             <StatusBadge status="preparing" />

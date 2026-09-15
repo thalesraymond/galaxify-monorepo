@@ -1,27 +1,12 @@
 import { act } from '@testing-library/react'
 import { vi } from 'vitest'
 
-import { SESSION_REFRESH_STORAGE_KEY } from '@/features/auth'
+export { seedAuthenticatedSession } from './sessionTestUtils'
 
 /**
- * Seeds a real authenticated session through the mock backend, mirroring the
- * Profile journey (login fetch → persisted refresh token) so the app shell
- * bootstraps over MSW exactly like the browser.
+ * Advances Vitest fake timers inside `act`, flushing microtasks as it goes.
+ * Only valid after `vi.useFakeTimers(...)` has been enabled for the test.
  */
-export async function seedAuthenticatedSession(): Promise<void> {
-  const response = await fetch('/api/user/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: 'captain@galaxify.test', password: 'password123' }),
-  })
-  const body = (await response.json()) as { refresh_token: string }
-  window.localStorage.setItem(
-    SESSION_REFRESH_STORAGE_KEY,
-    JSON.stringify({ version: 1, refreshToken: body.refresh_token }),
-  )
-}
-
-/** Advances Vitest fake timers inside `act`, flushing microtasks as it goes. */
 export async function advanceFakeTime(ms: number): Promise<void> {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(ms)

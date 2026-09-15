@@ -11,6 +11,7 @@ import {
   fixedUuid,
   onUnhandledMockRequest,
 } from '@/mocks'
+import { renderAppAt } from '@/test/renderApp'
 import { renderExpeditionRoute } from '@/test/renderExpeditionRoute'
 import { advanceFakeTime, advanceUntil, seedAuthenticatedSession } from '@/test/expeditionTestUtils'
 
@@ -21,23 +22,49 @@ const HOUR = 60 * 60 * 1000
 let server: MockTestServer
 let scheduler: ManualMockScheduler
 
+function setVisibility(visible: boolean): void {
+  Object.defineProperty(document, 'visibilityState', {
+    configurable: true,
+    get: () => (visible ? 'visible' : 'hidden'),
+  })
+}
+
 beforeEach(async () => {
   scheduler = new ManualMockScheduler(FIXED_MOCK_EPOCH_MS)
   server = createMockTestServer({ scenario: 'established-player', scheduler })
   server.server.listen({ onUnhandledRequest: onUnhandledMockRequest })
   window.localStorage.clear()
-  vi.useFakeTimers()
-  vi.setSystemTime(FIXED_MOCK_EPOCH_MS)
+  // Mock only Date (not timers): lazy routes and RTL waitFor keep working,
+  // while counts and probes stay anchored at the fixed epoch.
+  vi.setSystemTime(new Date(FIXED_MOCK_EPOCH_MS))
+  setVisibility(true)
   await seedAuthenticatedSession()
 })
 
 afterEach(() => {
   vi.useRealTimers()
+  setVisibility(true)
   server.server.resetHandlers()
   server.server.close()
 })
 
-async function renderOverview() {
+/** Switches to full fake timers (anchored at the fixed epoch) to drive probes. */
+function enableProbeTimers(): void {
+  vi.useFakeTimers({ now: new Date(FIXED_MOCK_EPOCH_MS) })
+}
+
+async function renderOverview(): Promise<void> {
+  renderAppAt('/expeditions')
+  await screen.findByRole('heading', { level: 1, name: 'Expeditions' })
+}
+
+/**
+ * Fake-timer variant (see renderExpeditionRoute.tsx): journeys whose timers
+ * (the resolve-derived poll, countdown ticks, stale-refresh) are scheduled at
+ * mount need fake timers from the very first render.
+ */
+async function renderOverviewFake(): Promise<void> {
+  enableProbeTimers()
   renderExpeditionRoute('/expeditions')
   await advanceUntil(
     () => screen.queryByRole('heading', { level: 1, name: 'Expeditions' }) !== null,
@@ -53,12 +80,12 @@ describe('Expeditions overview — launch form', () => {
   it('shows the exact balance, shortcuts, and a live quote for the investment', async () => {
     await renderOverview()
 
-    await advanceUntil(() => screen.queryByText('You have 250 materials') !== null, 'the balance')
+    await screen.findByText('You have 250 materials')
     expect(screen.getByRole('heading', { name: 'Launch an Expedition' })).toBeInTheDocument()
 
     changeInvestment('40')
 
-    await advanceUntil(() => screen.queryByText('Projected balance') !== null, 'the quote')
+    await screen.findByText('Projected balance')
     expect(screen.getByText('210 materials')).toBeInTheDocument()
     expect(screen.getByText('15%')).toBeInTheDocument()
     expect(screen.getByText(/Around 10:00 AM, within ±30 min/)).toBeInTheDocument()
@@ -74,7 +101,7 @@ describe('Expeditions overview — launch form', () => {
     fireEvent.click(min)
     expect(screen.getByLabelText('Materials to invest')).toHaveValue(1)
     expect(min).toHaveAttribute('aria-pressed', 'true')
-    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'a fresh quote')
+    await screen.findByText('Ready to launch.')
     // 25% of 250 rounds to 63 and 50% to 125.
     fireEvent.click(quarter)
     expect(screen.getByLabelText('Materials to invest')).toHaveValue(63)
@@ -84,8 +111,10 @@ describe('Expeditions overview — launch form', () => {
 
   it('launches pessimistically and reconciles the Ship deduction until observed', async () => {
     await renderOverview()
+    await screen.findByText('You have 250 materials')
     changeInvestment('40')
-    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'an eligible quote')
+    await screen.findByText('Ready to launch.')
+    enableProbeTimers()
 
     fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
 
@@ -94,9 +123,6 @@ describe('Expeditions overview — launch form', () => {
       'the in-flight view',
     )
     expect(screen.getByRole('heading', { name: 'Expedition in flight' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Time remaining')).toHaveTextContent(
-      /^Resolves in(\d+h )?\d{2}m \d{2}s$/,
-    )
     expect(screen.getByText(/Resolves at 10:00 AM/)).toBeInTheDocument()
     expect(screen.getByText('40 materials')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'View Expedition detail' })).toHaveAttribute(
@@ -108,12 +134,82 @@ describe('Expeditions overview — launch form', () => {
       '/expeditions/history',
     )
 
-    // The deduction lands after the mock propagation window; Updating… stays
-    // adjacent to the materials value until it is observed (§3.4).
+    // The immediate and 1s/2s probes see the untouched balance: Updating… stays
+    // adjacent to the materials value (§3.4).
     expect(screen.getByText('Updating…')).toBeInTheDocument()
+    await advanceFakeTime(3_100)
+    expect(screen.getByText('Updating…')).toBeInTheDocument()
+    expect(screen.getByText(/Available materials: 250/)).toBeInTheDocument()
+
+    // The mock applies the deduction after its propagation window; the next
+    // probe observes it and the sync stops.
     scheduler.advance(2_001)
-    await advanceUntil(() => screen.queryByText('Updating…') === null, 'the deduction to land')
-    expect(screen.getByText(/Available materials: 210/)).toBeInTheDocument()
+    await advanceUntil(
+      () => screen.queryByText(/Available materials: 210/) !== null,
+      'the deduction to land',
+    )
+    expect(screen.queryByText('Updating…')).not.toBeInTheDocument()
+  })
+
+  it('pauses the probe schedule while hidden and resumes without burning budget', async () => {
+    await renderOverview()
+    await screen.findByText('You have 250 materials')
+    changeInvestment('40')
+    await screen.findByText('Ready to launch.')
+    enableProbeTimers()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
+    await advanceUntil(
+      () => screen.queryByText('Expedition in flight') !== null,
+      'the in-flight view',
+    )
+    await advanceUntil(() => screen.queryByText('Updating…') !== null, 'the updating badge')
+    expect(screen.getByText(/Available materials: 250/)).toBeInTheDocument()
+
+    // Hidden for 10s: the 1/2/4/8s budget must not burn or expire (§3.2).
+    setVisibility(false)
+    await advanceFakeTime(10_000)
+    expect(screen.getByText('Updating…')).toBeInTheDocument()
+    expect(screen.queryByText('Update delayed')).not.toBeInTheDocument()
+    expect(screen.getByText(/Available materials: 250/)).toBeInTheDocument()
+
+    // Visible again with the deduction available: the first mark probe lands.
+    scheduler.advance(2_001)
+    setVisibility(true)
+    await advanceUntil(
+      () => screen.queryByText(/Available materials: 210/) !== null,
+      'the deduction to land after resume',
+    )
+    expect(screen.queryByText('Updating…')).not.toBeInTheDocument()
+  })
+
+  it('expires into Update delayed with a local Retry when the deduction never lands', async () => {
+    server.reset('delayed-propagation')
+    await seedAuthenticatedSession()
+    await renderOverview()
+    await screen.findByText('You have 250 materials')
+    changeInvestment('40')
+    await screen.findByText('Ready to launch.')
+    enableProbeTimers()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
+    await advanceUntil(
+      () => screen.queryByText('Expedition in flight') !== null,
+      'the in-flight view',
+    )
+    expect(screen.getByText('Updating…')).toBeInTheDocument()
+
+    // The consumer never catches up, so the bounded schedule expires.
+    scheduler.advance(5 * 60 * 1000 + 1)
+    await advanceFakeTime(8_500)
+    expect(screen.getByText('Update delayed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    expect(screen.getByText(/Available materials: 250/)).toBeInTheDocument()
+
+    // A player-initiated Retry re-runs the bounded schedule; still stale.
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await advanceFakeTime(8_500)
+    expect(screen.getByText('Update delayed')).toBeInTheDocument()
   })
 
   it('surfaces a launch conflict and never replays the launch automatically', async () => {
@@ -133,8 +229,10 @@ describe('Expeditions overview — launch form', () => {
       }),
     )
     await renderOverview()
+    await screen.findByText('You have 250 materials')
     changeInvestment('40')
-    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'an eligible quote')
+    await screen.findByText('Ready to launch.')
+    enableProbeTimers()
 
     fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
 
@@ -156,30 +254,67 @@ describe('Expeditions overview — launch form', () => {
     )
   })
 
-  it('keeps an insufficient-materials launch failure inline', async () => {
+  it('turns an insufficient-materials rejection into a player-initiated retry', async () => {
+    let launchCalls = 0
     server.server.use(
-      http.post('/api/expedition/expeditions/launch', () =>
-        HttpResponse.json(
+      http.post('/api/expedition/expeditions/launch', () => {
+        launchCalls += 1
+        return HttpResponse.json(
           {
             error: { code: 'EXPEDITION_INSUFFICIENT_MATERIALS', message: 'Not enough materials.' },
           },
           { status: 422 },
-        ),
-      ),
+        )
+      }),
     )
     await renderOverview()
+    await screen.findByText('You have 250 materials')
     changeInvestment('40')
-    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'an eligible quote')
+    await screen.findByText('Ready to launch.')
+    enableProbeTimers()
 
     fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
 
     await advanceUntil(
-      () => screen.queryByText('You do not have enough materials to invest that amount.') !== null,
-      'the inline blocker message',
+      () => screen.queryByText(/You do not have enough materials to invest that amount/) !== null,
+      'the retryable rejection message',
     )
-    expect(
-      screen.getByText('You do not have enough materials to invest that amount.'),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Try launching again' })).toBeInTheDocument()
+    expect(launchCalls).toBe(1)
+    await advanceFakeTime(3_000)
+    expect(launchCalls).toBe(1)
+
+    // Facts were refreshed and the player-initiated retry launches successfully.
+    server.server.resetHandlers()
+    fireEvent.click(screen.getByRole('button', { name: 'Try launching again' }))
+    await advanceUntil(
+      () => screen.queryByText('Expedition in flight') !== null,
+      'the retried launch',
+    )
+  })
+
+  it('detects an out-of-date quote from the post-revalidation data', async () => {
+    let quoteCalls = 0
+    server.server.use(
+      http.get('/api/expedition/expeditions/quote', ({ request }) => {
+        quoteCalls += 1
+        const materials = Number(new URL(request.url).searchParams.get('materials_invested'))
+        return HttpResponse.json(quoteBody(materials, quoteCalls > 1))
+      }),
+    )
+    await renderOverview()
+    await screen.findByText('You have 250 materials')
+    changeInvestment('40')
+    await screen.findByText('Ready to launch.')
+    enableProbeTimers()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
+
+    await advanceUntil(
+      () => screen.queryByText(/Your quote is out of date/) !== null,
+      'the stale-quote conflict',
+    )
+    expect(screen.getByRole('button', { name: 'Try launching again' })).toBeInTheDocument()
   })
 
   it('shows a retryable preparing quote when the quote endpoint is not ready', async () => {
@@ -192,6 +327,8 @@ describe('Expeditions overview — launch form', () => {
       ),
     )
     await renderOverview()
+    await screen.findByText('You have 250 materials')
+    enableProbeTimers()
     changeInvestment('40')
 
     await advanceUntil(
@@ -208,58 +345,51 @@ describe('Expeditions overview — provisioning and failure', () => {
     await seedAuthenticatedSession()
     await renderOverview()
 
-    await advanceUntil(
-      () => screen.queryByText('Preparing your Expedition') !== null,
-      'the preparing state',
-    )
+    await screen.findByText('Preparing your Expedition')
     expect(screen.getByText('Preparing…')).toBeInTheDocument()
 
     scheduler.advance(5_000)
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
-    await advanceUntil(
-      () => screen.queryByRole('heading', { name: 'Launch an Expedition' }) !== null,
-      'the launch form after provisioning',
-    )
+    await screen.findByRole('heading', { name: 'Launch an Expedition' })
   })
 
   it('shows a retryable unavailable state when the current request fails', async () => {
     server.server.use(http.get('/api/expedition/expeditions/current', () => HttpResponse.error()))
     await renderOverview()
 
-    await advanceUntil(
-      () => screen.queryByText('Expeditions are unavailable') !== null,
-      'the unavailable state',
-    )
+    expect(
+      await screen.findByText('Expeditions are unavailable', {}, { timeout: 3_000 }),
+    ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
   })
 })
 
 describe('Expeditions overview — in flight and resolution', () => {
-  it('ticks the countdown without announcing ticks in a live region', async () => {
+  it('exposes the remaining time to assistive tech without a live region', async () => {
     server.reset('active-expedition')
     await seedAuthenticatedSession()
-    await renderOverview()
+    await renderOverviewFake()
 
     await advanceUntil(
       () => screen.queryByText('Expedition in flight') !== null,
       'the in-flight view',
     )
-    const countdown = screen.getByLabelText('Time remaining')
-    const before = countdown.textContent
+    // The visually-hidden label makes the ticking value readable by AT, while
+    // the element is never a live region (ticks are never announced).
+    expect(screen.getByText('Time remaining:')).toBeInTheDocument()
+    expect(screen.getByText('1h 00m 00s')).toBeInTheDocument()
 
     await advanceFakeTime(60_000)
-    expect(countdown.textContent).not.toBe(before)
-    expect(countdown.textContent).toMatch(/^Resolves in5\dm \d{2}s$/)
-
-    // No live region announces the ticking countdown.
-    expect(screen.queryByText(countdown.textContent, { selector: '[aria-live]' })).toBeNull()
-    expect(screen.queryByText('Resolves in', { selector: '[aria-live]' })).toBeNull()
+    expect(screen.getByText('59m 00s')).toBeInTheDocument()
+    expect(screen.queryByText('1h 00m 00s')).not.toBeInTheDocument()
+    expect(screen.queryByText('59m 00s', { selector: '[aria-live]' })).toBeNull()
+    expect(screen.queryByText('Time remaining:', { selector: '[aria-live]' })).toBeNull()
   })
 
   it('shows a newly observed result with a one-time celebration and reconciles the Ship reward', async () => {
     server.reset('active-expedition')
     await seedAuthenticatedSession()
-    await renderOverview()
+    await renderOverviewFake()
 
     await advanceUntil(
       () => screen.queryByText('Expedition in flight') !== null,
@@ -268,8 +398,6 @@ describe('Expeditions overview — in flight and resolution', () => {
     expect(screen.getByText(/Resolves at 10:00 AM/)).toBeInTheDocument()
     expect(screen.getByText('62%')).toBeInTheDocument()
 
-    // Cross the fixed resolve time in the backend, then let one bounded poll
-    // observe the typed `none` transition.
     scheduler.advance(HOUR)
     await advanceFakeTime(60_050)
 
@@ -279,24 +407,80 @@ describe('Expeditions overview — in flight and resolution', () => {
       50,
       30,
     )
+    // Comprehension never depends on the animation: the panel is present, and
+    // the celebration class is applied only for the short newly-observed window.
+    const panel = screen.getByRole('region', { name: 'Expedition resolved' })
+    expect(panel).toBeInTheDocument()
+    expect(panel.className).toMatch(/celebrate/)
     expect(screen.getByText('Success')).toBeInTheDocument()
     expect(screen.getByText('+80 materials')).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'Expedition resolved' })).toHaveAttribute(
-      'data-celebrate',
-      'true',
-    )
 
-    // The celebration is not replayed after its 450 ms window.
     await advanceFakeTime(500)
-    expect(
-      screen.getByRole('region', { name: 'Expedition resolved' }).getAttribute('data-celebrate'),
-    ).not.toBe('true')
+    const settledPanel = screen.getByRole('region', { name: 'Expedition resolved' })
+    expect(settledPanel).toBeInTheDocument()
+    expect(settledPanel.className).not.toMatch(/celebrate/)
 
     // Bounded reward reconciliation: +80 once the propagation window lands.
     expect(screen.getByText('Updating…')).toBeInTheDocument()
     scheduler.advance(2_001)
-    await advanceUntil(() => screen.queryByText('Updating…') === null, 'the reward to land')
-    expect(screen.getByText(/Available materials: 330/)).toBeInTheDocument()
+    await advanceUntil(
+      () => screen.queryByText(/Available materials: 330/) !== null,
+      'the reward to land',
+    )
+    expect(screen.queryByText('Updating…')).not.toBeInTheDocument()
     expect(screen.getByText('You have 330 materials')).toBeInTheDocument()
   })
+
+  it('keeps stale in-flight data labelled Update delayed with a Retry when a refetch fails', async () => {
+    server.reset('active-expedition')
+    await seedAuthenticatedSession()
+    await renderOverviewFake()
+
+    await advanceUntil(
+      () => screen.queryByText('Expedition in flight') !== null,
+      'the in-flight view',
+    )
+    server.server.use(
+      http.get('/api/expedition/expeditions/current', () =>
+        HttpResponse.json({ error: { code: 'INTERNAL_ERROR', message: 'Boom.' } }, { status: 500 }),
+      ),
+    )
+    // The bounded poll fires one refetch that fails; the confirmed in-flight
+    // state stays visible with a stale label and a local Retry (§3.2). The
+    // auto-retry (1s) also fails before isRefetchError settles.
+    await advanceFakeTime(60_050)
+    await advanceUntil(
+      () => screen.queryByText('Update delayed') !== null,
+      'the stale label',
+      50,
+      80,
+    )
+    expect(screen.getByText('Expedition in flight')).toBeInTheDocument()
+    expect(
+      screen.getByText('Could not refresh. Showing the last confirmed state.'),
+    ).toBeInTheDocument()
+
+    server.server.resetHandlers()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await advanceUntil(
+      () => screen.queryByText('Update delayed') === null,
+      'the refresh to recover',
+    )
+    expect(screen.getByText('Expedition in flight')).toBeInTheDocument()
+  })
 })
+
+function quoteBody(materialsInvested: number, ineligible: boolean) {
+  const normalized = Math.min(1, materialsInvested / 250)
+  return {
+    materials_invested: materialsInvested,
+    normalized_investment: ineligible ? 0 : normalized,
+    projected_balance: 250 - materialsInvested,
+    success_chance: ineligible ? 0 : Math.min(0.95, normalized * 0.95),
+    eligible: !ineligible,
+    blocker: ineligible ? 'EXPEDITION_ALREADY_ACTIVE' : null,
+    cooldown_until: null,
+    estimated_resolve_at: new Date(FIXED_MOCK_EPOCH_MS + HOUR).toISOString(),
+    estimated_resolve_window_seconds: 3600,
+  }
+}

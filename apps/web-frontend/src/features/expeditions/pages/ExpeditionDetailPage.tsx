@@ -12,7 +12,9 @@ import type { Expedition } from '../api/expeditionApi'
 import { expeditionDetailQueryKeyFor, getExpeditionById } from '../api/expeditionApi'
 import { ExpeditionNotFound } from '../components/ExpeditionNotFound'
 import { ExpeditionProgress } from '../components/ExpeditionProgress'
+import { boundedResolvePollMs } from '../components/polling'
 import { PreparingPanel, ResultPanel } from '../components/ResultPanel'
+import { StaleNotice } from '../components/StaleNotice'
 import { expeditionTabs } from '../navigation'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
@@ -22,8 +24,7 @@ function detailPollInterval(expedition: Expedition | undefined): number | false 
   if (expedition?.status !== 'IN_FLIGHT') {
     return false
   }
-  const remaining = Date.parse(expedition.resolve_at) - Date.now()
-  return Math.max(1_000, Math.min(60_000, remaining))
+  return boundedResolvePollMs(expedition.resolve_at)
 }
 
 /**
@@ -48,7 +49,8 @@ function useNewlyObservedResolution(expedition: Expedition | undefined): boolean
 /**
  * `/expeditions/:expeditionId` — one mission-facts/timeline layout: countdown
  * dominates in flight; the typed result and reward dominate after resolution;
- * not-found and provisioning recover inside the shell (§5.7).
+ * not-found and provisioning recover inside the shell; a failed refetch keeps
+ * the last confirmed state labelled stale with Retry (§3.2, §5.7).
  */
 export function ExpeditionDetailPage() {
   const { expeditionId } = useParams()
@@ -78,7 +80,7 @@ function ExpeditionDetail({ expeditionId }: { expeditionId: string }) {
   if (query.isPending) {
     return <Skeleton lines={4} />
   }
-  if (query.isError) {
+  if (query.isError && query.data === undefined) {
     if (isApiHttpError(query.error, 'EXPEDITION_NOT_FOUND')) {
       return <ExpeditionNotFound />
     }
@@ -103,8 +105,20 @@ function ExpeditionDetail({ expeditionId }: { expeditionId: string }) {
   }
 
   const expedition = query.data
-  if (expedition.status === 'IN_FLIGHT') {
-    return <ExpeditionProgress expedition={expedition} showLinks={false} />
-  }
-  return <ResultPanel expeditionId={expeditionId} celebrate={newlyObserved} />
+  return (
+    <div>
+      {query.isRefetchError ? (
+        <StaleNotice
+          onRetry={() => {
+            void query.refetch()
+          }}
+        />
+      ) : null}
+      {expedition.status === 'IN_FLIGHT' ? (
+        <ExpeditionProgress expedition={expedition} showLinks={false} />
+      ) : (
+        <ResultPanel expeditionId={expeditionId} celebrate={newlyObserved} />
+      )}
+    </div>
+  )
 }

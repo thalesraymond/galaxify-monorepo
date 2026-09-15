@@ -1,6 +1,6 @@
 process.env.TZ = 'UTC'
 
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -13,8 +13,8 @@ import {
   fixedUuid,
   onUnhandledMockRequest,
 } from '@/mocks'
-import { renderExpeditionRoute } from '@/test/renderExpeditionRoute'
-import { advanceFakeTime, advanceUntil, seedAuthenticatedSession } from '@/test/expeditionTestUtils'
+import { renderAppAt } from '@/test/renderApp'
+import { advanceFakeTime, seedAuthenticatedSession } from '@/test/expeditionTestUtils'
 
 import type { MockTestServer } from '@/mocks'
 import type { Expedition } from '@/api/generated/expedition/types.gen'
@@ -27,8 +27,7 @@ beforeEach(async () => {
   server = createMockTestServer({ scenario: 'resolved-expedition', scheduler })
   server.server.listen({ onUnhandledRequest: onUnhandledMockRequest })
   window.localStorage.clear()
-  vi.useFakeTimers()
-  vi.setSystemTime(FIXED_MOCK_EPOCH_MS)
+  vi.setSystemTime(new Date(FIXED_MOCK_EPOCH_MS))
   await seedAuthenticatedSession()
 })
 
@@ -38,12 +37,13 @@ afterEach(() => {
   server.server.close()
 })
 
-async function renderHistory() {
-  renderExpeditionRoute('/expeditions/history')
-  await advanceUntil(
-    () => screen.queryByRole('heading', { level: 1, name: 'Expedition history' }) !== null,
-    'the history page heading',
-  )
+function enableProbeTimers(): void {
+  vi.useFakeTimers({ now: new Date(FIXED_MOCK_EPOCH_MS) })
+}
+
+async function renderHistory(): Promise<void> {
+  renderAppAt('/expeditions/history')
+  await screen.findByRole('heading', { level: 1, name: 'Expedition history' })
 }
 
 function buildHistory(count: number): Expedition[] {
@@ -61,7 +61,7 @@ describe('Expedition history', () => {
   it('lists resolved outcomes with typed rewards and detail links', async () => {
     await renderHistory()
 
-    await advanceUntil(() => screen.queryByText('+80 materials') !== null, 'the first row')
+    await screen.findByText('+80 materials')
     expect(screen.getByText('Success')).toBeInTheDocument()
     // Both resolved fixtures invested 40 materials.
     expect(screen.getAllByText('40 materials')).toHaveLength(2)
@@ -85,7 +85,7 @@ describe('Expedition history', () => {
     await seedAuthenticatedSession()
     await renderHistory()
 
-    await advanceUntil(() => screen.queryByText('No Expeditions yet') !== null, 'the empty state')
+    await screen.findByText('No Expeditions yet')
     expect(screen.getByRole('link', { name: 'Launch an Expedition' })).toHaveAttribute(
       'href',
       '/expeditions',
@@ -104,15 +104,12 @@ describe('Expedition history', () => {
     )
     await renderHistory()
 
-    await advanceUntil(
-      () => screen.getAllByRole('link', { name: /Success|Failed/ }).length === 10,
-      'the first page',
-    )
+    await screen.findAllByRole('link', { name: /Success|Failed/ })
+    expect(screen.getAllByRole('link', { name: /Success|Failed/ })).toHaveLength(10)
     fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
-    await advanceUntil(
-      () => screen.getAllByRole('link', { name: /Success|Failed/ }).length === 12,
-      'the second page',
-    )
+    await waitFor(() => {
+      expect(screen.getAllByRole('link', { name: /Success|Failed/ })).toHaveLength(12)
+    })
     expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument()
   })
 
@@ -133,17 +130,13 @@ describe('Expedition history', () => {
     )
     await renderHistory()
 
-    await advanceUntil(
-      () => screen.getAllByRole('link', { name: /Success|Failed/ }).length === 10,
-      'the first page',
-    )
+    await screen.findAllByRole('link', { name: /Success|Failed/ })
+    expect(screen.getAllByRole('link', { name: /Success|Failed/ })).toHaveLength(10)
+    enableProbeTimers()
     fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
     await advanceFakeTime(1_100)
 
-    await advanceUntil(
-      () => screen.queryByText(/Could not load more Expeditions/) !== null,
-      'the continuation error',
-    )
+    screen.getByText(/Could not load more Expeditions/)
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: /Success|Failed/ })).toHaveLength(10)
   })
@@ -153,7 +146,7 @@ describe('Expedition history', () => {
     await seedAuthenticatedSession()
     await renderHistory()
 
-    await advanceUntil(() => screen.queryByText('In flight') !== null, 'the in-flight row')
+    await screen.findByText('In flight')
     // The active expedition is listed among the resolved history rows but
     // carries no outcome badge.
     const flightRow = screen.getByRole('link', { name: /In flight/ })
@@ -162,26 +155,24 @@ describe('Expedition history', () => {
   })
 
   it('preserves loaded rows across detail navigation from the query cache', async () => {
-    const { router } = renderExpeditionRoute('/expeditions/history')
-    await advanceUntil(
-      () => screen.queryByRole('heading', { level: 1, name: 'Expedition history' }) !== null,
-      'the history page heading',
-    )
-    await advanceUntil(
-      () => screen.getAllByRole('link', { name: /Success/ }).length === 1,
-      'the resolved rows',
-    )
-    expect(screen.getAllByRole('link', { name: /Success|Failed/ })).toHaveLength(2)
+    let listCalls = 0
+    server.server.events.on('request:start', ({ request }) => {
+      if (new URL(request.url).pathname === '/api/expedition/expeditions') {
+        listCalls += 1
+      }
+    })
+    await renderHistory()
 
+    await screen.findAllByRole('link', { name: /Success|Failed/ })
+    expect(listCalls).toBe(1)
     fireEvent.click(screen.getAllByRole('link', { name: /Success/ })[0] as HTMLElement)
-    await advanceUntil(() => screen.queryByText('Expedition resolved') !== null, 'the detail')
+    await screen.findByText('Expedition resolved')
+    expect(listCalls).toBe(1)
 
-    void router.navigate(-1)
-    await advanceUntil(
-      () => screen.queryByRole('heading', { level: 1, name: 'Expedition history' }) !== null,
-      'the history page again',
-    )
+    fireEvent.click(screen.getByRole('link', { name: 'History' }))
+    await screen.findByRole('heading', { level: 1, name: 'Expedition history' })
     // Rows come straight from the stable query key's cache — no re-request.
     expect(screen.getAllByRole('link', { name: /Success|Failed/ })).toHaveLength(2)
+    expect(listCalls).toBe(1)
   })
 })

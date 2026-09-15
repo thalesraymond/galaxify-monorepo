@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react'
 
+/**
+ * Duration of the restrained result celebration, in ms. Must match
+ * `--celebration-duration` in `expeditionPanels.module.css` — the CSS property
+ * is the visual source of truth and this constant drives the hook's window so
+ * the animated class is removed at the same moment the animation ends.
+ */
+export const CELEBRATION_DURATION_MS = 450
+
 const CELEBRATION_START_MS = 0
-const CELEBRATION_DURATION_MS = 450
 
 /**
  * Returns `true` for a short window when `newlyObserved` flips on, so a
