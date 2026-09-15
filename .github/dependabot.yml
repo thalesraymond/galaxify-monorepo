@@ -13,6 +13,11 @@
 # The repo root is intentionally NOT listed here: it has no go.mod of its
 # own, and a root-scoped gomod job would update across all workspace modules
 # in a single PR instead of one scoped PR per module.
+#
+# The web frontend (apps/web-frontend) is not part of the Go workspace: it
+# has its own package.json/package-lock.json and is tracked as an npm
+# ecosystem job, so dependency updates land as PRs that CI_web-frontend.yml
+# exercises.
 version: 2
 updates:
   # Go modules
@@ -35,6 +40,25 @@ updates:
       # Minor/patch updates are grouped into a single PR per module; major
       # updates get their own PR since they may contain breaking changes.
       go-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # npm — web frontend
+  - package-ecosystem: npm
+    directory: /apps/web-frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: UTC
+    labels:
+      - dependencies
+    open-pull-requests-limit: 5
+    groups:
+      # Minor/patch updates are grouped into a single PR; major updates get
+      # their own PR since they may contain breaking changes.
+      npm-minor-patch:
         update-types:
           - minor
           - patch

@@ -54,3 +54,18 @@ jobs:
             echo "Running vet on $module..."
             (cd "$module" && go vet ./...)
           done
+
+      # The web frontend is versioned by release-please too; a bumped
+      # package.json must still produce a working production build.
+      - name: Set up Node.js
+        if: ${{ steps.release.outputs.releases_created && contains(steps.release.outputs.paths_released, 'apps/web-frontend') }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/web-frontend/package-lock.json
+
+      - name: Verify web frontend build
+        if: ${{ steps.release.outputs.releases_created && contains(steps.release.outputs.paths_released, 'apps/web-frontend') }}
+        run: |
+          (cd apps/web-frontend && npm ci && npm run build)
