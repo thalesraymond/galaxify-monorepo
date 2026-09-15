@@ -1,0 +1,150 @@
+.page {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.heading {
+  margin: 0 0 var(--space-4);
+  font-size: 1.5rem;
+}
+
+.history {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.group {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.groupHeading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.groupZone {
+  color: var(--color-text-muted-light);
+  font-family: 'Avenir Next', 'Trebuchet MS', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-ink) 18%, transparent);
+}
+
+.row:first-child {
+  border-top: 0;
+}
+
+.rowHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+}
+
+.facts > div {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.facts dt {
+  color: var(--color-text-muted-light);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.facts dd {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.effect {
+  width: fit-content;
+  border-radius: 999px;
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.reward {
+  background: color-mix(in srgb, var(--color-mint) 32%, transparent);
+  color: var(--color-ink);
+}
+
+.damage {
+  background: color-mix(in srgb, var(--color-danger) 20%, transparent);
+  color: var(--color-danger-strong);
+}
+
+.description {
+  margin: 0;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.footerError {
+  margin: 0;
+  color: var(--color-danger-strong);
+  font-weight: 700;
+}
+
+.footerRetry {
+  min-height: 44px;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-shell-raised);
+  border-radius: var(--radius-control);
+  background: var(--color-logbook);
+  color: var(--color-ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.createLink {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--color-amber);
+  color: var(--color-ink);
+  font-weight: 700;
+  text-decoration: none;
+}
