@@ -64,10 +64,28 @@ export type ApiRequest<T> = {
   readonly signal?: AbortSignal | undefined
 }
 
+export type ApiRequestContext = {
+  readonly service: ApiService
+  readonly path: `/${string}`
+  readonly method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+}
+
 export type ApiTransportOptions = {
   readonly getAccessToken?: () => string | undefined
   readonly fetch?: typeof globalThis.fetch
   readonly createRequestId?: () => string
+  /**
+   * Awaited before every request is sent. The session layer uses it to rotate
+   * an access token that is within the refresh threshold (`web-frontend.md`
+   * §4.2) so authenticated work never leaves with a nearly-expired token.
+   */
+  readonly beforeRequest?: (request: ApiRequestContext) => Promise<void>
+  /**
+   * Invoked for a bearer-protected `AUTH_INVALID_TOKEN` response. Returning
+   * `true` replays the request exactly once; this is the single narrow replay
+   * allowed by `web-frontend.md` §4.2.
+   */
+  readonly onUnauthorized?: (error: ApiHttpError) => Promise<boolean>
 }
 
 const servicePrefixes: Readonly<Record<ApiService, string>> = {
@@ -81,21 +99,40 @@ export class ApiTransport {
   private readonly getAccessToken: () => string | undefined
   private readonly fetch: typeof globalThis.fetch
   private readonly createRequestId: () => string
+  private readonly beforeRequest: ((request: ApiRequestContext) => Promise<void>) | undefined
+  private readonly onUnauthorized: ((error: ApiHttpError) => Promise<boolean>) | undefined
 
   public constructor(options: ApiTransportOptions = {}) {
     this.getAccessToken = options.getAccessToken ?? (() => undefined)
-    this.fetch = options.fetch ?? globalThis.fetch
+    // Native fetch requires the window receiver; storing it as a property and
+    // calling `this.fetch(...)` would otherwise throw "Illegal invocation".
+    this.fetch = options.fetch ?? globalThis.fetch.bind(globalThis)
     this.createRequestId = options.createRequestId ?? (() => crypto.randomUUID())
+    this.beforeRequest = options.beforeRequest
+    this.onUnauthorized = options.onUnauthorized
   }
 
-  public async request<T>(request: ApiRequest<T>): Promise<T> {
+  public request<T>(request: ApiRequest<T>): Promise<T> {
+    return this.send(request, true)
+  }
+
+  /**
+   * Owns URL construction, headers, body replay, schema parsing, and error
+   * normalization. `allowAuthHandling` is false only for the single replay
+   * after a successful refresh, so it can never recurse.
+   */
+  private async send<T>(request: ApiRequest<T>, allowAuthHandling: boolean): Promise<T> {
     const requestId = this.createRequestId()
 
     try {
-      const init: RequestInit = {
-        method: request.method ?? 'GET',
-        headers: this.createHeaders(requestId, request.body),
+      const method = request.method ?? 'GET'
+      if (allowAuthHandling && this.beforeRequest !== undefined) {
+        await this.beforeRequest({ service: request.service, path: request.path, method })
       }
+
+      const headers = this.createHeaders(requestId, request.body)
+      const hasBearer = headers.has('Authorization')
+      const init: RequestInit = { method, headers }
       if (request.body !== undefined) {
         init.body = JSON.stringify(request.body)
       }
@@ -109,7 +146,20 @@ export class ApiTransport {
 
       const responseRequestId = response.headers.get('X-Request-Id') ?? requestId
       if (!response.ok) {
-        throw asError(await this.createApiError(response, responseRequestId))
+        const error = await this.createApiError(response, responseRequestId)
+        if (
+          allowAuthHandling &&
+          this.onUnauthorized !== undefined &&
+          hasBearer &&
+          isRefreshableError(error) &&
+          !isAuthEndpoint(request)
+        ) {
+          const replayed = await this.onUnauthorized(error)
+          if (replayed) {
+            return await this.send(request, false)
+          }
+        }
+        throw asError(error)
       }
 
       if (response.status === 204) {
@@ -211,6 +261,26 @@ export function isApiTransportError(error: unknown): error is ApiTransportError 
  */
 export function isApiHttpError(error: unknown, code: string): error is ApiHttpError {
   return isApiTransportError(error) && error.kind === 'api' && error.code === code
+}
+
+/** The only response that may trigger the single refresh-and-replay path. */
+function isRefreshableError(error: ApiTransportError): error is ApiHttpError {
+  return error.kind === 'api' && error.code === 'AUTH_INVALID_TOKEN'
+}
+
+/**
+ * Signup, login, refresh, and logout must never enter the refresh-and-replay
+ * path (`web-frontend.md` §4.2). The session layer calls these on a transport
+ * without the hooks anyway; this guard keeps the contract explicit.
+ */
+function isAuthEndpoint(request: ApiRequest<unknown>): boolean {
+  if (request.service !== 'user') {
+    return false
+  }
+  if (request.path.startsWith('/auth/')) {
+    return true
+  }
+  return request.path === '/users' && (request.method ?? 'GET') === 'POST'
 }
 
 function isAbortError(error: unknown): boolean {

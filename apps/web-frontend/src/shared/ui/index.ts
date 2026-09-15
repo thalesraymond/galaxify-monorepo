@@ -1,5 +1,6 @@
 export { Button } from './Button/Button'
 export { ConfirmationDialog } from './Dialog/ConfirmationDialog'
+export { Dialog } from './Dialog/Dialog'
 export { ContentSurface } from './ContentSurface/ContentSurface'
 export { Disclosure } from './Disclosure/Disclosure'
 export { EmptyState } from './EmptyState/EmptyState'

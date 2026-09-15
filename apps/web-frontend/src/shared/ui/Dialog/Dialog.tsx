@@ -14,6 +14,14 @@ export function Dialog({
 }) {
   const dialogRef = useRef<HTMLDivElement>(null)
   const returnFocusRef = useRef<HTMLElement | null>(null)
+  const onCloseRef = useRef(onClose)
+
+  // Keep the latest handler without re-running the mount effect, which would
+  // re-trap and reset focus on every parent render.
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
+
   useEffect(() => {
     returnFocusRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -21,7 +29,7 @@ export function Dialog({
     first?.focus()
     function trapFocus(event: KeyboardEvent) {
       if (event.key === 'Escape') {
-        onClose()
+        onCloseRef.current()
         return
       }
       if (event.key !== 'Tab') return
@@ -42,7 +50,7 @@ export function Dialog({
       document.removeEventListener('keydown', trapFocus)
       returnFocusRef.current?.focus()
     }
-  }, [onClose])
+  }, [])
   return (
     <div className={styles.overlay}>
       <div
