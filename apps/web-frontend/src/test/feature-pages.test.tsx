@@ -23,9 +23,13 @@ describe('domain recovery placeholders', () => {
     expect(screen.getByText(/id unknown/)).toBeInTheDocument()
   })
 
-  it('describes a missing Expedition id without redirecting', () => {
+  it('recovers a missing Expedition id inside the shell without redirecting', () => {
     renderStandalone(<ExpeditionDetailPage />)
 
-    expect(screen.getByText(/Expedition unknown/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Expedition not found' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Back to Expeditions' })).toHaveAttribute(
+      'href',
+      '/expeditions',
+    )
   })
 })

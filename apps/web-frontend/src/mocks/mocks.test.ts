@@ -335,6 +335,102 @@ describe('mock backend and strict MSW handlers', () => {
     })
   })
 
+  it('resolves an in-flight Expedition deterministically once the clock passes resolve_at', async () => {
+    const scheduler = new ManualMockScheduler(FIXED_MOCK_EPOCH_MS)
+    await withMockServer({ scenario: 'active-expedition', scheduler }, async () => {
+      const session = await login()
+
+      const current = await fetch(
+        `${BASE}/api/expedition/expeditions/current`,
+        auth(session.access_token),
+      )
+      const inFlight = (await readJson(current)) as { id: string; status: string }
+      expect(inFlight.status).toBe('IN_FLIGHT')
+
+      // Cross the fixed resolve time (fixed epoch + 1h): the next read
+      // materializes a deterministic SUCCESS result and clears "current". The
+      // original access token has also passed its 15-minute mock lifetime, so
+      // the session rotates first — exactly what the browser transport does.
+      scheduler.advance(60 * 60 * 1000)
+      const rotated = await fetch(
+        `${BASE}/api/user/auth/refresh`,
+        jsonRequest({ refresh_token: session.refresh_token }),
+      )
+      expect(rotated.status).toBe(200)
+      const refreshed = (await readJson(rotated)) as { access_token: string }
+      const bearer = auth(refreshed.access_token)
+
+      const after = await fetch(`${BASE}/api/expedition/expeditions/current`, bearer)
+      expect(after.status).toBe(404)
+
+      const detail = await fetch(`${BASE}/api/expedition/expeditions/${inFlight.id}`, bearer)
+      const resolved = (await readJson(detail)) as {
+        status: string
+        resolved_at: string
+        result: { outcome: string; material_reward: { materials: number } }
+      }
+      expect(resolved.status).toBe('RESOLVED')
+      expect(resolved.result.outcome).toBe('SUCCESS')
+      // 40 invested * 2, matching the resolved fixture reward.
+      expect(resolved.result.material_reward.materials).toBe(80)
+
+      // The Ship reward lands only after the propagation window elapses.
+      const before = await fetch(`${BASE}/api/ship/ships/me`, bearer)
+      expect(((await readJson(before)) as { materials_balance: number }).materials_balance).toBe(
+        250,
+      )
+      scheduler.advance(2_000 + 1)
+      const afterShip = await fetch(`${BASE}/api/ship/ships/me`, bearer)
+      expect(((await readJson(afterShip)) as { materials_balance: number }).materials_balance).toBe(
+        330,
+      )
+    })
+  })
+
+  it('resolves a low-chance Expedition to a deterministic FAILURE with a recovery reward', async () => {
+    const scheduler = new ManualMockScheduler(FIXED_MOCK_EPOCH_MS)
+    await withMockServer({ scenario: 'established-player', scheduler }, async () => {
+      const session = await login()
+
+      // A small investment yields a success chance below 0.5, so resolution
+      // must fail deterministically.
+      const launch = await fetch(
+        `${BASE}/api/expedition/expeditions/launch`,
+        jsonRequest({ materials_invested: 40 }, session.access_token),
+      )
+      expect(launch.status).toBe(201)
+      const inFlight = (await readJson(launch)) as { id: string; success_chance: number }
+      expect(inFlight.success_chance).toBeLessThan(0.5)
+
+      scheduler.advance(60 * 60 * 1000)
+      const rotated = await fetch(
+        `${BASE}/api/user/auth/refresh`,
+        jsonRequest({ refresh_token: session.refresh_token }),
+      )
+      const refreshed = (await readJson(rotated)) as { access_token: string }
+
+      const detail = await fetch(
+        `${BASE}/api/expedition/expeditions/${inFlight.id}`,
+        auth(refreshed.access_token),
+      )
+      const resolved = (await readJson(detail)) as {
+        status: string
+        result: { outcome: string; material_reward: { materials: number } }
+      }
+      expect(resolved.status).toBe('FAILED')
+      expect(resolved.result.outcome).toBe('FAILURE')
+      // floor(40 * 0.5) = 20 recovery.
+      expect(resolved.result.material_reward.materials).toBe(20)
+
+      // The failure also clears "current": a fresh Expedition can be launched.
+      const current = await fetch(
+        `${BASE}/api/expedition/expeditions/current`,
+        auth(refreshed.access_token),
+      )
+      expect(current.status).toBe(404)
+    })
+  })
+
   it('resets deterministically and defaults to the fixed response delay', () => {
     const backend = new MockBackend({ scenario: 'established-player' })
     expect(backend.getScenario()).toBe('established-player')

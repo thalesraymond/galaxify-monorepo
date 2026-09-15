@@ -1,4 +1,10 @@
-export { MockBackend, MockApiError, DEFAULT_MOCK_RESPONSE_DELAY_MS } from './backend'
+export {
+  MockBackend,
+  MockApiError,
+  DEFAULT_MOCK_RESPONSE_DELAY_MS,
+  FAILURE_REWARD_RECOVERY_RATIO,
+  SUCCESS_REWARD_MULTIPLIER,
+} from './backend'
 export type { MockBackendOptions } from './backend'
 export { ManualMockScheduler, SystemMockScheduler } from './clock'
 export type { MockScheduler } from './clock'
