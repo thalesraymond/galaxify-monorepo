@@ -1,0 +1,90 @@
+.balanceLine {
+  margin: var(--space-2) 0 var(--space-4);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.loadingHint {
+  color: var(--color-text-muted-light);
+  font-weight: 400;
+}
+
+.form {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 28rem;
+}
+
+.shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.quote {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--color-logbook-edge) 55%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--color-logbook-edge) 8%, transparent);
+}
+
+.quoteFacts {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.quoteFacts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.quoteFacts dt {
+  font-weight: 700;
+}
+
+.quoteFacts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.cooldown {
+  margin: 0;
+  font-weight: 700;
+}
+
+.blocker {
+  margin: 0;
+  color: var(--color-danger-strong);
+  font-weight: 700;
+}
+
+.eligible {
+  margin: 0;
+  color: var(--color-ink);
+  font-weight: 700;
+}
+
+.refreshing {
+  color: var(--color-text-muted-light);
+  font-size: 0.875rem;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.errorBlock {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.errorBlock p {
+  margin: 0;
+}

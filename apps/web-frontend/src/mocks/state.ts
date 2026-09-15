@@ -36,6 +36,7 @@ export type MockMutationTimestamps = {
   expeditionLaunchedAt: number | null
   expeditionDeduction: number
   expeditionResolvedAt: number | null
+  expeditionReward: number
 }
 
 export type MockPersistedState = {
@@ -64,6 +65,7 @@ export function createEmptyMockMutations(): MockMutationTimestamps {
     expeditionLaunchedAt: null,
     expeditionDeduction: 0,
     expeditionResolvedAt: null,
+    expeditionReward: 0,
   }
 }
 

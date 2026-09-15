@@ -1,6 +1,9 @@
 import { LocalTabs } from '@/shared/ui'
 import { PageHeader } from '@/shared/ui/PageHeader'
+
+import { ExpeditionOverview } from '../components/ExpeditionOverview'
 import { expeditionTabs } from '../navigation'
+
 export function ExpeditionsPage() {
   return (
     <>
@@ -9,6 +12,7 @@ export function ExpeditionsPage() {
         description="Launch eligibility or the Expedition currently in flight."
       />
       <LocalTabs label="Expeditions navigation" tabs={expeditionTabs} />
+      <ExpeditionOverview />
     </>
   )
 }

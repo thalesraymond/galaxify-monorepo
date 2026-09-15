@@ -740,12 +740,12 @@ export class MockBackend {
     userId: string,
     familyId: string = `family-${FIXED_USER_ID}`,
   ): { session: NonNullable<MockPersistedState['session']>; record: MockRefreshTokenRecord } {
-    // Access-token lifetime tracks the wall clock so the frontend's proactive
-    // expiry check matches service behavior. Domain fixtures remain anchored to
-    // the fixed mock epoch; `requireSession` still compares against the
-    // scenario clock, so normal tokens stay valid and `expired-session` still
-    // overrides the stored expiry explicitly.
-    const issuedAt = Date.now()
+    // Access-token lifetime is anchored to the injectable scenario clock so
+    // session expiry and domain time always agree: `requireSession` compares
+    // against `this.scheduler.now()`, so issuance must use the same timeline.
+    // With the default `SystemMockScheduler` the value tracks the wall clock,
+    // so production behavior is unchanged.
+    const issuedAt = this.scheduler.now()
     const accessTokenExpiresAt = issuedAt + ACCESS_TOKEN_TTL_MS
     const familySuffix = familyId.slice(-6)
     this.tokenCounter += 1
@@ -862,6 +862,7 @@ export class MockBackend {
     if (ship === null) {
       return
     }
+    this.resolveCurrentExpeditionIfDue()
     if (
       mutations.dailyCompletedAt !== null &&
       this.scheduler.now() - mutations.dailyCompletedAt >= window
@@ -879,7 +880,49 @@ export class MockBackend {
       mutations.expeditionLaunchedAt = null
       mutations.expeditionDeduction = 0
     }
+    if (
+      mutations.expeditionResolvedAt !== null &&
+      this.scheduler.now() - mutations.expeditionResolvedAt >= window
+    ) {
+      ship.materials_balance += mutations.expeditionReward
+      mutations.expeditionResolvedAt = null
+      mutations.expeditionReward = 0
+    }
     ship.updated_at = new Date(this.scheduler.now()).toISOString()
+  }
+
+  /**
+   * Resolves an in-flight current Expedition deterministically once the clock
+   * passes its `resolve_at`: outcome is always SUCCESS, the reward is twice the
+   * investment (matching `createResolvedExpedition`), and the current pointer
+   * is cleared so `GET /expeditions/current` becomes a typed `none`. The Ship
+   * reward lands through the configured propagation window via
+   * `mutations.expeditionResolvedAt`/`expeditionReward`.
+   */
+  private resolveCurrentExpeditionIfDue(): void {
+    const current = this.findCurrentExpedition()
+    if (current === undefined) {
+      return
+    }
+    const resolveAtMs = Date.parse(current.resolve_at)
+    if (this.scheduler.now() < resolveAtMs) {
+      return
+    }
+    const resolvedAt = new Date(resolveAtMs).toISOString()
+    const index = this.state.expeditions.findIndex((expedition) => expedition.id === current.id)
+    current.status = 'RESOLVED'
+    current.resolved_at = resolvedAt
+    current.result = {
+      id: fixedUuid(8, index + 1),
+      expedition_id: current.id,
+      outcome: 'SUCCESS',
+      material_reward: { materials: current.materials_invested * 2 },
+      created_at: resolvedAt,
+    }
+    this.state.currentExpeditionId = null
+    this.state.mutations.expeditionResolvedAt = resolveAtMs
+    this.state.mutations.expeditionReward = current.materials_invested * 2
+    this.persist()
   }
 
   private persist(): void {

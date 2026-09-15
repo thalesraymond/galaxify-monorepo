@@ -1,0 +1,114 @@
+.resolveTime {
+  margin: var(--space-2) 0 var(--space-4);
+  color: var(--color-text-muted-dark);
+}
+
+.facts {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-6);
+}
+
+.facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+}
+
+.facts dt {
+  font-weight: 700;
+}
+
+.facts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.links a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  font-weight: 700;
+}
+
+.balanceSync {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.resultHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.resultHeader h2 {
+  margin: 0;
+}
+
+.reward {
+  margin: var(--space-4) 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+}
+
+.timelineLabel {
+  min-width: 6rem;
+  font-weight: 700;
+}
+
+/* Restrained 300–500 ms celebration for a newly observed Expedition result
+   (DESIGN.md §Motion). Never required for comprehension; disabled for reduced
+   motion. */
+.celebrate {
+  animation: result-celebration 450ms var(--ease-out);
+}
+
+@keyframes result-celebration {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .celebrate {
+    animation: none;
+  }
+}

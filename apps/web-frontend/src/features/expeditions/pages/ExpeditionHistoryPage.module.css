@@ -1,0 +1,63 @@
+.list {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.rows {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rowLink {
+  display: grid;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: var(--space-4);
+  border-left: 4px solid var(--color-logbook-edge);
+  border-radius: var(--radius-logbook);
+  background: var(--color-logbook);
+  color: var(--color-ink);
+  text-decoration: none;
+}
+
+.rowLink:hover {
+  border-left-color: var(--color-amber-strong);
+}
+
+.rowMain {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-weight: 700;
+}
+
+.rowMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  color: var(--color-text-muted-light);
+  font-size: 0.875rem;
+}
+
+.reward {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.inFlight {
+  color: var(--color-text-muted-light);
+  font-weight: 700;
+}
+
+.continuationError {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.continuationError p {
+  margin: 0;
+}
