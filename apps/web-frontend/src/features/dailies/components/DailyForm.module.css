@@ -1,0 +1,87 @@
+.form {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 34rem;
+}
+
+.field {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.field label,
+.fieldset legend {
+  font-weight: 700;
+}
+
+.field small {
+  color: var(--color-text-muted-light);
+}
+
+.field textarea,
+.field select {
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-text-muted-light);
+  border-radius: var(--radius-control);
+  background: var(--color-logbook);
+  color: var(--color-ink);
+  font: inherit;
+}
+
+.field textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.field textarea[aria-invalid='true'] {
+  border-width: 2px;
+  border-color: var(--color-danger);
+}
+
+.error {
+  margin: 0;
+  color: var(--color-danger-strong);
+  font-weight: 700;
+}
+
+.fieldset {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.radios {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.radio {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--color-ink) 25%, transparent);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.radio input {
+  width: 1.25rem;
+  height: 1.25rem;
+  accent-color: var(--color-amber-strong);
+}
+
+.grid {
+  display: grid;
+  gap: var(--space-4);
+}
+
+@media (min-width: 40rem) {
+  .grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}

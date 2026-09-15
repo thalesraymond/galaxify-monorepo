@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -71,8 +70,8 @@ func userToMeResponse(user database.User) meResponse {
 		ID:        sharedhttp.UUIDToString(user.ID),
 		Email:     user.Email,
 		Username:  user.Username,
-		CreatedAt: user.CreatedAt.Time.Format(time.RFC3339),
-		UpdatedAt: user.UpdatedAt.Time.Format(time.RFC3339),
+		CreatedAt: formatTimestamp(user.CreatedAt.Time),
+		UpdatedAt: formatTimestamp(user.UpdatedAt.Time),
 	}
 }
 

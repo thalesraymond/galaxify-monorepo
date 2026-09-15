@@ -1,0 +1,133 @@
+.row {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-ink) 18%, transparent);
+}
+
+.row:first-child {
+  border-top: 0;
+}
+
+.row:focus-visible {
+  outline-offset: 4px;
+}
+
+.row[aria-current='true'] {
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--color-amber) 18%, transparent);
+  padding-left: var(--space-3);
+  padding-right: var(--space-3);
+}
+
+.rowHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.status {
+  border: 1px solid color-mix(in srgb, var(--color-ink) 30%, transparent);
+  border-radius: 999px;
+  padding: var(--space-1) var(--space-2);
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.description {
+  margin: 0;
+  color: var(--color-text-muted-light);
+  font-size: 0.875rem;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+}
+
+.facts > div {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.facts dt {
+  color: var(--color-text-muted-light);
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.facts dd {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.completedLabel {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-weight: 700;
+  color: var(--color-text-muted-light);
+}
+
+.editLink {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  color: var(--color-ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.deleteButton {
+  color: var(--color-danger-strong);
+}
+
+.reconcile {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--color-mint) 22%, transparent);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.failure {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 45%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+}
+
+.failure p {
+  margin: 0;
+  color: var(--color-danger-strong);
+}

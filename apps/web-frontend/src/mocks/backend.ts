@@ -57,6 +57,15 @@ const PROVISIONING_WINDOW_MS = 5_000
 const PROPAGATION_WINDOW_MS = 2_000
 
 /**
+ * Deterministic Expedition resolution rewards: a successful Expedition pays
+ * twice the investment; a failed one returns a recovery of half the invested
+ * materials (floored). Both are fixed rules, never random
+ * (`web-frontend-delivery.md` §7).
+ */
+export const SUCCESS_REWARD_MULTIPLIER = 2
+export const FAILURE_REWARD_RECOVERY_RATIO = 0.5
+
+/**
  * The frontend's bounded reconciliation window (web-frontend.md §3.4) is ~8s.
  * The `delayed-propagation` scenario pushes its window far beyond it so the UI
  * must surface an explicit `Update delayed` / stale state.
@@ -740,12 +749,13 @@ export class MockBackend {
     userId: string,
     familyId: string = `family-${FIXED_USER_ID}`,
   ): { session: NonNullable<MockPersistedState['session']>; record: MockRefreshTokenRecord } {
-    // Access-token lifetime tracks the wall clock so the frontend's proactive
-    // expiry check matches service behavior. Domain fixtures remain anchored to
-    // the fixed mock epoch; `requireSession` still compares against the
-    // scenario clock, so normal tokens stay valid and `expired-session` still
-    // overrides the stored expiry explicitly.
-    const issuedAt = Date.now()
+    // Browser MSW sessions must use wall-clock expiry because the frontend
+    // decodes the JWT `exp` against `Date.now()`, while fixture/domain time is
+    // deliberately anchored to a stable epoch. Deterministic test schedulers,
+    // however, advance independently from fake browser time, so their tokens
+    // must remain on the scheduler timeline used by `requireSession`.
+    const issuedAt =
+      this.scheduler instanceof SystemMockScheduler ? Date.now() : this.scheduler.now()
     const accessTokenExpiresAt = issuedAt + ACCESS_TOKEN_TTL_MS
     const familySuffix = familyId.slice(-6)
     this.tokenCounter += 1
@@ -862,6 +872,7 @@ export class MockBackend {
     if (ship === null) {
       return
     }
+    this.resolveCurrentExpeditionIfDue()
     if (
       mutations.dailyCompletedAt !== null &&
       this.scheduler.now() - mutations.dailyCompletedAt >= window
@@ -879,7 +890,56 @@ export class MockBackend {
       mutations.expeditionLaunchedAt = null
       mutations.expeditionDeduction = 0
     }
+    if (
+      mutations.expeditionResolvedAt !== null &&
+      this.scheduler.now() - mutations.expeditionResolvedAt >= window
+    ) {
+      ship.materials_balance += mutations.expeditionReward
+      mutations.expeditionResolvedAt = null
+      mutations.expeditionReward = 0
+    }
     ship.updated_at = new Date(this.scheduler.now()).toISOString()
+  }
+
+  /**
+   * Resolves an in-flight current Expedition deterministically once the clock
+   * passes its `resolve_at`: the outcome follows `success_chance` without
+   * randomness (at least 50% succeeds, otherwise it fails), success pays
+   * `SUCCESS_REWARD_MULTIPLIER` × the investment (matching
+   * `createResolvedExpedition`), and failure returns a deterministic recovery
+   * of `FAILURE_REWARD_RECOVERY_RATIO` × the investment. The current pointer is
+   * cleared so `GET /expeditions/current` becomes a typed `none`; the Ship
+   * reward lands through the configured propagation window via
+   * `mutations.expeditionResolvedAt`/`expeditionReward`.
+   */
+  private resolveCurrentExpeditionIfDue(): void {
+    const current = this.findCurrentExpedition()
+    if (current === undefined) {
+      return
+    }
+    const resolveAtMs = Date.parse(current.resolve_at)
+    if (this.scheduler.now() < resolveAtMs) {
+      return
+    }
+    const resolvedAt = new Date(resolveAtMs).toISOString()
+    const index = this.state.expeditions.findIndex((expedition) => expedition.id === current.id)
+    const succeeded = current.success_chance >= 0.5
+    const reward = succeeded
+      ? current.materials_invested * SUCCESS_REWARD_MULTIPLIER
+      : Math.floor(current.materials_invested * FAILURE_REWARD_RECOVERY_RATIO)
+    current.status = succeeded ? 'RESOLVED' : 'FAILED'
+    current.resolved_at = resolvedAt
+    current.result = {
+      id: fixedUuid(8, index + 1),
+      expedition_id: current.id,
+      outcome: succeeded ? 'SUCCESS' : 'FAILURE',
+      material_reward: { materials: reward },
+      created_at: resolvedAt,
+    }
+    this.state.currentExpeditionId = null
+    this.state.mutations.expeditionResolvedAt = resolveAtMs
+    this.state.mutations.expeditionReward = reward
+    this.persist()
   }
 
   private persist(): void {

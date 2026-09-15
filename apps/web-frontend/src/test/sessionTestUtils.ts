@@ -1,5 +1,9 @@
 import type { UserResponse } from '@/api/generated/user/types.gen'
-import { createSessionRuntime, type SessionRuntime } from '@/features/auth'
+import {
+  SESSION_REFRESH_STORAGE_KEY,
+  createSessionRuntime,
+  type SessionRuntime,
+} from '@/features/auth'
 import type { RefreshTokenStorage } from '@/features/auth/session/refreshTokenStorage'
 import type { SessionApi } from '@/features/auth/session/sessionApi'
 import type {
@@ -318,4 +322,23 @@ export function makeAccessToken(expiresAtMs: number): string {
 
 function base64Url(value: unknown): string {
   return btoa(JSON.stringify(value)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')
+}
+
+/**
+ * Seeds a real authenticated session through the mock backend, mirroring the
+ * Profile journey (login fetch → persisted refresh token) so the app shell
+ * bootstraps over MSW exactly like the browser. Shared by every mock-backed
+ * feature journey.
+ */
+export async function seedAuthenticatedSession(): Promise<void> {
+  const response = await fetch('/api/user/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'captain@galaxify.test', password: 'password123' }),
+  })
+  const body = (await response.json()) as { refresh_token: string }
+  window.localStorage.setItem(
+    SESSION_REFRESH_STORAGE_KEY,
+    JSON.stringify({ version: 1, refreshToken: body.refresh_token }),
+  )
 }

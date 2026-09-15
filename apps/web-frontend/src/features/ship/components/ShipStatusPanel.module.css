@@ -1,0 +1,96 @@
+.panel {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.panel h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--color-text-on-dark);
+}
+
+.section {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.section h3 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted-dark);
+}
+
+.balanceRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.copy {
+  margin: 0;
+  max-width: 65ch;
+  color: var(--color-text-muted-dark);
+}
+
+.link {
+  color: var(--color-amber);
+  font-weight: 700;
+  text-underline-offset: 0.15em;
+}
+
+.repair {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.outcome,
+.stale,
+.delayed {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.stale {
+  border-left: 3px solid var(--color-amber);
+  padding-left: var(--space-3);
+}
+
+.stale p,
+.delayed p {
+  margin: 0;
+  max-width: 65ch;
+  color: var(--color-text-muted-dark);
+}
+
+.secondary {
+  margin: 0;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted-dark);
+}
+
+.stateBlock {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.stateBlock h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--color-text-on-dark);
+}
+
+.stateBlock p {
+  margin: 0;
+  max-width: 65ch;
+  color: var(--color-text-muted-dark);
+}

@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { SESSION_REFRESH_STORAGE_KEY } from '@/features/auth'
 import { createMockTestServer, onUnhandledMockRequest } from '@/mocks'
 import { renderAppAt } from '@/test/renderApp'
+import { seedAuthenticatedSession } from '@/test/sessionTestUtils'
 
 const server = createMockTestServer({ scenario: 'established-player' })
 
@@ -26,19 +27,6 @@ beforeEach(async () => {
   window.localStorage.clear()
   await seedAuthenticatedSession()
 })
-
-async function seedAuthenticatedSession(): Promise<void> {
-  const response = await fetch('/api/user/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: 'captain@galaxify.test', password: 'password123' }),
-  })
-  const body = (await response.json()) as { refresh_token: string }
-  window.localStorage.setItem(
-    SESSION_REFRESH_STORAGE_KEY,
-    JSON.stringify({ version: 1, refreshToken: body.refresh_token }),
-  )
-}
 
 async function renderProfile() {
   renderAppAt('/profile')
