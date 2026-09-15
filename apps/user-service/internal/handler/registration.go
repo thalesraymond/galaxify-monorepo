@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -150,8 +149,8 @@ func (h *RegistrationHandler) Signup(w http.ResponseWriter, r *http.Request) {
 			ID:        sharedhttp.UUIDToString(user.ID),
 			Email:     user.Email,
 			Username:  user.Username,
-			CreatedAt: user.CreatedAt.Time.Format(time.RFC3339),
-			UpdatedAt: user.UpdatedAt.Time.Format(time.RFC3339),
+			CreatedAt: formatTimestamp(user.CreatedAt.Time),
+			UpdatedAt: formatTimestamp(user.UpdatedAt.Time),
 		},
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
