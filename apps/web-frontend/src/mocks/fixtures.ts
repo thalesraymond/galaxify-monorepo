@@ -1,5 +1,5 @@
 import type { Daily, DailyDifficulty, DailyHistory } from '@/api/generated/daily/types.gen'
-import type { Expedition } from '@/api/generated/expedition/types.gen'
+import type { Expedition, ExpeditionQuote } from '@/api/generated/expedition/types.gen'
 import type { Ship } from '@/api/generated/ship/types.gen'
 import type { UserResponse } from '@/api/generated/user/types.gen'
 
@@ -160,6 +160,26 @@ export function createDamagedShip(overrides: Partial<Ship> = {}): Ship {
 /** A healthy Ship with enough materials to launch an Expedition. */
 export function createHealthyShip(overrides: Partial<Ship> = {}): Ship {
   return createDamagedShip({ hull_health: 96, materials_balance: 250, ...overrides })
+}
+
+/**
+ * An Expedition quote anchored to the fixed epoch. The default
+ * `projected_balance` matches `createDamagedShip()` so probes reading a
+ * freshly loaded Ship succeed.
+ */
+export function createExpeditionQuote(overrides: Partial<ExpeditionQuote> = {}): ExpeditionQuote {
+  return {
+    materials_invested: 0,
+    normalized_investment: 0,
+    projected_balance: 120,
+    success_chance: 0,
+    eligible: false,
+    blocker: 'EXPEDITION_INSUFFICIENT_MATERIALS',
+    cooldown_until: null,
+    estimated_resolve_at: isoAt(HOUR),
+    estimated_resolve_window_seconds: 3600,
+    ...overrides,
+  }
 }
 
 /**
