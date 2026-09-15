@@ -1,0 +1,111 @@
+.page {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.toolbar {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.dateControls,
+.filterControls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.filterControls {
+  border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  padding-top: var(--space-3);
+}
+
+.filterActive {
+  background: var(--color-amber);
+  color: var(--color-ink);
+}
+
+.dateInput {
+  flex: 0 1 13.5rem;
+}
+
+.listHeading {
+  margin: 0 0 var(--space-4);
+  font-size: 1.5rem;
+}
+
+.list {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.section {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.section h2,
+.completedSection summary h2 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rowItem {
+  display: grid;
+}
+
+.completedSection {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.completedSection summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  border-radius: var(--radius-control);
+}
+
+.completedSection summary::-webkit-details-marker {
+  display: none;
+}
+
+.completedSection[open] summary {
+  margin-bottom: var(--space-2);
+}
+
+.staleNote {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 45%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+}
+
+.deleteError {
+  color: var(--color-danger-strong);
+  font-weight: 700;
+}
+
+.createLink {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--color-amber);
+  color: var(--color-ink);
+  font-weight: 700;
+  text-decoration: none;
+}
