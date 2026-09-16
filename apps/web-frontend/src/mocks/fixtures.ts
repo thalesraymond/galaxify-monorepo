@@ -167,11 +167,14 @@ export function createHealthyShip(overrides: Partial<Ship> = {}): Ship {
  * minimum `materials_invested: 1` (OpenAPI contract), so the default
  * `projected_balance` is `createDamagedShip().materials_balance - 1` (119)
  * and probes reading a freshly loaded Ship succeed.
+ *
+ * `normalized_investment` uses the OpenAPI formula
+ * `materials_invested / (materials_invested + 10)` = `1 / (1 + 10)` = `1/11`.
  */
 export function createExpeditionQuote(overrides: Partial<ExpeditionQuote> = {}): ExpeditionQuote {
   return {
     materials_invested: 1,
-    normalized_investment: 1 / 11,
+    normalized_investment: 1 / (1 + 10),
     projected_balance: 119,
     success_chance: 0,
     eligible: false,

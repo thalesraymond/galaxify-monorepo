@@ -3,6 +3,7 @@ import { createDamagedShip, createExpeditionQuote } from '@/mocks'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  EXPEDITION_QUOTE_PROBE_INVESTMENT,
   getShip,
   probeExpeditionReadiness,
   repairShip,
@@ -87,10 +88,12 @@ describe('ship API adapter', () => {
     })
 
     // The fixture's projected balance (119) matches a fresh damaged Ship's
-    // balance minus the probe's minimum investment of 1.
+    // balance minus the probe's minimum investment.
     await expect(probeExpeditionReadiness(transport, 120)).resolves.toBe(true)
     await expect(probeExpeditionReadiness(transport, 62)).resolves.toBe(false)
-    expect(url).toBe('/api/expedition/expeditions/quote?materials_invested=1')
+    expect(url).toBe(
+      `/api/expedition/expeditions/quote?materials_invested=${EXPEDITION_QUOTE_PROBE_INVESTMENT}`,
+    )
   })
 
   it('treats a not-ready Expedition outcome as a failed probe', async () => {
