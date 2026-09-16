@@ -87,8 +87,12 @@ describe('Expeditions overview — launch form', () => {
 
     await screen.findByText('Projected balance')
     expect(screen.getByText('210 materials')).toBeInTheDocument()
-    expect(screen.getByText('15%')).toBeInTheDocument()
-    expect(screen.getByText(/Around 10:00 AM, within ±30 min/)).toBeInTheDocument()
+    // With the backend formula: normalizedInvestment * (hullHealth / 100)
+    // where normalizedInvestment = materials / (materials + 10),
+    // 40 materials with hull_health=96 gives 0.8 * 0.96 = 0.768 = 77%.
+    expect(screen.getByText('77%')).toBeInTheDocument()
+    // The resolve window is 7 days from now with ±12 hour jitter.
+    expect(screen.getByText(/Around .*9:00 AM, within ±12 h/)).toBeInTheDocument()
     expect(screen.getByText('Ready to launch.')).toBeInTheDocument()
 
     const min = screen.getByRole('button', { name: 'Min' })
@@ -123,7 +127,8 @@ describe('Expeditions overview — launch form', () => {
       'the in-flight view',
     )
     expect(screen.getByRole('heading', { name: 'Expedition in flight' })).toBeInTheDocument()
-    expect(screen.getByText(/Resolves at 10:00 AM/)).toBeInTheDocument()
+    // The resolve time is 7 days from the fixed epoch (January 15, 2026 9:00 AM UTC).
+    expect(screen.getByText(/Resolves at .*9:00 AM/)).toBeInTheDocument()
     expect(screen.getByText('40 materials')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'View Expedition detail' })).toHaveAttribute(
       'href',

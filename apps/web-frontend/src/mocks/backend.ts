@@ -58,12 +58,10 @@ const PROPAGATION_WINDOW_MS = 2_000
 
 /**
  * Deterministic Expedition resolution rewards: a successful Expedition pays
- * twice the investment; a failed one returns a recovery of half the invested
- * materials (floored). Both are fixed rules, never random
- * (`web-frontend-delivery.md` §7).
+ * twice the investment; a failed one pays zero (matching the real worker).
+ * Both are fixed rules, never random (`web-frontend-delivery.md` §7).
  */
 export const SUCCESS_REWARD_MULTIPLIER = 2
-export const FAILURE_REWARD_RECOVERY_RATIO = 0.5
 
 /**
  * The frontend's bounded reconciliation window (web-frontend.md §3.4) is ~8s.
@@ -71,6 +69,23 @@ export const FAILURE_REWARD_RECOVERY_RATIO = 0.5
  * must surface an explicit `Update delayed` / stale state.
  */
 const STALE_PROPAGATION_WINDOW_MS = 5 * 60 * 1000
+
+/**
+ * Computes the normalized investment and success chance using the backend
+ * formulas (`docs/openapi/expedition-service.yaml`):
+ * - `normalizedInvestment = materials / (materials + 10)`
+ * - `successChance = normalizedInvestment * (hullHealth / 100)`
+ *
+ * Shared between quote and launch so the two endpoints never drift.
+ */
+function computeExpeditionFormulas(
+  materialsInvested: number,
+  hullHealth: number,
+): { normalizedInvestment: number; successChance: number } {
+  const normalizedInvestment = materialsInvested / (materialsInvested + 10)
+  const successChance = normalizedInvestment * (hullHealth / 100)
+  return { normalizedInvestment, successChance }
+}
 
 export type CreateDailyInput = z.infer<typeof zCreateDailyRequest>
 export type UpdateDailyInput = z.infer<typeof zUpdateDailyRequest>
@@ -570,26 +585,51 @@ export class MockBackend {
     this.materialize()
     const ship = this.state.ship
     const balance = ship?.materials_balance ?? 0
+    const hullHealth = ship?.hull_health ?? 0
     const current = this.findCurrentExpedition()
-    const normalized = Math.max(0, Math.trunc(materialsInvested))
-    const blocker =
-      current !== undefined
-        ? 'EXPEDITION_ALREADY_ACTIVE'
-        : normalized <= 0 || normalized > balance
-          ? 'EXPEDITION_INSUFFICIENT_MATERIALS'
-          : null
-    const normalizedInvestment = balance <= 0 ? 0 : Math.min(1, normalized / balance)
-    const successChance = Math.min(0.95, normalizedInvestment * 0.95)
+    const normalized = Math.trunc(materialsInvested)
+
+    // Backend rejects materials_invested <= 0 (handler/launch.go:127)
+    if (normalized <= 0) {
+      return {
+        materials_invested: 0,
+        normalized_investment: 0,
+        projected_balance: balance,
+        success_chance: 0,
+        eligible: false,
+        blocker: 'EXPEDITION_INSUFFICIENT_MATERIALS',
+        cooldown_until: null,
+        estimated_resolve_at: new Date(
+          this.scheduler.now() + 7 * 24 * 60 * 60 * 1000,
+        ).toISOString(),
+        estimated_resolve_window_seconds: 24 * 60 * 60,
+      }
+    }
+
+    const { normalizedInvestment, successChance } = computeExpeditionFormulas(
+      normalized,
+      hullHealth,
+    )
+
+    // Match backend blocker order: insufficient → active → cooldown
+    // (Mock doesn't track last resolve time, so cooldown is never active)
+    let blocker: string | null = null
+    if (normalized > balance) {
+      blocker = 'EXPEDITION_INSUFFICIENT_MATERIALS'
+    } else if (current !== undefined) {
+      blocker = 'EXPEDITION_ALREADY_ACTIVE'
+    }
+
     return {
       materials_invested: normalized,
       normalized_investment: normalizedInvestment,
       projected_balance: balance - normalized,
-      success_chance: blocker === null ? successChance : 0,
+      success_chance: successChance,
       eligible: blocker === null,
       blocker,
       cooldown_until: null,
-      estimated_resolve_at: new Date(this.scheduler.now() + 60 * 60 * 1000).toISOString(),
-      estimated_resolve_window_seconds: 3600,
+      estimated_resolve_at: new Date(this.scheduler.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      estimated_resolve_window_seconds: 24 * 60 * 60,
     }
   }
 
@@ -612,6 +652,25 @@ export class MockBackend {
     this.requireSession(accessToken)
     this.guardExpeditionReadiness()
     this.materialize()
+    const ship = this.state.ship
+    const materialsInvested = Math.trunc(body.materials_invested)
+
+    // Backend rejects materials_invested <= 0 (handler/launch.go:127)
+    if (materialsInvested <= 0) {
+      throw new MockApiError(
+        422,
+        'EXPEDITION_INSUFFICIENT_MATERIALS',
+        'materials_invested must be greater than 0',
+      )
+    }
+    // Match backend blocker order: insufficient → active (cooldown not tracked in mock)
+    if (ship === null || materialsInvested > ship.materials_balance) {
+      throw new MockApiError(
+        422,
+        'EXPEDITION_INSUFFICIENT_MATERIALS',
+        'There are not enough materials to invest.',
+      )
+    }
     if (this.findCurrentExpedition() !== undefined) {
       throw new MockApiError(
         409,
@@ -619,20 +678,13 @@ export class MockBackend {
         'An Expedition is already in flight.',
       )
     }
-    const ship = this.state.ship
-    if (ship === null || body.materials_invested > ship.materials_balance) {
-      throw new MockApiError(
-        422,
-        'EXPEDITION_INSUFFICIENT_MATERIALS',
-        'There are not enough materials to invest.',
-      )
-    }
+    const { successChance } = computeExpeditionFormulas(materialsInvested, ship.hull_health)
     const expedition: Expedition = {
       id: fixedUuid(7, this.state.expeditions.length + 1),
       user_id: FIXED_USER_ID,
-      materials_invested: Math.trunc(body.materials_invested),
-      success_chance: Math.min(0.95, body.materials_invested / ship.materials_balance),
-      resolve_at: new Date(this.scheduler.now() + 60 * 60 * 1000).toISOString(),
+      materials_invested: materialsInvested,
+      success_chance: successChance,
+      resolve_at: new Date(this.scheduler.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       status: 'IN_FLIGHT',
       created_at: new Date(this.scheduler.now()).toISOString(),
     }
@@ -906,11 +958,10 @@ export class MockBackend {
    * passes its `resolve_at`: the outcome follows `success_chance` without
    * randomness (at least 50% succeeds, otherwise it fails), success pays
    * `SUCCESS_REWARD_MULTIPLIER` × the investment (matching
-   * `createResolvedExpedition`), and failure returns a deterministic recovery
-   * of `FAILURE_REWARD_RECOVERY_RATIO` × the investment. The current pointer is
-   * cleared so `GET /expeditions/current` becomes a typed `none`; the Ship
-   * reward lands through the configured propagation window via
-   * `mutations.expeditionResolvedAt`/`expeditionReward`.
+   * `createResolvedExpedition`), and failure pays zero (matching the real
+   * worker). The current pointer is cleared so `GET /expeditions/current`
+   * becomes a typed `none`; the Ship reward lands through the configured
+   * propagation window via `mutations.expeditionResolvedAt`/`expeditionReward`.
    */
   private resolveCurrentExpeditionIfDue(): void {
     const current = this.findCurrentExpedition()
@@ -924,9 +975,8 @@ export class MockBackend {
     const resolvedAt = new Date(resolveAtMs).toISOString()
     const index = this.state.expeditions.findIndex((expedition) => expedition.id === current.id)
     const succeeded = current.success_chance >= 0.5
-    const reward = succeeded
-      ? current.materials_invested * SUCCESS_REWARD_MULTIPLIER
-      : Math.floor(current.materials_invested * FAILURE_REWARD_RECOVERY_RATIO)
+    // Match backend: success pays SUCCESS_REWARD_MULTIPLIER × investment; failure pays 0.
+    const reward = succeeded ? current.materials_invested * SUCCESS_REWARD_MULTIPLIER : 0
     current.status = succeeded ? 'RESOLVED' : 'FAILED'
     current.resolved_at = resolvedAt
     current.result = {
