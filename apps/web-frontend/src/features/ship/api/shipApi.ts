@@ -44,6 +44,10 @@ export function repairShip(
  * (`web-frontend.md` §3.4) by reading its quote view of the materials balance.
  * Any readiness failure, outage, or stale balance keeps the probe failing so
  * the UI can bound its reconciliation window.
+ *
+ * The quote endpoint requires `materials_invested >= 1` (OpenAPI minimum), so
+ * the probe invests 1 and compares `projected_balance` against
+ * `expectedMaterialsBalance - 1`.
  */
 export async function probeExpeditionReadiness(
   transport: ApiTransport,
@@ -53,10 +57,10 @@ export async function probeExpeditionReadiness(
     const quote = await transport.request({
       service: 'expedition',
       path: '/expeditions/quote',
-      query: { materials_invested: 0 },
+      query: { materials_invested: 1 },
       response: zExpeditionQuoteResponse,
     })
-    return quote.projected_balance === expectedMaterialsBalance
+    return quote.projected_balance === expectedMaterialsBalance - 1
   } catch {
     return false
   }

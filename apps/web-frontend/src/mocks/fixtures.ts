@@ -163,15 +163,16 @@ export function createHealthyShip(overrides: Partial<Ship> = {}): Ship {
 }
 
 /**
- * An Expedition quote anchored to the fixed epoch. The default
- * `projected_balance` matches `createDamagedShip()` so probes reading a
- * freshly loaded Ship succeed.
+ * An Expedition quote anchored to the fixed epoch. The probe invests the
+ * minimum `materials_invested: 1` (OpenAPI contract), so the default
+ * `projected_balance` is `createDamagedShip().materials_balance - 1` (119)
+ * and probes reading a freshly loaded Ship succeed.
  */
 export function createExpeditionQuote(overrides: Partial<ExpeditionQuote> = {}): ExpeditionQuote {
   return {
-    materials_invested: 0,
-    normalized_investment: 0,
-    projected_balance: 120,
+    materials_invested: 1,
+    normalized_investment: 1 / 11,
+    projected_balance: 119,
     success_chance: 0,
     eligible: false,
     blocker: 'EXPEDITION_INSUFFICIENT_MATERIALS',

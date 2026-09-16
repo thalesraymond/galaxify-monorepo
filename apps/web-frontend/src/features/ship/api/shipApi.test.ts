@@ -86,10 +86,11 @@ describe('ship API adapter', () => {
       },
     })
 
-    // The fixture's projected balance matches a fresh damaged Ship's balance.
+    // The fixture's projected balance (119) matches a fresh damaged Ship's
+    // balance minus the probe's minimum investment of 1.
     await expect(probeExpeditionReadiness(transport, 120)).resolves.toBe(true)
     await expect(probeExpeditionReadiness(transport, 62)).resolves.toBe(false)
-    expect(url).toBe('/api/expedition/expeditions/quote?materials_invested=0')
+    expect(url).toBe('/api/expedition/expeditions/quote?materials_invested=1')
   })
 
   it('treats a not-ready Expedition outcome as a failed probe', async () => {
