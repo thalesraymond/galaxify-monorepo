@@ -2,6 +2,7 @@ export {
   MockBackend,
   MockApiError,
   DEFAULT_MOCK_RESPONSE_DELAY_MS,
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- retained for API compatibility
   FAILURE_REWARD_RECOVERY_RATIO,
   SUCCESS_REWARD_MULTIPLIER,
 } from './backend'

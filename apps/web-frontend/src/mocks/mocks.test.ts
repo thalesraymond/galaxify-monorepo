@@ -387,22 +387,25 @@ describe('mock backend and strict MSW handlers', () => {
     })
   })
 
-  it('resolves a low-chance Expedition to a deterministic FAILURE with a recovery reward', async () => {
+  it('resolves a low-chance Expedition to a deterministic FAILURE with zero reward', async () => {
     const scheduler = new ManualMockScheduler(FIXED_MOCK_EPOCH_MS)
     await withMockServer({ scenario: 'established-player', scheduler }, async () => {
       const session = await login()
 
       // A small investment yields a success chance below 0.5, so resolution
-      // must fail deterministically.
+      // must fail deterministically. With the backend formula
+      // `normalizedInvestment * (hullHealth / 100)` where
+      // `normalizedInvestment = materials / (materials + 10)`, an investment
+      // of 10 with hull_health=96 gives success_chance = 0.48.
       const launch = await fetch(
         `${BASE}/api/expedition/expeditions/launch`,
-        jsonRequest({ materials_invested: 40 }, session.access_token),
+        jsonRequest({ materials_invested: 10 }, session.access_token),
       )
       expect(launch.status).toBe(201)
       const inFlight = (await readJson(launch)) as { id: string; success_chance: number }
       expect(inFlight.success_chance).toBeLessThan(0.5)
 
-      scheduler.advance(60 * 60 * 1000)
+      scheduler.advance(7 * 24 * 60 * 60 * 1000)
       const rotated = await fetch(
         `${BASE}/api/user/auth/refresh`,
         jsonRequest({ refresh_token: session.refresh_token }),
@@ -419,8 +422,8 @@ describe('mock backend and strict MSW handlers', () => {
       }
       expect(resolved.status).toBe('FAILED')
       expect(resolved.result.outcome).toBe('FAILURE')
-      // floor(40 * 0.5) = 20 recovery.
-      expect(resolved.result.material_reward.materials).toBe(20)
+      // Failure pays zero reward, matching the real worker.
+      expect(resolved.result.material_reward.materials).toBe(0)
 
       // The failure also clears "current": a fresh Expedition can be launched.
       const current = await fetch(
