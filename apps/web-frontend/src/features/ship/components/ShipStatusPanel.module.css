@@ -77,6 +77,10 @@
   color: var(--color-text-muted-dark);
 }
 
+.loading {
+  min-height: 26rem;
+}
+
 .stateBlock {
   display: grid;
   gap: var(--space-3);

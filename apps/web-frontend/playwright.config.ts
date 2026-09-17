@@ -32,12 +32,30 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'], baseURL: mockBaseURL },
-      testIgnore: /session-outage\.spec\.ts/,
+      testIgnore: [/session-outage\.spec\.ts/, /cross-browser\.spec\.ts/],
     },
     {
       name: 'outage-chromium',
       use: { ...devices['Desktop Chrome'], baseURL: outageBaseURL },
       testMatch: /session-outage\.spec\.ts/,
+    },
+    // Cross-engine release matrix (delivery spec §6): representative journeys
+    // on Firefox, WebKit, and mobile WebKit. Chromium covers the same journeys
+    // inside its full matrix, so it ignores this spec.
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'], baseURL: mockBaseURL },
+      testMatch: /cross-browser\.spec\.ts/,
+    },
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'], baseURL: mockBaseURL },
+      testMatch: /cross-browser\.spec\.ts/,
+    },
+    {
+      name: 'mobile-webkit',
+      use: { ...devices['iPhone 13'], baseURL: mockBaseURL },
+      testMatch: /cross-browser\.spec\.ts/,
     },
   ],
   webServer: [

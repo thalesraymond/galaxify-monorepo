@@ -1,12 +1,21 @@
 .form {
   display: grid;
+  /* An implicit auto track sizes to the widest control's max-content — the
+     Time zone select's longest IANA name — and pushes the whole form past the
+     320 px reflow floor. The single column must take the container's width. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   max-width: 34rem;
 }
 
 .field {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
+}
+
+.field select {
+  width: 100%;
 }
 
 .field label,

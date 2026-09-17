@@ -45,7 +45,7 @@ npm run dev:mock       # Vite + deterministic MSW handlers (no Go services neede
 npm run build          # tsc -b && vite build into dist/
 npm run api:generate   # regenerate wire types and Zod schemas from docs/openapi
 npm run api:check      # fail when generated contracts drift from docs/openapi
-npm run bundle:check   # fail when built browser assets contain proxy configuration
+npm run bundle:check   # proxy-leak inspection + §8 gzip budgets (200/150 KiB)
 npm run preview        # serve the production build on 127.0.0.1:4173
 npm run format:check   # Prettier
 npm run typecheck      # strict project-reference type check
@@ -55,9 +55,11 @@ npm run test:coverage  # coverage with the delivery thresholds
 npm run test:orchestration  # repository supervisor helper tests
 npm run test:e2e       # Playwright smoke
 npm run test:e2e:mock  # Playwright smoke against the MSW dev server
-npm run test:a11y      # axe on the app shell
+npm run test:cross-browser  # Firefox, WebKit, and mobile WebKit release journeys
+npm run test:a11y      # axe + the release accessibility checklist automation
 npm run test:visual    # 390x844 and 1440x900 shell baselines
-npm run perf           # Lighthouse CI against the preview server
+npm run perf           # Lighthouse CI against the unauthenticated preview route
+npm run perf:dashboard # authenticated real-stack Dashboard Lighthouse (requires make dev)
 npm run verify         # the complete gate, in order
 ```
 
@@ -114,6 +116,43 @@ Tests reuse the same handlers through an isolated in-memory backend
 (`createMockTestServer`) with the response delay disabled and the fake clock
 advanced explicitly, so asynchronous behavior is deterministic.
 
+## Real-stack smoke
+
+The Phase 1 release evidence (`docs/specs/web-frontend-phase1-release-evidence.md`)
+includes one real-stack journey from signup through logout, driven by the gated
+spec `e2e/real-stack-smoke.spec.ts`. It is skipped unless `RUN_REAL_STACK=1`.
+
+```sh
+# 1. Healthy infrastructure (or `make dev-infra`); attach when it already runs:
+#    node scripts/dev.mjs --no-infra
+# 2. Full stack with a short missed-Daily sweep so the hull-damage leg is fast:
+CRON_INTERVAL=15s make dev
+
+# 3. From apps/web-frontend:
+RUN_REAL_STACK=1 npx playwright test e2e/real-stack-smoke.spec.ts --project=chromium
+```
+
+The journey covers signup provisioning, reload restoration, Daily
+create/complete, the observed Daily-to-Ship materials effect, missed-Daily
+hull damage, eligible repair, Expedition launch, Profile update, and logout —
+all through the Vite proxies against the real services, RabbitMQ, and workers.
+
+### Dashboard Lighthouse evidence
+
+`npm run perf` is CI-safe and measures the unauthenticated Login route. The
+release gate separately requires a representative authenticated Dashboard
+measurement. With the real stack running and a production build available:
+
+```sh
+npm run build
+npm run perf:dashboard
+```
+
+The command creates a new account through the production preview, reuses its
+real persisted session for `/dashboard`, writes the report under
+`.lighthouseci/dashboard-lhr.json`, and fails below performance 90 or
+accessibility 95. It has no retries and does not use MSW.
+
 ## Troubleshooting
 
 - **`make dev` reports an occupied port**: another stack owns it. Run
@@ -127,6 +166,12 @@ advanced explicitly, so asynchronous behavior is deterministic.
   is healthy, then check the `*_PROXY_TARGET` values in `.env.local`.
 - **`make dev-reset` is refused**: it requires an explicit `y`/`yes`; it
   permanently deletes local volumes before reapplying migrations.
+- **`test:cross-browser` fails to launch WebKit on non-Ubuntu Linux**: WebKit
+  needs `libicu74`, `libxml2` (soname `.so.2`), and `libflite1`. On Debian/Ubuntu
+  run `npx playwright install-deps webkit`; on other distributions supply those
+  libraries (the Playwright WebKit bundle's `sys/lib` directory is on its
+  loader path and accepts them) — see the environment notes in
+  `docs/specs/web-frontend-phase1-release-evidence.md`.
 
 ## API boundary
 

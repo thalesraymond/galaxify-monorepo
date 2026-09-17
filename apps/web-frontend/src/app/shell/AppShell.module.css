@@ -1,5 +1,9 @@
 .shell {
   display: grid;
+  /* The single mobile column must never grow to content max-content:
+     an auto track lets an unwrappable form widen the whole shell past the
+     320 px reflow floor (DESIGN.md "Minimum viewport is 320 CSS px"). */
+  grid-template-columns: minmax(0, 1fr);
   min-height: 100vh;
   background: var(--color-shell-deep);
 }
@@ -32,6 +36,7 @@
 }
 .main {
   width: min(100%, 76rem);
+  min-height: calc(100vh - 64px);
   margin: 0 auto;
   padding: var(--space-6) var(--space-4)
     calc(var(--space-16) + 4.5rem + env(safe-area-inset-bottom));

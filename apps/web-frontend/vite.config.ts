@@ -63,6 +63,10 @@ export default defineConfig(({ mode }) => {
       host: '127.0.0.1',
       port: 4173,
       strictPort: true,
+      // `perf:dashboard` deliberately measures the production build while
+      // signing up through the real services, so preview must preserve the
+      // same server-only relative `/api/{service}` proxy boundary as dev.
+      ...(proxy === undefined ? {} : { proxy }),
     },
     test: {
       environment: 'jsdom',
