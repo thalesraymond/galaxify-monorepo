@@ -30,7 +30,7 @@ export function DashboardExpeditionPanel() {
 
   if (currentQuery.isPending) {
     return (
-      <ContentSurface tone="raised">
+      <ContentSurface tone="raised" className={styles.loading} aria-busy="true">
         <Skeleton lines={3} />
       </ContentSurface>
     )

@@ -112,7 +112,11 @@ export function DashboardDailiesPanel() {
   let body: ReactNode
   const listError = listQuery.error
   if (listQuery.isPending) {
-    body = <Skeleton lines={3} />
+    body = (
+      <div className={styles.loading} aria-busy="true">
+        <Skeleton lines={3} />
+      </div>
+    )
   } else if (isApiHttpError(listError, 'DAILY_PLAYER_NOT_READY')) {
     body = (
       <div className={styles.stateBlock}>

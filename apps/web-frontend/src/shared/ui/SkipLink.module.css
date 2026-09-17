@@ -3,6 +3,9 @@
   left: var(--space-4);
   top: calc(-1 * var(--space-16));
   z-index: var(--z-toast);
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-control);
   background-color: var(--color-logbook);

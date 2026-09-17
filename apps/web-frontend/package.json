@@ -23,13 +23,15 @@
     "test:orchestration": "node --test ../../scripts/dev.test.mjs",
     "test:e2e": "playwright test e2e/smoke.spec.ts",
     "test:e2e:mock": "playwright test e2e/mock-smoke.spec.ts e2e/auth.spec.ts e2e/session-outage.spec.ts",
+    "test:cross-browser": "playwright test e2e/cross-browser.spec.ts",
     "test:visual": "playwright test e2e/visual.spec.ts",
-    "test:a11y": "playwright test e2e/a11y.spec.ts",
+    "test:a11y": "playwright test e2e/a11y.spec.ts e2e/a11y-checklist.spec.ts",
     "perf": "node scripts/run-lhci.mjs",
+    "perf:dashboard": "node scripts/run-dashboard-lighthouse.mjs",
     "api:generate": "openapi-ts -f openapi-ts.config.ts",
     "api:check": "npm run api:generate && git diff --exit-code -- src/api/generated",
     "bundle:check": "node scripts/check-production-bundle.mjs",
-    "verify": "npm run format:check && npm run typecheck && npm run lint && npm run test:coverage && npm run test:orchestration && npm run api:check && npm run build && npm run bundle:check && npm run test:e2e && npm run test:e2e:mock && npm run test:a11y && npm run test:visual && npm run perf"
+    "verify": "npm run format:check && npm run typecheck && npm run lint && npm run test:coverage && npm run test:orchestration && npm run api:check && npm run build && npm run bundle:check && npm run test:e2e && npm run test:e2e:mock && npm run test:cross-browser && npm run test:a11y && npm run test:visual && npm run perf"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.102.8",

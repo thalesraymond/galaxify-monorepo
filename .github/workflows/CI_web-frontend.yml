@@ -79,9 +79,9 @@ jobs:
         working-directory: apps/web-frontend
         run: npm ci
 
-      - name: Install Playwright Chromium
+      - name: Install Playwright browsers
         working-directory: apps/web-frontend
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Run the full frontend gate
         working-directory: apps/web-frontend

@@ -28,6 +28,10 @@
   text-decoration: underline;
 }
 
+.loading {
+  min-height: 18rem;
+}
+
 .stateBlock {
   display: grid;
   gap: var(--space-3);
