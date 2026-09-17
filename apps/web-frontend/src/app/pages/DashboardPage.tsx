@@ -22,10 +22,10 @@ export function DashboardPage() {
         description="Today's Dailies, Ship status, and Expedition progress."
       />
       <div className={styles.grid}>
-        <div className={styles.mainRail}>
+        <div className={styles.rail}>
           <DashboardDailiesPanel />
         </div>
-        <aside className={styles.supportRail} aria-label="Ship and Expedition status">
+        <aside className={styles.rail} aria-label="Ship and Expedition status">
           <ShipStatusPanel />
           <DashboardExpeditionPanel />
         </aside>

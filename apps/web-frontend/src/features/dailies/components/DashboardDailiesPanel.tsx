@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
@@ -86,18 +86,6 @@ export function DashboardDailiesPanel() {
     },
   })
 
-  const titleRefs = useRef(new Map<string, HTMLHeadingElement>())
-
-  const captureTitleRef =
-    (id: string) =>
-    (element: HTMLHeadingElement | null): void => {
-      if (element === null) {
-        titleRefs.current.delete(id)
-      } else {
-        titleRefs.current.set(id, element)
-      }
-    }
-
   const renderRow = (daily: Daily): ReactNode => (
     <li key={daily.id} className={styles.rowItem}>
       <DailyRow
@@ -117,7 +105,6 @@ export function DashboardDailiesPanel() {
           completion.retryReconciliation(daily.id)
         }}
         reconciliation={completion.reconciliations.get(daily.id)}
-        titleRef={captureTitleRef(daily.id)}
       />
     </li>
   )

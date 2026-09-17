@@ -8,13 +8,7 @@
   gap: var(--space-6);
 }
 
-.mainRail {
-  display: grid;
-  gap: var(--space-6);
-  min-width: 0;
-}
-
-.supportRail {
+.rail {
   display: grid;
   gap: var(--space-6);
   min-width: 0;

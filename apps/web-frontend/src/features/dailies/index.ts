@@ -26,11 +26,5 @@ export type {
   DailyListFilters,
   UpdateDailyInput,
 } from './api/dailyApi'
-// Dashboard composition: panel, row component, completion hook, difficulty metadata, and time helpers.
+// Dashboard composition: the panel is the only cross-feature export.
 export { DashboardDailiesPanel } from './components/DashboardDailiesPanel'
-export { DailyRow } from './components/DailyRow'
-export { useDailyCompletion } from './hooks/useDailyCompletion'
-export type { CompletionFailure, ReconciliationState } from './hooks/useDailyCompletion'
-export { difficultyRewardsMap } from './lib/difficulties'
-export type { DifficultyRewards } from './lib/difficulties'
-export { formatOccurrenceDate, localDayRange, todayDateInput } from './lib/dailyTime'
