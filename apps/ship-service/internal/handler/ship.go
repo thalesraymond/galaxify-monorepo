@@ -127,6 +127,6 @@ func shipToResponse(state ship.State) shipResponse {
 		HullHealth:       state.HullHealth,
 		MaterialsBalance: state.MaterialsBalance,
 		Level:            state.Level,
-		UpdatedAt:        state.UpdatedAt.Format(time.RFC3339Nano),
+		UpdatedAt:        state.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
 }
