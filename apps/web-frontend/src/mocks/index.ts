@@ -2,7 +2,6 @@ export {
   MockBackend,
   MockApiError,
   DEFAULT_MOCK_RESPONSE_DELAY_MS,
-  FAILURE_REWARD_RECOVERY_RATIO,
   SUCCESS_REWARD_MULTIPLIER,
 } from './backend'
 export type { MockBackendOptions } from './backend'
