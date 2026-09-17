@@ -233,12 +233,12 @@ func expeditionToResponse(record expedition.Record) expeditionResponse {
 		UserID:            record.UserID.String(),
 		MaterialsInvested: record.MaterialsInvested,
 		SuccessChance:     record.SuccessChance,
-		ResolveAt:         record.ResolveAt.Format(time.RFC3339Nano),
+		ResolveAt:         record.ResolveAt.UTC().Format(time.RFC3339Nano),
 		Status:            record.Status,
-		CreatedAt:         record.CreatedAt.Format(time.RFC3339Nano),
+		CreatedAt:         record.CreatedAt.UTC().Format(time.RFC3339Nano),
 	}
 	if record.ResolvedAt != nil {
-		resolvedAt := record.ResolvedAt.Format(time.RFC3339Nano)
+		resolvedAt := record.ResolvedAt.UTC().Format(time.RFC3339Nano)
 		response.ResolvedAt = &resolvedAt
 	}
 	if record.Result != nil {
@@ -247,7 +247,7 @@ func expeditionToResponse(record expedition.Record) expeditionResponse {
 			ExpeditionID:   record.Result.ExpeditionID.String(),
 			Outcome:        record.Result.Outcome,
 			MaterialReward: materialRewardResponse{Materials: record.Result.MaterialsReward},
-			CreatedAt:      record.Result.CreatedAt.Format(time.RFC3339Nano),
+			CreatedAt:      record.Result.CreatedAt.UTC().Format(time.RFC3339Nano),
 		}
 	}
 	return response
@@ -260,7 +260,7 @@ func quoteToResponse(quote expedition.Quote) expeditionQuoteResponse {
 		ProjectedBalance:              quote.ProjectedBalance,
 		SuccessChance:                 quote.SuccessChance,
 		Eligible:                      quote.Eligible,
-		EstimatedResolveAt:            quote.EstimatedResolveAt.Format(time.RFC3339Nano),
+		EstimatedResolveAt:            quote.EstimatedResolveAt.UTC().Format(time.RFC3339Nano),
 		EstimatedResolveWindowSeconds: int64(quote.EstimatedResolveWindow / time.Second),
 	}
 	if quote.Blocker != expedition.BlockerNone {
@@ -268,7 +268,7 @@ func quoteToResponse(quote expedition.Quote) expeditionQuoteResponse {
 		response.Blocker = &blocker
 	}
 	if quote.CooldownUntil != nil {
-		cooldownUntil := quote.CooldownUntil.Format(time.RFC3339Nano)
+		cooldownUntil := quote.CooldownUntil.UTC().Format(time.RFC3339Nano)
 		response.CooldownUntil = &cooldownUntil
 	}
 	return response
