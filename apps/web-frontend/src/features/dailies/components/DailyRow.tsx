@@ -29,7 +29,7 @@ export function DailyRow({
   daily: Daily
   difficultyMeta: DifficultyRewards | undefined
   isCurrent: boolean
-  titleRef: (element: HTMLHeadingElement | null) => void
+  titleRef?: (element: HTMLHeadingElement | null) => void
   completing: boolean
   failure: CompletionFailure | undefined
   reconciliation: ReconciliationState | undefined

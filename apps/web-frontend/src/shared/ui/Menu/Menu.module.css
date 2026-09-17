@@ -23,6 +23,15 @@
   border-radius: var(--radius-control);
   background: var(--color-shell-raised);
   box-shadow: 0 10px 28px rgb(0 0 0 / 0.3);
+  /* On mobile the trigger sits in the sticky top header, so the dropdown opens below. */
+  top: 100%;
+}
+/* On desktop the trigger sits in the sticky sidebar near the viewport bottom, so the dropdown opens above. */
+@media (min-width: 768px) {
+  .items {
+    top: auto;
+    bottom: 100%;
+  }
 }
 .items :global(a),
 .items :global(button) {

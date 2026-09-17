@@ -1,0 +1,31 @@
+.page {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.grid {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.rail {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+/* Tablet: one column, same as mobile. */
+@media (min-width: 768px) {
+  .grid {
+    gap: var(--space-8);
+  }
+}
+
+/* Desktop: asymmetric rail — Dailies dominate, Ship/Expedition in support. */
+@media (min-width: 1024px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
+    gap: var(--space-8);
+    align-items: start;
+  }
+}

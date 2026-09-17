@@ -26,3 +26,5 @@ export type {
   DailyListFilters,
   UpdateDailyInput,
 } from './api/dailyApi'
+// Dashboard composition: the panel is the only cross-feature export.
+export { DashboardDailiesPanel } from './components/DashboardDailiesPanel'
