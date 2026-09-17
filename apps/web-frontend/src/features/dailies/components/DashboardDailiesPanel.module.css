@@ -1,0 +1,121 @@
+.panel {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.panelHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.panelHeader h2 {
+  margin: 0;
+}
+
+.viewAllLink {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  font-weight: 700;
+  color: var(--color-ink);
+  text-decoration: none;
+}
+
+.viewAllLink:hover {
+  text-decoration: underline;
+}
+
+.stateBlock {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.stateBlock h3 {
+  margin: 0;
+}
+
+.stateBlock p {
+  margin: 0;
+  color: var(--color-text-muted-light);
+}
+
+.staleNote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  font-size: 0.875rem;
+}
+
+.staleNote span {
+  font-weight: 700;
+}
+
+.list {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.section h3 {
+  margin: 0 0 var(--space-2);
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted-light);
+}
+
+.rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rowItem + .rowItem {
+  border-top: 1px solid color-mix(in srgb, var(--color-ink) 12%, transparent);
+}
+
+.completedSection {
+  border-top: 1px solid color-mix(in srgb, var(--color-ink) 12%, transparent);
+  padding-top: var(--space-3);
+}
+
+.completedSection summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.completedSection summary::-webkit-details-marker {
+  display: none;
+}
+
+.completedSection summary h3 {
+  margin: 0;
+}
+
+.createLink {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--color-amber);
+  color: var(--color-ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.deleteError {
+  margin: var(--space-2) 0 0;
+  color: var(--color-danger-strong);
+}
