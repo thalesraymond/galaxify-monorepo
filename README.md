@@ -5,53 +5,67 @@ track. Players complete recurring dailies to earn ship materials, miss dailies
 and take hull damage, repair their ship, and eventually invest materials in
 weekly expeditions.
 
-The backend is a Go workspace monorepo of independently deployable services.
+The product is a React frontend backed by independently deployable Go services.
 Each service owns a PostgreSQL database and communicates through a RabbitMQ
-topic exchange. The frontend is still a placeholder.
+topic exchange.
 
 ## Project status
 
-Galaxify is under active development. Authentication and the recurring-daily
-lifecycle are implemented; the Ship Service is partially implemented; the
-Expedition Service is still at infrastructure-scaffold stage.
+Phase 1 is complete. The full Player loop is available locally: sign up, manage
+recurring Dailies, observe Ship material and hull changes, repair, launch an
+Expedition, and follow it to resolution. The React application supports both
+the real local stack and deterministic MSW scenarios.
 
 | Component | Current implementation |
 | --- | --- |
 | User Service | Signup, login, refresh-token rotation and reuse detection, EdDSA access tokens, JWKS, authenticated profile read/update/delete, and `user.created` / `user.deleted` publication |
 | Daily Service | Authenticated daily CRUD, completion, history, recurring lifecycle, user-cache consumers, and `daily.completed` publication |
 | Daily Cron | Five-minute missed/completed sweep, archival history, deadline rollover, and `daily.missed` publication |
-| Ship Service | Ship schema and queries plus an idempotent `user.created` consumer that provisions the default ship; only `/health` is exposed over HTTP today |
-| Expedition Service | PostgreSQL/RabbitMQ startup wiring and `/health`; expedition domain behavior is not implemented yet |
-| Web frontend | Placeholder only; the frontend stack has not been selected |
+| Ship Service | Default-ship provisioning, idempotent Daily and Expedition event consumers, authenticated Ship status and repair, and `ship.status_updated` publication |
+| Expedition Service | Player and Ship projections, authenticated launch/current/history/detail/quote APIs, and `expedition.launched` publication |
+| Expedition Worker | Resolves due Expeditions and publishes `expedition.completed` |
+| Web frontend | React 19/Vite Player experience with typed OpenAPI contracts, real and MSW modes, automated accessibility, visual, cross-browser, E2E, and performance gates |
 
-Event publication currently happens directly after database work. Consumer-side
-deduplication is transactional, but producer-side delivery is not yet atomic:
-RabbitMQ failures can lose an event after a state change commits. The
-[transactional outbox ticket](https://github.com/thalesraymond/galaxify-monorepo/issues/20)
-is the main cross-cutting reliability gap.
+Every publishing service stages its state mutation and outbox record in the
+same database transaction. The shared outbox drainer publishes those records
+at least once; idempotent consumers apply their deduplication record and domain
+mutation in one transaction. Service outboxes drain after HTTP requests, so a
+pending service event can wait for a subsequent request; worker outboxes drain
+on their scheduled ticks.
+
+The authoritative product and delivery documents are:
+
+- [Phase 1 product specification](docs/specs/web-frontend.md)
+- [Phase 1 delivery specification](docs/specs/web-frontend-delivery.md)
+- [Frontend application guide](apps/web-frontend/README.md)
+- [OpenAPI contracts](docs/openapi/README.md)
+- [Phase 1 release evidence](docs/specs/web-frontend-phase1-release-evidence.md)
+- [Accessibility checklist](docs/specs/web-frontend-accessibility-checklist.md)
 
 ## Architecture
 
-The committed [`go.work`](go.work) joins six Go modules:
+The committed [`go.work`](go.work) joins seven Go modules:
 
 ```text
 .
 ├── apps/
 │   ├── user-service/        # Accounts, sessions, signing keys, JWKS
 │   ├── daily-service/       # Recurring dailies and history
-│   ├── ship-service/        # Hull and materials (partially implemented)
-│   ├── expedition-service/  # Weekly expeditions (scaffold)
-│   └── web-frontend/        # Placeholder; not a Go module
+│   ├── ship-service/        # Ship hull, materials, and repair
+│   ├── expedition-service/  # Expedition launch and read APIs
+│   └── web-frontend/        # React/Vite frontend; not a Go module
 ├── pkg/
 │   ├── auth/                # EdDSA JWT, JWKS cache, passwords, refresh tokens
 │   ├── events/              # Envelopes, publisher/subscriber, idempotent consumers
 │   ├── rabbitmq/            # Broker connection
 │   └── sharedhttp/          # Error envelopes, auth, request IDs, JSON helpers
 ├── workers/
-│   └── daily-cron/          # Missed-daily processing and cycle rollover
+│   ├── daily-cron/          # Missed-daily processing and cycle rollover
+│   └── expedition-worker/   # Due-expedition resolution
 ├── docs/
 │   ├── adr/                 # Architectural decisions and rationale
-│   └── specs/               # Phase 1 target behavior
+│   ├── openapi/             # Service HTTP wire contracts
+│   └── specs/               # Product, delivery, and release evidence
 ├── docker-compose.yml       # Four PostgreSQL instances and RabbitMQ
 ├── go.work
 └── Makefile
@@ -71,20 +85,20 @@ Important architectural properties:
 - Goose owns migrations and sqlc generates the database layer.
 
 See [`docs/adr/`](docs/adr/) for design rationale and
-[`docs/specs/`](docs/specs/) for the Phase 1 target contracts. Specs describe
-the intended end state; the status table above identifies what exists today.
+[`docs/specs/`](docs/specs/) for product and delivery requirements.
 
 ## HTTP surface
 
 | Service | Port | Implemented routes |
 | --- | ---: | --- |
-| User | `8081` | `GET /health`, `POST /users`, `POST /auth/login`, `POST /auth/refresh`, `GET /.well-known/jwks.json`, `GET/PATCH/DELETE /users/me` |
-| Daily | `8082` | `GET /health`, `POST/GET /dailies`, `GET /dailies/history`, `GET/PATCH/DELETE /dailies/{id}`, `POST /dailies/{id}/complete` |
-| Ship | `8083` | `GET /health` |
-| Expedition | `8084` | `GET /health` |
+| User | `8081` | `GET /health`, `POST /users`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /.well-known/jwks.json`, `GET/PATCH/DELETE /users/me` |
+| Daily | `8082` | `GET /health`, `POST/GET /dailies`, `GET /dailies/history`, `GET /dailies/difficulties`, `GET/PATCH/DELETE /dailies/{id}`, `POST /dailies/{id}/complete` |
+| Ship | `8083` | `GET /health`, `GET /ships/me`, `POST /ships/repair` |
+| Expedition | `8084` | `GET /health`, `GET /expeditions`, `GET /expeditions/current`, `GET /expeditions/quote`, `GET /expeditions/{id}`, `POST /expeditions/launch` |
 
-All non-health Daily routes and the `/users/me` routes require an access token
-issued by User Service.
+All routes except health, signup, login, refresh, logout, and JWKS require an
+access token issued by User Service. The [OpenAPI contracts](docs/openapi/)
+are the source of truth for request and response shapes.
 
 ## Local development
 
@@ -122,7 +136,7 @@ Frontend modes, environment variables, mock scenarios, reset behavior, and
 troubleshooting live in
 [`apps/web-frontend/README.md`](apps/web-frontend/README.md).
 
-### Canonical local commands
+### Canonical local development commands
 
 | Command | Description |
 | --- | --- |
@@ -143,7 +157,7 @@ infrastructure that is already healthy (for example, another worktree or CI).
 From the repository root:
 
 ```sh
-for dir in apps/{user,daily,ship,expedition}-service workers/daily-cron; do
+for dir in apps/{user,daily,ship,expedition}-service workers/{daily-cron,expedition-worker}; do
   cp "$dir/.env.example" "$dir/.env"
 done
 docker compose up -d
@@ -159,6 +173,7 @@ cd apps/daily-service && go run .
 cd apps/ship-service && go run .
 cd apps/expedition-service && go run .
 cd workers/daily-cron && go run .
+cd workers/expedition-worker && go run .
 ```
 
 The example values match `docker-compose.yml`. Each process loads its local
@@ -206,50 +221,16 @@ The root Makefile runs commands in each applicable module. Do not run
 | `make sqlc` | Regenerate database code for all four services |
 | `make fmt` | Run `gofmt` over repository Go files |
 | `make tidy` | Run `go mod tidy` in every Go module |
+| `make frontend-install` | Install frontend dependencies from the committed lockfile |
+| `make frontend-verify` | Run the complete frontend formatting, type, lint, test, browser, accessibility, and performance gate |
 | `make help` | List available targets |
 
 When changing a module, the required verification is `go build ./...`,
 `go test ./...`, and `go vet ./...` from that module's directory. A change to
 `pkg` also requires verification in every importing module.
 
-## Current implementation tickets
+## Backlog
 
-The open backlog as of 2026-09-11 is organized around these milestones:
-
-1. **Reliable event publication** — the transactional outbox and bounded
-   HTTP-triggered drain
-   ([#20](https://github.com/thalesraymond/galaxify-monorepo/issues/20)) are
-   implemented across User, Daily, Ship, and Expedition, plus the
-   `daily-cron` worker (staging events in the mutation transaction and draining
-   through `pkg/events.OutboxDrainer`).
-2. **Finish Ship Service** — consume daily outcomes
-   ([#64](https://github.com/thalesraymond/galaxify-monorepo/issues/64)), add
-   repair ([#65](https://github.com/thalesraymond/galaxify-monorepo/issues/65))
-   and ship reads
-   ([#67](https://github.com/thalesraymond/galaxify-monorepo/issues/67)), then
-   cover the complete flow with integration tests
-   ([#66](https://github.com/thalesraymond/galaxify-monorepo/issues/66)).
-3. **Build Expedition Service** — add the schema and queries
-   ([#74](https://github.com/thalesraymond/galaxify-monorepo/issues/74)), cache
-   consumers
-   ([#69](https://github.com/thalesraymond/galaxify-monorepo/issues/69),
-   [#73](https://github.com/thalesraymond/galaxify-monorepo/issues/73)), launch
-   and read APIs
-   ([#70](https://github.com/thalesraymond/galaxify-monorepo/issues/70),
-   [#77](https://github.com/thalesraymond/galaxify-monorepo/issues/77)), and the
-   resolution worker
-   ([#75](https://github.com/thalesraymond/galaxify-monorepo/issues/75)).
-4. **Connect expeditions to ships** — deduct invested materials
-   ([#71](https://github.com/thalesraymond/galaxify-monorepo/issues/71)) and
-   grant successful rewards
-   ([#72](https://github.com/thalesraymond/galaxify-monorepo/issues/72)).
-5. **Complete integration coverage** — User
-   ([#53](https://github.com/thalesraymond/galaxify-monorepo/issues/53)), Daily
-   ([#60](https://github.com/thalesraymond/galaxify-monorepo/issues/60)), and
-   Expedition
-   ([#76](https://github.com/thalesraymond/galaxify-monorepo/issues/76)).
-
-GitHub issues are the source of truth for scope, dependencies, and completion
-criteria. See the
-[current open issues](https://github.com/thalesraymond/galaxify-monorepo/issues?q=is%3Aissue%20state%3Aopen)
-for changes after the date above.
+GitHub issues are the source of truth for future scope, dependencies, and
+completion criteria. See the
+[current open issues](https://github.com/thalesraymond/galaxify-monorepo/issues?q=is%3Aissue%20state%3Aopen).

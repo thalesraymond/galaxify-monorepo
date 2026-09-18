@@ -6,7 +6,8 @@ daily-task tracker ("mini Habitica"). It is built as a Go workspace monorepo
 PostgreSQL database, communicating through a RabbitMQ message bus.
 
 Repo layout, architecture decisions, and their rationale are recorded in
-`docs/adr/`. Status and roadmap live in the repository README.
+`docs/adr/`. The README records the completed Phase 1 baseline and links to the
+live GitHub issue backlog.
 
 > This file is intentionally minimal: domain vocabulary and glossary entries
 > are added lazily as terminology gets settled during implementation.
