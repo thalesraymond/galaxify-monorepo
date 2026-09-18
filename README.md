@@ -29,12 +29,14 @@ the real local stack and deterministic MSW scenarios.
 Every publishing service stages its state mutation and outbox record in the
 same database transaction. The shared outbox drainer publishes those records
 at least once; idempotent consumers apply their deduplication record and domain
-mutation in one transaction. In Phase 1, draining is HTTP-triggered, so a
-pending event can wait for a subsequent request to its originating service.
+mutation in one transaction. Service outboxes drain after HTTP requests, so a
+pending service event can wait for a subsequent request; worker outboxes drain
+on their scheduled ticks.
 
 The authoritative product and delivery documents are:
 
 - [Phase 1 product specification](docs/specs/web-frontend.md)
+- [Phase 1 delivery specification](docs/specs/web-frontend-delivery.md)
 - [Frontend application guide](apps/web-frontend/README.md)
 - [OpenAPI contracts](docs/openapi/README.md)
 - [Phase 1 release evidence](docs/specs/web-frontend-phase1-release-evidence.md)
@@ -134,7 +136,7 @@ Frontend modes, environment variables, mock scenarios, reset behavior, and
 troubleshooting live in
 [`apps/web-frontend/README.md`](apps/web-frontend/README.md).
 
-### Canonical local commands
+### Canonical local development commands
 
 | Command | Description |
 | --- | --- |
@@ -155,7 +157,7 @@ infrastructure that is already healthy (for example, another worktree or CI).
 From the repository root:
 
 ```sh
-for dir in apps/{user,daily,ship,expedition}-service workers/daily-cron; do
+for dir in apps/{user,daily,ship,expedition}-service workers/{daily-cron,expedition-worker}; do
   cp "$dir/.env.example" "$dir/.env"
 done
 docker compose up -d
@@ -171,6 +173,7 @@ cd apps/daily-service && go run .
 cd apps/ship-service && go run .
 cd apps/expedition-service && go run .
 cd workers/daily-cron && go run .
+cd workers/expedition-worker && go run .
 ```
 
 The example values match `docker-compose.yml`. Each process loads its local
@@ -218,6 +221,8 @@ The root Makefile runs commands in each applicable module. Do not run
 | `make sqlc` | Regenerate database code for all four services |
 | `make fmt` | Run `gofmt` over repository Go files |
 | `make tidy` | Run `go mod tidy` in every Go module |
+| `make frontend-install` | Install frontend dependencies from the committed lockfile |
+| `make frontend-verify` | Run the complete frontend formatting, type, lint, test, browser, accessibility, and performance gate |
 | `make help` | List available targets |
 
 When changing a module, the required verification is `go build ./...`,
