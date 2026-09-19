@@ -97,6 +97,25 @@ type UserDeleted struct {
     Version int    `json:"version"`        // 1
     UserID  string `json:"user_id"`        // UUID
 }
+
+// pkg/events/expedition_launched.go
+type ExpeditionLaunched struct {
+    Version           int     `json:"version"`       // 1
+    UserID            string  `json:"user_id"`       // UUID
+    ExpeditionID      string  `json:"expedition_id"` // UUID
+    MaterialsInvested int     `json:"materials_invested"`
+    SuccessChance     float64 `json:"success_chance"`
+    ResolveAt         string  `json:"resolve_at"` // RFC3339
+}
+
+// pkg/events/expedition_completed.go
+type ExpeditionCompleted struct {
+    Version         int    `json:"version"`       // 1
+    UserID          string `json:"user_id"`       // UUID
+    ExpeditionID    string `json:"expedition_id"` // UUID
+    Outcome         string `json:"outcome"`       // SUCCESS | FAILURE
+    MaterialsReward int    `json:"materials_reward"`
+}
 ```
 
 The `expedition.process` queue referenced in the project notes is a
