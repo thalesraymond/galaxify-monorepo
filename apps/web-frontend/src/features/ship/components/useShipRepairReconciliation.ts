@@ -48,7 +48,7 @@ export function useShipRepairReconciliation(transport: ApiTransport) {
         return
       }
       setReconciliation({ kind: 'updating' })
-      let succeeded = false
+      let succeeded: boolean
       try {
         succeeded = await probeExpeditionReadiness(transport, balance)
       } catch {
