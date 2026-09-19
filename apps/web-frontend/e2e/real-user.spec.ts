@@ -664,7 +664,7 @@ test.describe('real user-service convergence (RUN_REAL_STACK=1)', () => {
         const out = execSync("pgrep -f 'bin/user-service'", { encoding: 'utf8' }).trim()
         return out === '' ? [] : out.split('\n').map(Number)
       } catch (error: unknown) {
-        throw new Error(`cannot enumerate the user-service process: ${String(error)}`)
+        throw new Error('cannot enumerate the user-service process', { cause: error })
       }
     }
 
