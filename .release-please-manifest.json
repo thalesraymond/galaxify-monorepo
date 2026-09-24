@@ -3,6 +3,6 @@
   "apps/expedition-service": "1.0.0",
   "apps/ship-service": "1.0.0",
   "apps/user-service": "1.0.0",
-  "apps/web-frontend": "1.0.0",
+  "apps/web-frontend": "1.0.1",
   "pkg": "1.0.0"
 }

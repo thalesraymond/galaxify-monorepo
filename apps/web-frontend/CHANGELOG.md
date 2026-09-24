@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/thalesraymond/galaxify-monorepo/compare/web-frontend-v1.0.0...web-frontend-v1.0.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **web:** satisfy preserve-caught-error and no-useless-assignment ([#196](https://github.com/thalesraymond/galaxify-monorepo/issues/196)) ([ae5a14f](https://github.com/thalesraymond/galaxify-monorepo/commit/ae5a14f760e6281b8c379a0fc95f806bd87db250))
+
 ## 1.0.0 (2026-09-18)
 
 
