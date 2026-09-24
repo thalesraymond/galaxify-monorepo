@@ -18,7 +18,6 @@
     "jsx": "react-jsx",
     "skipLibCheck": true,
 
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     },
