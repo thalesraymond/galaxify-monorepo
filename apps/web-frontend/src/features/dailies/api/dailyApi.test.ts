@@ -73,7 +73,7 @@ describe('dailies API adapter', () => {
     expect(dailyQueryKey(daily.id)).toEqual(['dailies', 'daily', daily.id])
   })
 
-  it('creates a Daily with the local deadline pair body', async () => {
+  it('creates a Daily without sending a deadline', async () => {
     let url = ''
     let method = ''
     let body: unknown
@@ -88,15 +88,12 @@ describe('dailies API adapter', () => {
     const input: CreateDailyInput = {
       title: 'Calibrate sensors',
       difficulty: 'EASY',
-      time_zone: 'Europe/Paris',
-      due_local_date: '2026-01-16',
-      due_local_time: '09:30',
     }
 
     await expect(createDaily(transport, input)).resolves.toEqual(daily)
     expect(method).toBe('POST')
     expect(url).toBe('/api/daily/dailies')
-    expect(body).toEqual(input)
+    expect(body).toEqual({ ...input, time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone })
   })
 
   it('updates a Daily with a PATCH body', async () => {

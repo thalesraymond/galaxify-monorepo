@@ -137,6 +137,51 @@ func TestCreateDaily(t *testing.T) {
 		assertResponse func(t *testing.T, resp dailyResponse)
 	}{
 		{
+			name: "creates recurring daily without a client deadline",
+			body: `{"title":"Explore Mars","difficulty":"MEDIUM"}`,
+			setupManager: func(m *mockDailyManager) {
+				m.create = func(ctx context.Context, input daily.CreateInput) (daily.Daily, error) {
+					if input.TimeZone != "UTC" {
+						t.Errorf("time_zone = %q, want UTC", input.TimeZone)
+					}
+					if input.DueDate.IsZero() || input.DueDate.Location() != time.UTC {
+						t.Errorf("due_date = %v, want backend-generated UTC deadline", input.DueDate)
+					}
+					if input.DueDate.Hour() != 23 || input.DueDate.Minute() != 59 || input.DueDate.Second() != 59 {
+						t.Errorf("due_date = %v, want end of UTC day", input.DueDate)
+					}
+					if !input.DueDate.After(time.Now()) || input.DueDate.After(time.Now().Add(24*time.Hour)) {
+						t.Errorf("due_date = %v, want end of current UTC day", input.DueDate)
+					}
+					return daily.Daily{ID: dailyID, UserID: userID, Title: input.Title, Difficulty: input.Difficulty, DueDate: input.DueDate, TimeZone: input.TimeZone, Status: daily.StatusPending}, nil
+				}
+			},
+			wantStatus: http.StatusCreated,
+			assertResponse: func(t *testing.T, resp dailyResponse) {
+				if resp.TimeZone != "UTC" || resp.DueLocalTime != "23:59" {
+					t.Errorf("schedule = (%q, %q), want (UTC, 23:59)", resp.TimeZone, resp.DueLocalTime)
+				}
+			},
+		},
+		{
+			name: "uses the supplied zone to calculate today's deadline",
+			body: `{"title":"Explore Mars","difficulty":"MEDIUM","time_zone":"America/New_York"}`,
+			setupManager: func(m *mockDailyManager) {
+				m.create = func(ctx context.Context, input daily.CreateInput) (daily.Daily, error) {
+					zone, err := time.LoadLocation("America/New_York")
+					if err != nil {
+						t.Fatal(err)
+					}
+					local := input.DueDate.In(zone)
+					if input.TimeZone != "America/New_York" || local.Format("15:04:05") != "23:59:59" || local.Format("2006-01-02") != time.Now().In(zone).Format("2006-01-02") {
+						t.Errorf("schedule = %v in %q, want 23:59:59 today in New York", input.DueDate, input.TimeZone)
+					}
+					return daily.Daily{ID: dailyID, UserID: userID, Title: input.Title, Difficulty: input.Difficulty, DueDate: input.DueDate, TimeZone: input.TimeZone, Status: daily.StatusPending}, nil
+				}
+			},
+			wantStatus: http.StatusCreated,
+		},
+		{
 			name: "creates daily",
 			body: `{"title":"Explore Mars","description":"scan surface","difficulty":"MEDIUM","due_date":"2026-09-15T10:00:00Z","time_zone":"UTC"}`,
 			setupManager: func(m *mockDailyManager) {

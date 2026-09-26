@@ -32,15 +32,18 @@ export const zDateOrDateTime = z.union([
  */
 export const zClockTime = z.string().regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/);
 
-export const zCreateDailyRequest = z.intersection(z.unknown(), z.object({
+/**
+ * Without a deadline, the server sets it to 23:59:59 today in the supplied IANA time zone (UTC when omitted). The Daily repeats until deleted. Existing clients may still supply an explicit deadline and time zone.
+ */
+export const zCreateDailyRequest = z.object({
     title: z.string().min(1).max(120),
     description: z.string().max(1000).optional(),
     difficulty: zDifficulty,
     due_date: z.iso.datetime().optional(),
-    time_zone: z.string(),
+    time_zone: z.string().optional(),
     due_local_date: z.iso.date().optional(),
     due_local_time: zClockTime.optional()
-}));
+});
 
 export const zUpdateDailyRequest = z.object({
     title: z.string().max(120).optional(),

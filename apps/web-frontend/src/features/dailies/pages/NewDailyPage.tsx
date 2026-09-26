@@ -13,10 +13,7 @@ export function NewDailyPage() {
 
   return (
     <div className={styles.page}>
-      <PageHeader
-        title="Create a Daily"
-        description="Define a recurring responsibility and its schedule."
-      />
+      <PageHeader title="Create a Daily" description="Create a task that repeats every day." />
       <Link className={styles.backLink} to="/dailies">
         Back to Dailies
       </Link>

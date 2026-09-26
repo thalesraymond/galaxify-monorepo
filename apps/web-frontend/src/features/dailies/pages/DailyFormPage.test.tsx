@@ -55,10 +55,38 @@ async function fillValidNewDaily(user: ReturnType<typeof userEvent.setup>): Prom
   await user.type(screen.getByLabelText('Title'), 'Check the star charts')
   await user.type(screen.getByLabelText('Description'), 'A nightly scan for drift.')
   await user.click(screen.getByRole('radio', { name: /Medium/ }))
-  await user.type(screen.getByLabelText('Due time'), '09:30')
 }
 
 describe('/dailies/new', () => {
+  it('creates a recurring Daily from title, description and difficulty alone', async () => {
+    const user = userEvent.setup()
+    let submitted: Record<string, unknown> | undefined
+    server.server.use(
+      http.post('/api/daily/dailies', async ({ request }) => {
+        submitted = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(
+          { error: { code: 'TEST_CAPTURE', message: 'Captured.' } },
+          { status: 400 },
+        )
+      }),
+    )
+    await renderAt('/dailies/new', 'Create a Daily')
+    expect(screen.queryByLabelText('Due date')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Due time')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Time zone')).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText('Title'), 'Check the star charts')
+    await user.type(screen.getByLabelText('Description'), 'Scan for drift')
+    await user.click(screen.getByRole('radio', { name: /Medium/ }))
+    await user.click(screen.getByRole('button', { name: 'Create Daily' }))
+    await vi.waitFor(() => {
+      expect(submitted).toEqual({
+        title: 'Check the star charts',
+        description: 'Scan for drift',
+        difficulty: 'MEDIUM',
+        time_zone: 'UTC',
+      })
+    })
+  })
   it('creates a Daily, returns to its local date, and focuses the row', async () => {
     const user = userEvent.setup()
     await renderAt('/dailies/new', 'Create a Daily')
@@ -86,7 +114,6 @@ describe('/dailies/new', () => {
     expect(screen.getByLabelText('Title')).toHaveAccessibleDescription(
       expect.stringContaining('Enter a title.'),
     )
-    expect(screen.getByText('Enter a valid time in HH:MM.')).toBeInTheDocument()
 
     const title = screen.getByLabelText('Title')
     fireEvent.change(title, { target: { value: 'X'.repeat(121) } })
@@ -103,7 +130,7 @@ describe('/dailies/new', () => {
             error: {
               code: 'VALIDATION_FAILED',
               message: 'Validation failed.',
-              details: { field_errors: { due_local_date: 'Enter a valid date.' } },
+              details: { field_errors: { title: 'Choose another title.' } },
             },
           },
           { status: 422 },
@@ -114,10 +141,10 @@ describe('/dailies/new', () => {
     await fillValidNewDaily(user)
     await user.click(screen.getByRole('button', { name: 'Create Daily' }))
 
-    expect(await screen.findByText('Enter a valid date.')).toBeInTheDocument()
-    expect(screen.getByLabelText('Due date')).toHaveAttribute('aria-invalid', 'true')
-    expect(screen.getByLabelText('Due date')).toHaveAccessibleDescription(
-      expect.stringContaining('Enter a valid date.'),
+    expect(await screen.findByText('Choose another title.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Title')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText('Title')).toHaveAccessibleDescription(
+      expect.stringContaining('Choose another title.'),
     )
     expect(screen.getByLabelText('Title')).toHaveValue('Check the star charts')
   })
@@ -185,8 +212,9 @@ describe('/dailies/:dailyId/edit', () => {
 
     expect(await screen.findByLabelText('Title')).toHaveValue('Calibrate sensors')
     expect(screen.getByRole('radio', { name: /Easy/ })).toBeChecked()
-    expect(screen.getByLabelText('Due time')).toHaveValue('10:00')
-    expect(screen.getByLabelText('Time zone')).toHaveValue('UTC')
+    expect(screen.queryByLabelText('Due date')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Due time')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Time zone')).not.toBeInTheDocument()
 
     const title = screen.getByLabelText('Title')
     await user.clear(title)
