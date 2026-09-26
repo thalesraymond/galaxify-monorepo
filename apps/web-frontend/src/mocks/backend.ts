@@ -385,19 +385,20 @@ export class MockBackend {
       })
     }
     const id = fixedUuid(5, this.state.dailies.length + 1)
+    const today = new Date(this.scheduler.now()).toISOString().slice(0, 10)
     const daily: Daily = {
       id,
       user_id: FIXED_USER_ID,
       title: body.title.trim(),
       description: body.description ?? '',
       difficulty: body.difficulty,
-      due_date: body.due_date ?? `${body.due_local_date ?? '2026-01-15'}T12:00:00Z`,
+      due_date: `${today}T23:59:59Z`,
       status: 'PENDING',
       created_at: new Date(this.scheduler.now()).toISOString(),
       updated_at: new Date(this.scheduler.now()).toISOString(),
-      time_zone: body.time_zone,
-      due_local_date: body.due_local_date ?? '2026-01-15',
-      due_local_time: body.due_local_time ?? '12:00',
+      time_zone: 'UTC',
+      due_local_date: today,
+      due_local_time: '23:59',
     }
     this.state.dailies = [...this.state.dailies, daily]
     this.persist()

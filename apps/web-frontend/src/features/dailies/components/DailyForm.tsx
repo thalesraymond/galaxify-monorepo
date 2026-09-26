@@ -10,18 +10,11 @@ import { mapApiFormError } from '@/shared/api/formErrors'
 import { Button, ConfirmationDialog, Field, FormError, Skeleton } from '@/shared/ui'
 
 import { difficultiesQueryKey, listDifficulties, type CreateDailyInput } from '../api/dailyApi'
-import { isValidDateInput, todayDateInput } from '../lib/dailyTime'
+import { todayDateInput } from '../lib/dailyTime'
 import { difficultyLabel, difficultyRewardsMap } from '../lib/difficulties'
 import styles from './DailyForm.module.css'
 
-const FORM_FIELDS = [
-  'title',
-  'description',
-  'difficulty',
-  'due_local_date',
-  'due_local_time',
-  'time_zone',
-] as const
+const FORM_FIELDS = ['title', 'description', 'difficulty'] as const
 
 type FormField = (typeof FORM_FIELDS)[number]
 
@@ -29,9 +22,6 @@ export type DailyFormValues = {
   title: string
   description: string
   difficulty: Difficulty
-  due_local_date: string
-  due_local_time: string
-  time_zone: string
 }
 
 const zDailyForm = z.object({
@@ -42,17 +32,12 @@ const zDailyForm = z.object({
     .max(120, 'Titles are limited to 120 characters.'),
   description: z.string().trim().max(1000, 'Descriptions are limited to 1000 characters.'),
   difficulty: z.enum(['EASY', 'MEDIUM', 'HARD'], { message: 'Choose a difficulty.' }),
-  due_local_date: z.string().refine(isValidDateInput, { message: 'Enter a valid date.' }),
-  due_local_time: z
-    .string()
-    .regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/, { message: 'Enter a valid time in HH:MM.' }),
-  time_zone: z.string().min(1, 'Select a time zone.'),
 })
 
 /**
  * Shared Daily creation/editing form (spec §5.3): title, optional description,
- * difficulty with backend reward/damage metadata, local due date and time, and
- * an advanced IANA timezone select defaulted from the browser. Validation
+ * difficulty with backend reward/damage metadata. The backend owns the
+ * recurring deadline. Validation
  * mirrors the backend limits; inline errors come from `mapApiFormError`.
  *
  * The form owns submission UX — dirty-navigation protection, error mapping,
@@ -73,7 +58,6 @@ export function DailyForm({
   const transport = useApiTransport()
   const navigate = useNavigate()
   const descriptionId = useId()
-  const timeZoneId = useId()
 
   const difficultiesQuery = useQuery({
     queryKey: difficultiesQueryKey,
@@ -96,9 +80,6 @@ export function DailyForm({
       title: '',
       description: '',
       difficulty: 'EASY',
-      due_local_date: todayDateInput(),
-      due_local_time: '',
-      time_zone: browserTimeZone(),
     },
   })
 
@@ -158,7 +139,7 @@ export function DailyForm({
       }
       if (mapped.formError !== undefined) {
         setSubmitError(mapped.formError)
-      } else if (Object.keys(mapped.fieldErrors).length === 0) {
+      } else if (Object.keys(mapped.fieldErrors).every((field) => !isFormField(field))) {
         setSubmitError('The Daily could not be saved.')
       }
       return
@@ -238,37 +219,6 @@ export function DailyForm({
         ) : null}
       </fieldset>
 
-      <div className={styles.grid}>
-        <Field
-          error={errors.due_local_date?.message}
-          hint="Local calendar date."
-          label="Due date"
-          type="date"
-          {...register('due_local_date')}
-        />
-        <Field
-          error={errors.due_local_time?.message}
-          hint="Local wall-clock deadline."
-          label="Due time"
-          type="time"
-          {...register('due_local_time')}
-        />
-      </div>
-
-      <div className={styles.field}>
-        <label htmlFor={timeZoneId}>Time zone</label>
-        <select id={timeZoneId} {...register('time_zone')}>
-          {timeZones().map((zone) => (
-            <option key={zone} value={zone}>
-              {zone}
-            </option>
-          ))}
-        </select>
-        <small id={`${timeZoneId}-hint`}>
-          Advanced · Dailies recur at this local wall-clock time.
-        </small>
-      </div>
-
       {submitError !== undefined ? <FormError>{submitError}</FormError> : null}
 
       <div>
@@ -295,14 +245,11 @@ export function DailyForm({
   )
 }
 
-/** Wire body for create and update: the local deadline pair plus zone. */
+/** Wire body for create and update; scheduling remains backend-owned. */
 export function dailyRequestBody(values: DailyFormValues): CreateDailyInput {
   return {
     title: values.title,
     difficulty: values.difficulty,
-    time_zone: values.time_zone,
-    due_local_date: values.due_local_date,
-    due_local_time: values.due_local_time,
     ...(values.description === '' ? {} : { description: values.description }),
   }
 }
@@ -311,29 +258,4 @@ const DIFFICULTY_OPTIONS = ['EASY', 'MEDIUM', 'HARD'] as const
 
 function isFormField(field: string): field is FormField {
   return (FORM_FIELDS as readonly string[]).includes(field)
-}
-
-function browserTimeZone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-  } catch {
-    return 'UTC'
-  }
-}
-
-const FALLBACK_TIME_ZONES: readonly string[] = ['UTC']
-
-let timeZonesCache: readonly string[] | undefined
-
-function timeZones(): readonly string[] {
-  if (timeZonesCache !== undefined) {
-    return timeZonesCache
-  }
-  const zones =
-    typeof Intl.supportedValuesOf === 'function'
-      ? Intl.supportedValuesOf('timeZone')
-      : FALLBACK_TIME_ZONES
-  const browser = browserTimeZone()
-  timeZonesCache = zones.includes(browser) ? zones : [browser, ...zones]
-  return timeZonesCache
 }

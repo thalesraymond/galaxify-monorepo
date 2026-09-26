@@ -464,10 +464,11 @@ components:
 
     CreateDailyRequest:
       type: object
-      required: [title, difficulty, time_zone]
-      anyOf:
-        - required: [due_date]
-        - required: [due_local_date, due_local_time]
+      description: >-
+        Without a deadline, the server sets it to 23:59:59 today in the supplied
+        IANA time zone (UTC when omitted). The Daily repeats until deleted.
+        Existing clients may still supply an explicit deadline and time zone.
+      required: [title, difficulty]
       additionalProperties: false
       properties:
         title:
@@ -484,12 +485,11 @@ components:
           format: date-time
           deprecated: true
           description: >-
-            Legacy RFC3339 deadline instant. New clients should send
-            `due_local_date` + `due_local_time` + `time_zone` and let the backend
-            resolve DST.
+            Legacy RFC3339 deadline instant; omit scheduling fields for an
+            automatically scheduled Daily.
         time_zone:
           type: string
-          description: IANA time zone retained across recurrence, e.g. Europe/Paris.
+          description: IANA time zone retained across recurrence; defaults to UTC when no scheduling fields are supplied.
         due_local_date:
           type: string
           format: date

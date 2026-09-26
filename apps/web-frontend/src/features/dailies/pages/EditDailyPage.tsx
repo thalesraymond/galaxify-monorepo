@@ -41,7 +41,7 @@ export function EditDailyPage() {
   if (isApiHttpError(dailyQuery.error, 'DAILY_PLAYER_NOT_READY')) {
     return (
       <div className={styles.page}>
-        <PageHeader title="Edit a Daily" description="Update the Daily and its schedule." />
+        <PageHeader title="Edit a Daily" description="Update the Daily's details." />
         <ContentSurface aria-labelledby="preparing-daily-heading" tone="raised">
           <StatusBadge status="preparing" />
           <h2 className={styles.heading} id="preparing-daily-heading">
@@ -64,7 +64,7 @@ export function EditDailyPage() {
   if (dailyQuery.isError) {
     return (
       <div className={styles.page}>
-        <PageHeader title="Edit a Daily" description="Update the Daily and its schedule." />
+        <PageHeader title="Edit a Daily" description="Update the Daily's details." />
         <UnavailableState
           title="The Daily could not be loaded"
           onRetry={() => {
@@ -78,7 +78,7 @@ export function EditDailyPage() {
   if (daily === undefined) {
     return (
       <div className={styles.page}>
-        <PageHeader title="Edit a Daily" description="Update the Daily and its schedule." />
+        <PageHeader title="Edit a Daily" description="Update the Daily's details." />
         <ContentSurface aria-hidden="true">
           <Skeleton lines={5} />
         </ContentSurface>
@@ -124,16 +124,10 @@ function formValuesFromDaily(daily: {
   readonly title: string
   readonly description: string
   readonly difficulty: 'EASY' | 'MEDIUM' | 'HARD'
-  readonly due_local_date: string
-  readonly due_local_time: string
-  readonly time_zone: string
 }): DailyFormValues {
   return {
     title: daily.title,
     description: daily.description,
     difficulty: daily.difficulty,
-    due_local_date: daily.due_local_date,
-    due_local_time: daily.due_local_time,
-    time_zone: daily.time_zone,
   }
 }

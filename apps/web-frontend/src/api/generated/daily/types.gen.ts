@@ -23,20 +23,23 @@ export type DateOrDateTime = string | string;
  */
 export type ClockTime = string;
 
-export type CreateDailyRequest = unknown & {
+/**
+ * Without a deadline, the server sets it to 23:59:59 today in the supplied IANA time zone (UTC when omitted). The Daily repeats until deleted. Existing clients may still supply an explicit deadline and time zone.
+ */
+export type CreateDailyRequest = {
     title: string;
     description?: string;
     difficulty: Difficulty;
     /**
-     * Legacy RFC3339 deadline instant. New clients should send `due_local_date` + `due_local_time` + `time_zone` and let the backend resolve DST.
+     * Legacy RFC3339 deadline instant; omit scheduling fields for an automatically scheduled Daily.
      *
      * @deprecated
      */
     due_date?: string;
     /**
-     * IANA time zone retained across recurrence, e.g. Europe/Paris.
+     * IANA time zone retained across recurrence; defaults to UTC when no scheduling fields are supplied.
      */
-    time_zone: string;
+    time_zone?: string;
     /**
      * Local calendar date paired with `due_local_time` and `time_zone`.
      */

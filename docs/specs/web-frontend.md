@@ -216,10 +216,10 @@ status are URL search state. Offer previous/next day, Today, accessible date
 picker, and All/Pending/Completed filters. Missed outcomes belong in History.
 
 Creation and editing are dedicated pages at all widths. Fields are title,
-optional description, difficulty, local due date, local due time, and an
-advanced visible IANA timezone defaulted from the browser. Title max is 120 and
-description max is 1000. Difficulty options show backend-provided reward and
-missed-damage metadata.
+optional description, and difficulty. The creation request silently includes
+the browser's IANA time zone; the backend calculates today's deadline. Editing
+does not alter the schedule. Title max is 120 and description max is 1000.
+Difficulty options show backend-provided reward and missed-damage metadata.
 
 Dirty forms warn before internal navigation or unload. Save returns to the
 Daily's local date, identifies/focuses the changed row, and announces success.

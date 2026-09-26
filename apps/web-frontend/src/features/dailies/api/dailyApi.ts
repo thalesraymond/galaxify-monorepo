@@ -32,14 +32,11 @@ export type DailyListFilters = {
   readonly to?: string
 }
 
-/** Creation body: the local deadline pair plus zone (spec §5.3 fields). */
+/** Creation body; the backend assigns the current cycle's deadline. */
 export type CreateDailyInput = {
   readonly title: string
   readonly description?: string
   readonly difficulty: Difficulty
-  readonly time_zone: string
-  readonly due_local_date: string
-  readonly due_local_time: string
 }
 
 /** Partial update body; the backend retains any omitted field. */
@@ -112,9 +109,17 @@ export function createDaily(transport: ApiTransport, body: CreateDailyInput): Pr
     service: 'daily',
     path: '/dailies',
     method: 'POST',
-    body,
+    body: { ...body, time_zone: browserTimeZone() },
     response: zDailyCreateResponse,
   })
+}
+
+function browserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch {
+    return 'UTC'
+  }
 }
 
 export function updateDaily(

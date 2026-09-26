@@ -208,7 +208,7 @@ func (h *DailyHandler) CreateDaily(w http.ResponseWriter, r *http.Request, userI
 		Description: req.Description,
 		Difficulty:  daily.Difficulty(req.Difficulty),
 		DueDate:     dueDate,
-		TimeZone:    req.TimeZone,
+		TimeZone:    createDailyTimeZone(req),
 	})
 	if err != nil {
 		if errors.Is(err, daily.ErrPlayerNotReady) {
@@ -538,6 +538,24 @@ func validateCreateDailyRequest(req createDailyRequest) (map[string]string, time
 		fieldErrors["difficulty"] = "must be one of: EASY, MEDIUM, HARD"
 	}
 
+	// A Daily created without a deadline is due at the end of today in its
+	// detected zone (UTC when no zone was supplied). The server owns the date.
+	if req.DueDate == "" && req.DueLocalDate == "" && req.DueLocalTime == "" {
+		zone := createDailyTimeZone(req)
+		location, err := daily.LoadTimeZone(zone)
+		if err != nil {
+			fieldErrors["time_zone"] = "must be a valid IANA time zone"
+			return fieldErrors, time.Time{}
+		}
+		localDay := time.Now().In(location).Format("2006-01-02")
+		deadline, err := daily.ResolveLocalDeadline(localDay, "23:59", zone)
+		if err != nil {
+			fieldErrors["due_date"] = "could not resolve today's deadline"
+			return fieldErrors, time.Time{}
+		}
+		return fieldErrors, deadline.Add(59 * time.Second)
+	}
+
 	zoneValid := true
 	if req.TimeZone == "" {
 		fieldErrors["time_zone"] = "time_zone is required"
@@ -562,6 +580,13 @@ func validateCreateDailyRequest(req createDailyRequest) (map[string]string, time
 		fieldErrors[field] = msg
 	}
 	return fieldErrors, dueDate
+}
+
+func createDailyTimeZone(req createDailyRequest) string {
+	if req.TimeZone == "" {
+		return "UTC"
+	}
+	return req.TimeZone
 }
 
 func validateUpdateDailyRequest(req updateDailyRequest) (map[string]string, *time.Time) {
