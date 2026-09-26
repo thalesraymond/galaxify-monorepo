@@ -41,7 +41,7 @@ Auth: Required (Bearer token via cross-cutting middleware).
   - Inserts expedition with status `IN_FLIGHT`.
   - Publishes `expedition.launched` event to `galaxify.events` (via outbox).
   - Returns 201 with the expedition details.
-  - Errors: `EXPEDITION_ALREADY_ACTIVE` (409), `EXPEDITION_COOLDOWN` (422), `EXPEDITION_INSUFFICIENT_MATERIALS` (422), `VALIDATION_FAILED` (422).
+  - Errors: `EXPEDITION_ALREADY_ACTIVE` (409), `EXPEDITION_COOLDOWN` (422), `EXPEDITION_INSUFFICIENT_MATERIALS` (422), `VALIDATION_FAILED` (422), `EXPEDITION_SHIP_STATE_NOT_READY` (503).
 
 - `GET /expeditions/current`
   - Returns the user's currently-active expedition (if any).
@@ -135,6 +135,7 @@ This is future-proof: if we introduce variable duration or cancellation, the one
 | `EXPEDITION_ALREADY_ACTIVE`       | 409         | User has an `IN_FLIGHT` expedition                  |
 | `EXPEDITION_COOLDOWN`             | 422         | User's last expedition resolved within 7 days       |
 | `EXPEDITION_INSUFFICIENT_MATERIALS` | 422       | `materials_invested > materials_balance` (cache)    |
+| `EXPEDITION_SHIP_STATE_NOT_READY` | 503         | Ship state cache is still provisioning              |
 | `INTERNAL_ERROR`                  | 500         | Unexpected server error                             |
 
 ## Out of Scope (Phase 1)
