@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/thalesraymond/galaxify-monorepo/compare/daily-service-v1.0.0...daily-service-v1.0.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* **dailies:** derive recurring deadline on the backend ([#207](https://github.com/thalesraymond/galaxify-monorepo/issues/207)) ([19741be](https://github.com/thalesraymond/galaxify-monorepo/commit/19741befb1ca745823aaec9b82eef6015eb7d484))
+
 ## 1.0.0 (2026-09-18)
 
 

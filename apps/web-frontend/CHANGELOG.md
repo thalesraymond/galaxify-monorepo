@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.2](https://github.com/thalesraymond/galaxify-monorepo/compare/web-frontend-v1.0.1...web-frontend-v1.0.2) (2026-09-26)
+
+
+### Bug Fixes
+
+* **dailies:** derive recurring deadline on the backend ([#207](https://github.com/thalesraymond/galaxify-monorepo/issues/207)) ([19741be](https://github.com/thalesraymond/galaxify-monorepo/commit/19741befb1ca745823aaec9b82eef6015eb7d484))
+* **web-frontend:** align lint and TypeScript peer versions ([#205](https://github.com/thalesraymond/galaxify-monorepo/issues/205)) ([85b4021](https://github.com/thalesraymond/galaxify-monorepo/commit/85b40211734cdc480fcde9c94e64da4978d54225))
+
 ## [1.0.1](https://github.com/thalesraymond/galaxify-monorepo/compare/web-frontend-v1.0.0...web-frontend-v1.0.1) (2026-09-24)
 
 
