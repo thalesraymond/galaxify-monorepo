@@ -80,7 +80,7 @@ Per-service codes (illustrative):
   [ADR-0012](0012-recurring-daily-lifecycle-and-archival-rollover.md), so no
   endpoint emits that code. The list above is illustrative, not a registry.)
 - **Ship**: `SHIP_NOT_FOUND`, `SHIP_INSUFFICIENT_MATERIALS`, `SHIP_HULL_FULL`.
-- **Expedition**: `EXPEDITION_NOT_FOUND`, `EXPEDITION_ALREADY_ACTIVE`.
+- **Expedition**: `EXPEDITION_NOT_FOUND`, `EXPEDITION_ALREADY_ACTIVE`, `EXPEDITION_SHIP_STATE_NOT_READY`.
 
 #### Helpers
 
