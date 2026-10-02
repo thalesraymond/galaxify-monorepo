@@ -85,9 +85,10 @@ func NewManager(store readStore, txStarter TxStarter, launchStoreFactory func(pg
 
 func (m *manager) Current(ctx context.Context, userID uuid.UUID) (Record, error) {
 	pgUserID := pgUUID(userID)
-	if _, err := m.store.GetShipCache(ctx, pgUserID); errors.Is(err, pgx.ErrNoRows) {
-		return Record{}, ErrShipStateNotReady
-	} else if err != nil {
+	if _, err := m.store.GetShipCache(ctx, pgUserID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Record{}, ErrShipStateNotReady
+		}
 		return Record{}, fmt.Errorf("get ship cache: %w", err)
 	}
 
