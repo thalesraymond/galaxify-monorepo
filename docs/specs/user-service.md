@@ -247,7 +247,27 @@ password to prevent user enumeration.
 }
 ```
 
-### 3.4 `GET /users/me` — Auth-protected
+### 3.4 `POST /auth/logout`
+
+**Request:**
+
+```json
+{
+  "refresh_token": "dGhpcyBpcy..."
+}
+```
+
+**Handler flow:**
+
+1. Validate input → 422 `VALIDATION_FAILED`.
+2. Delete the refresh token's family.
+3. Return 204 No Content.
+
+This endpoint explicitly requires no authorization header and is idempotent to avoid disclosing the existence of a session.
+
+**Response (204 No Content)**
+
+### 3.5 `GET /users/me` — Auth-protected
 
 **Response (200 OK):**
 
@@ -264,7 +284,7 @@ password to prevent user enumeration.
 Uses `sharedhttp.RequireAuth` middleware. Reads `userID` from context via
 `sharedhttp.UserIDFromContext`.
 
-### 3.5 `PATCH /users/me` — Auth-protected
+### 3.6 `PATCH /users/me` — Auth-protected
 
 **Request:**
 
@@ -288,7 +308,7 @@ verification/confirmation flows not in scope.
 
 **Response (200 OK):** same shape as `GET /users/me`.
 
-### 3.6 `DELETE /users/me` — Auth-protected
+### 3.7 `DELETE /users/me` — Auth-protected
 
 **Request:**
 
@@ -308,7 +328,7 @@ Password confirmation required to prevent stolen-token account deletion.
 4. Naive-publish `user.deleted` event (see §5.2).
 5. Return 204 No Content.
 
-### 3.7 `GET /.well-known/jwks.json`
+### 3.8 `GET /.well-known/jwks.json`
 
 **Response (200 OK):**
 
