@@ -9,6 +9,12 @@ The product is a React frontend backed by independently deployable Go services.
 Each service owns a PostgreSQL database and communicates through a RabbitMQ
 topic exchange.
 
+## Motivation
+
+Built alongside the Boot.dev backend track, Galaxify turns recurring study
+tasks into a game loop: completing dailies earns ship materials, while missed
+tasks add hull damage and expeditions give those materials a purpose.
+
 ## Project status
 
 Phase 1 is complete. The full Player loop is available locally: sign up, manage
@@ -100,7 +106,7 @@ All routes except health, signup, login, refresh, logout, and JWKS require an
 access token issued by User Service. The [OpenAPI contracts](docs/openapi/)
 are the source of truth for request and response shapes.
 
-## Local development
+## Quick Start
 
 ### Prerequisites
 
@@ -135,6 +141,14 @@ npm --prefix apps/web-frontend run dev:mock
 Frontend modes, environment variables, mock scenarios, reset behavior, and
 troubleshooting live in
 [`apps/web-frontend/README.md`](apps/web-frontend/README.md).
+
+## Usage
+
+Sign up, create recurring dailies, and complete them to earn ship materials.
+Missed dailies damage your hull; spend materials to repair, then invest them in
+expeditions and follow each run to resolution.
+
+## Local development
 
 ### Canonical local development commands
 
@@ -228,6 +242,12 @@ The root Makefile runs commands in each applicable module. Do not run
 When changing a module, the required verification is `go build ./...`,
 `go test ./...`, and `go vet ./...` from that module's directory. A change to
 `pkg` also requires verification in every importing module.
+
+## Contributing
+
+Start with an issue, keep changes focused, and run `make build`, `make test`,
+and `make vet` before opening a pull request. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the complete guidelines.
 
 ## Backlog
 
