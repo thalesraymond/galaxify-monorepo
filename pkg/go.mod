@@ -11,7 +11,7 @@ require (
 
 require (
 	github.com/getkin/kin-openapi v0.149.0
-	golang.org/x/sync v0.23.0
+	golang.org/x/sync v0.24.0
 )
 
 require (
