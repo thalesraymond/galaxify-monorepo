@@ -26,5 +26,3 @@ func (c *StaticJWKSCache) GetKey(ctx context.Context, kid string) (crypto.Public
 	}
 	return nil, ErrUnknownKeyID
 }
-
-
