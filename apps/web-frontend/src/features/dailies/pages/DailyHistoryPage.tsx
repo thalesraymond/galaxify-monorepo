@@ -5,6 +5,7 @@ import { Link } from 'react-router'
 import type { DailyHistory } from '@/api/generated/daily/types.gen'
 import { useApiTransport } from '@/shared/api/TransportContext'
 import {
+  Button,
   ContentSurface,
   Disclosure,
   EmptyState,
@@ -149,15 +150,15 @@ export function DailyHistoryPage() {
             />
           ) : null}
           {continuationFailed ? (
-            <button
+            <Button
               aria-label="Retry loading more history"
-              className={styles.footerRetry}
+              variant="secondary"
               onClick={() => {
                 void historyQuery.fetchNextPage().catch(() => undefined)
               }}
             >
               Retry
-            </button>
+            </Button>
           ) : null}
         </div>
       </div>
