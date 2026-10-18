@@ -3,9 +3,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { Daily, Difficulty } from '@/api/generated/daily/types.gen'
 import { isApiHttpError, type ApiTransport } from '@/api/transport'
+import { observeShip } from '@/features/ship'
 
 import { completeDaily, dailiesQueryKey, type DailyListFilters } from '../api/dailyApi'
-import { probeShipBalance, SHIP_BALANCE_QUERY_KEY } from '../api/shipProbe'
 import type { DifficultyRewards } from '../lib/difficulties'
 import { requestFailureMessage } from '../lib/message'
 
@@ -136,7 +136,8 @@ export function useDailyCompletion(
       const generation = session.generation
       let balance: number | undefined
       try {
-        balance = await probeShipBalance(transport)
+        const ship = await observeShip(queryClient, transport)
+        balance = ship.kind === 'ready' ? ship.ship.materials_balance : undefined
       } catch {
         balance = undefined
       }
@@ -192,7 +193,7 @@ export function useDailyCompletion(
         void runProbeRef.current(session)
       }, delay)
     },
-    [transport, updateReconciliation],
+    [queryClient, transport, updateReconciliation],
   )
 
   useEffect(() => {
@@ -335,10 +336,9 @@ export function useDailyCompletion(
         next.delete(completed.id)
         return next
       })
-      // The accepting service is authoritative: refresh the decoded list and
-      // invalidate the known dependent (Ship balance), then reconcile (§3.4).
+      // Refresh the authoritative list; each reconciliation observation also
+      // refreshes the shared Ship cache through its owning feature (§3.4).
       void queryClient.invalidateQueries({ queryKey: dailiesQueryKey(filters) })
-      void queryClient.invalidateQueries({ queryKey: SHIP_BALANCE_QUERY_KEY })
       startReconciliation(completed.id, completed.awarded_materials)
     },
   })

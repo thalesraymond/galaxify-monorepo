@@ -17,7 +17,8 @@ import {
 } from '@/shared/ui'
 
 import { formatUpdatedAt } from '../format'
-import { getShip, repairShip, shipQueryKey, type ShipState } from '../api/shipApi'
+import { getShip, shipQueryKey } from '../api/shipApi'
+import { repairShipAndCache } from '../api/shipQueries'
 import { useShipRepairReconciliation } from './useShipRepairReconciliation'
 import styles from './ShipStatusPanel.module.css'
 
@@ -51,9 +52,8 @@ export function ShipStatusPanel() {
     useShipRepairReconciliation(transport)
 
   const repairMutation = useMutation({
-    mutationFn: () => repairShip(transport),
+    mutationFn: () => repairShipAndCache(queryClient, transport),
     onSuccess: (ship) => {
-      queryClient.setQueryData(shipQueryKey, { kind: 'ready', ship } satisfies ShipState)
       // The Expedition service caches Ship state privately; invalidate its
       // queries so visible downstream data reconciles (`web-frontend.md` §3.4).
       void queryClient.invalidateQueries({ queryKey: ['expeditions'] })
