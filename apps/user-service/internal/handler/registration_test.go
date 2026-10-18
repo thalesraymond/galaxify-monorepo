@@ -6,10 +6,12 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -181,6 +183,12 @@ func TestSignup(t *testing.T) {
 			body:           `{"email":"user@example.com","username":"spacecadet","password":"short"}`,
 			wantStatus:     http.StatusUnprocessableEntity,
 			wantFieldError: map[string]string{"password": "password must be at least 8 characters"},
+		},
+		{
+			name:           "password exceeds 128 characters",
+			body:           fmt.Sprintf(`{"email":"user@example.com","username":"spacecadet","password":"%s"}`, strings.Repeat("a", 129)),
+			wantStatus:     http.StatusUnprocessableEntity,
+			wantFieldError: map[string]string{"password": "password must be at most 128 characters"},
 		},
 		{
 			name: "email already registered",
