@@ -131,6 +131,14 @@ event. End the visible sync boundary when authoritative Ship state changes. A
 subsequent stale-cache launch rejection becomes a player-initiated retry state,
 not an automatic launch replay.
 
+The Ship module owns fresh Ship observations and their confirmed TanStack Query
+cache. Daily and Expedition reconciliation cross that public seam rather than
+duplicating Ship reads or cache keys. Each observation bypasses cache freshness;
+overlapping observations share the in-flight query. Scheduled probes own their
+bounded retries. A confirmed repair cancels older Ship reads before publishing
+its returned snapshot, so a late response cannot undo the repair. Feature-local
+timers, per-Daily progress, and balance-based satisfaction rules remain unchanged.
+
 ## 4. Session lifecycle
 
 Expose four session states: `bootstrapping`, `authenticated`, `anonymous`, and

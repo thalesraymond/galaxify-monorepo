@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 
-import { shipQueryKey, type ShipState } from '@/features/ship'
+import { observeShip } from '@/features/ship'
+import { useApiTransport } from '@/shared/api/TransportContext'
 
 import { useBoundedProbe, type BoundedProbePhase } from './useProbeSchedule'
 
@@ -31,14 +32,13 @@ export function useShipReconciliation({
   direction: ShipReconciliationDirection
 }): { phase: ShipReconciliationPhase; retry: () => void } {
   const queryClient = useQueryClient()
+  const transport = useApiTransport()
 
   return useBoundedProbe({
     enabled: enabled && expectedBalance !== undefined,
     probe: async () => {
-      await queryClient.invalidateQueries({ queryKey: shipQueryKey })
-      await queryClient.refetchQueries({ queryKey: shipQueryKey })
-      const ship = queryClient.getQueryData<ShipState>(shipQueryKey)
-      if (ship?.kind !== 'ready' || expectedBalance === undefined) {
+      const ship = await observeShip(queryClient, transport)
+      if (ship.kind !== 'ready' || expectedBalance === undefined) {
         return false
       }
       return direction === 'decrease'

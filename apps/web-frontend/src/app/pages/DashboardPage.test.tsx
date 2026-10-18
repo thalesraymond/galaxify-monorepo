@@ -1,6 +1,6 @@
 process.env.TZ = 'UTC'
 
-import { screen } from '@testing-library/react'
+import { fireEvent, screen, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -13,6 +13,7 @@ import {
   onUnhandledMockRequest,
 } from '@/mocks'
 import { renderAppAt } from '@/test/renderApp'
+import { advanceFake, enableFakeTimers, waitForUi } from '@/test/fakeTimers'
 
 const scheduler = new ManualMockScheduler(FIXED_MOCK_EPOCH_MS)
 const server = createMockTestServer({ scenario: 'established-player', scheduler })
@@ -66,6 +67,40 @@ async function renderDashboard(
 }
 
 describe('Dashboard page', () => {
+  it('refreshes the adjacent Ship panel when a later Daily probe observes its reward', async () => {
+    await renderDashboard()
+    expect(await screen.findByText('250')).toBeInTheDocument()
+    expect(
+      await screen.findByRole('button', { name: 'Complete Calibrate sensors' }),
+    ).toBeInTheDocument()
+    enableFakeTimers(FIXED_MOCK_EPOCH_MS)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Complete Calibrate sensors' }))
+    await waitForUi(() => screen.queryByText('Ship materials: 250') !== null)
+    expect(
+      within(screen.getByRole('region', { name: 'Materials' })).getByText('250'),
+    ).toBeInTheDocument()
+
+    // The initial observation precedes event propagation. A later scheduled
+    // observation must update both the row and the shared Ship query.
+    scheduler.advance(1_000)
+    await advanceFake(1_000)
+    await waitForUi(() => screen.queryByText('Ship materials: 250') !== null)
+    scheduler.advance(1_000)
+    await advanceFake(1_000)
+    await waitForUi(() => screen.queryByText('Ship materials: 260') !== null)
+    // Deliver QueryClient's batched observer notification on the next tick.
+    await advanceFake(1)
+    await waitForUi(
+      () => within(screen.getByRole('region', { name: 'Materials' })).queryByText('260') !== null,
+    )
+
+    expect(
+      within(screen.getByRole('region', { name: 'Materials' })).getByText('260'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Update delayed')).not.toBeInTheDocument()
+  })
+
   it('renders the page heading and all three panels for an established player', async () => {
     await renderDashboard()
 
