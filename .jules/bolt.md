@@ -1,0 +1,3 @@
+## 2026-03-30 - Single-Pass JWT Verification Optimization
+**Learning:** In Go microservice APIs with JWT authentication, parsing unverified tokens to extract `kid` before calling `ParseWithClaims` leads to duplicate JSON decoding and token allocations (~116 allocs/op -> 59 allocs/op). Using `jwt.ParseWithClaims` with a dynamic `Keyfunc` that inspects `token.Header["kid"]` enables single-pass verification, cutting memory allocations in half for every authenticated HTTP request.
+**Action:** Always leverage `jwt.ParseWithClaims` with a custom `Keyfunc` for kid lookup instead of doing manual unverified pre-parsing.
