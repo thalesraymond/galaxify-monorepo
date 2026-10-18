@@ -177,10 +177,13 @@ func validateSignupRequest(req signupRequest) (signupInput, map[string]string) {
 		fieldErrors["username"] = "username must be 3-30 characters and contain only letters, numbers, underscores, and hyphens"
 	}
 
+	// Max password length check prevents CPU/memory exhaustion DoS during Argon2id hashing.
 	if input.Password == "" {
 		fieldErrors["password"] = "password is required"
 	} else if len(input.Password) < 8 {
 		fieldErrors["password"] = "password must be at least 8 characters"
+	} else if len(input.Password) > 128 {
+		fieldErrors["password"] = "password must be at most 128 characters"
 	}
 
 	return input, fieldErrors
