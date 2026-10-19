@@ -11,7 +11,7 @@ require (
 
 require (
 	github.com/alexedwards/argon2id v1.0.0 // indirect
-	github.com/getkin/kin-openapi v0.149.0 // indirect
+	github.com/getkin/kin-openapi v0.151.0 // indirect
 	github.com/go-openapi/jsonpointer v0.22.5 // indirect
 	github.com/go-openapi/swag/jsonname v0.25.5 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
