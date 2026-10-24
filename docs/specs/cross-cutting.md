@@ -468,54 +468,57 @@ err := h.db.InTx(r.Context(), func(tx pgx.Tx) error {
     return insertOutboxRow(tx, eventID, "entity.verb", payload)
 })
 if err != nil {
-    httperr.Internal(w, r, err)
+    sharedhttp.WriteInternal(w, r, err, logger)
     return
 }
-go h.outboxDrainer.Drain(r.Context(), 50)  // fire-and-forget; bounded batch
-httperr.OK(w, ...)
+sharedhttp.WriteJSON(w, http.StatusOK, ...)
+```
+
+The drain is triggered after the response completes via the middleware wrapping the router in `main.go`:
+
+```go
+srv := &http.Server{
+    Addr:    httpAddr,
+    Handler: sharedhttp.RequestIDMiddleware(outboxDrainer.DrainAfterRequest(mux, 50)),
+}
 ```
 
 ### Drain function
 
 ```go
-func (d *OutboxDrainer) Drain(ctx context.Context, maxRows int) {
-    rows, err := d.db.Query(ctx, `
-        SELECT id, event_id, event_type, payload
-        FROM outbox
-        WHERE status = 'PENDING'
-        ORDER BY created_at ASC
-        LIMIT $1
-        FOR UPDATE SKIP LOCKED
-    `, maxRows)
+func (drainer *OutboxDrainer) Drain(ctx context.Context, maxRows int32) {
+    batch, err := drainer.beginBatch(ctx)
     if err != nil {
-        d.logger.Warn("outbox drain query failed", "error", err)
+        drainer.logger.WarnContext(ctx, "begin outbox drain transaction", "error", err)
         return
     }
-    defer rows.Close()
+    defer batch.Rollback(ctx)
 
-    for rows.Next() {
-        var (
-            id        int64
-            eventID   uuid.UUID
-            eventType string
-            payload   []byte
+    records, err := batch.ListPending(ctx, maxRows)
+    if err != nil {
+        drainer.logger.WarnContext(ctx, "list pending outbox events", "error", err)
+        return
+    }
+
+    for _, record := range records {
+        publishCtx := sharedhttp.WithRequestID(ctx, record.RequestID)
+        err := drainer.publisher.Publish(publishCtx, record.EventType, record.Payload,
+            events.WithEventID(record.EventID),
+            events.WithOccurredAt(record.OccurredAt),
         )
-        if err := rows.Scan(&id, &eventID, &eventType, &payload); err != nil {
-            d.logger.Warn("outbox drain scan failed", "error", err)
+        if err != nil {
+            drainer.logger.WarnContext(ctx, "publish outbox event", "error", err)
             continue
         }
-        if err := d.publisher.Publish(ctx, eventType, payload, eventID); err != nil {
-            d.logger.Warn("outbox publish failed; will retry", "outbox_id", id, "error", err)
-            continue
+
+        if err := batch.MarkPublished(ctx, record.ID); err != nil {
+            drainer.logger.WarnContext(ctx, "mark outbox event published", "error", err)
+            return
         }
-        if _, err := d.db.Exec(ctx,
-            `UPDATE outbox SET status = 'PUBLISHED', published_at = now() WHERE id = $1`,
-            id,
-        ); err != nil {
-            d.logger.Warn("outbox mark-published failed", "outbox_id", id, "error", err)
-            // Note: row stays PENDING; next drain will re-publish. Idempotency
-            // on the consumer side (event_id dedup) handles duplicates.
-        }
+    }
+
+    if err := batch.Commit(ctx); err != nil {
+        drainer.logger.WarnContext(ctx, "commit outbox drain transaction", "error", err)
     }
 }
 ```
