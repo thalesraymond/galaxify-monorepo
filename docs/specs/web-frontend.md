@@ -94,7 +94,10 @@ demonstrated problem that URL, query, context, or local state cannot solve.
 
 Safe transient reads may retry with bounded backoff. Mutations are not
 automatically replayed. Poll only visible queries and pause reconciliation while
-the tab is hidden or offline.
+the tab is hidden or offline. Pending observations belong to the Player session:
+they survive route changes, pause while no view displays the affected resource,
+and resume without resetting the remaining budget. Logout, account change, or
+disposal cancels them.
 
 ### 3.3 Mutation policy
 
@@ -115,8 +118,12 @@ issue compensating browser writes to imitate event consumers.
 
 After success, update or invalidate the authoritative query and invalidate
 known dependent queries. Reconcile visible downstream resources immediately and
-after approximately 1, 2, 4, and 8 seconds. Stop when the expected change is
-observed. Expiry is a delayed update, not command failure.
+after approximately 1, 2, 4, and 8 active seconds. Stop when the expected change
+is observed. Expiry is a delayed update, not command failure.
+
+Bounded observation reads fresh facts and publishes them to the shared queries;
+retained data from a failed refresh is never fresh confirmation. Slow reads are
+bounded so an observation cannot remain `Updating…` indefinitely.
 
 - Signup permits a partial Dashboard while Ship, Daily player state, and
   Expedition Ship state provision for up to about 30 active seconds.
@@ -298,6 +305,10 @@ Form, and Zod. Organize code feature-first around `auth`, `profile`, `dailies`,
 - Each feature has a narrow public entry point. ESLint forbids cross-feature
   deep imports.
 - Move code to shared only when domain-neutral and used by multiple features.
+  Bounded downstream observation lifecycle machinery belongs to the shared
+  Downstream Reconciliation module (callers still on per-caller probe schedules
+  migrate onto it); feature adapters declare expected-change meaning and publish
+  fresh facts.
 - Use `@/` rooted at `src`; prefer relative imports inside a feature.
 - Use CSS Modules and global semantic custom-property tokens.
 - Avoid utility CSS frameworks and broad component suites. Accessible headless

@@ -5,12 +5,16 @@ import { useQuery } from '@tanstack/react-query'
 import { Button, ContentSurface, Skeleton, StatusBadge, UnavailableState } from '@/shared/ui'
 import { useApiTransport } from '@/shared/api/TransportContext'
 import { isApiHttpError } from '@/api/transport'
+import type { DownstreamObservationPhase } from '@/shared/reconciliation'
 
 import type { Expedition } from '../api/expeditionApi'
 import { expeditionDetailQueryKeyFor, getExpeditionById } from '../api/expeditionApi'
 import { formatAbsoluteTime, formatMaterialReward } from './format'
 import { useCelebration } from './useCelebration'
-import { useBoundedProbe, type BoundedProbePhase } from './useProbeSchedule'
+import {
+  isExpeditionResultMissing,
+  useExpeditionResultReconciliation,
+} from './useExpeditionResultReconciliation'
 import { StaleNotice } from './StaleNotice'
 import styles from './expeditionPanels.module.css'
 
@@ -20,11 +24,11 @@ import styles from './expeditionPanels.module.css'
  * class plays only for a newly observed result in the current page session
  * (`celebrate`), never on revisit, and never affects comprehension.
  *
- * If the typed result lags the status transition, the panel reconciles it
- * through the shared bounded schedule (immediate then ≈1/2/4/8s, pausing while
- * hidden/offline) showing `Updating…`, then `Update delayed` with a local
- * Retry, before the result is shown (§5.6 "use bounded reconciliation before
- * showing the result").
+ * If the typed result lags the status transition, the panel observes it
+ * through the shared Downstream Reconciliation module (immediate then
+ * ≈1/2/4/8 active seconds, pausing while hidden/offline/unobserved) showing
+ * `Updating…`, then `Update delayed` with a local Retry, before the result is
+ * shown (§5.6 "use bounded reconciliation before showing the result").
  */
 export function ResultPanel({
   expeditionId,
@@ -42,15 +46,8 @@ export function ResultPanel({
   const headingId = useId()
 
   const expedition = query.data
-  const resultMissing =
-    expedition !== undefined && expedition.status !== 'IN_FLIGHT' && expedition.result === undefined
-  const resultProbe = useBoundedProbe({
-    enabled: resultMissing,
-    probe: async () => {
-      await query.refetch()
-      return query.data?.result !== undefined
-    },
-  })
+  const resultMissing = isExpeditionResultMissing(expedition)
+  const resultObservation = useExpeditionResultReconciliation(expeditionId, expedition)
 
   if (query.isPending) {
     return <Skeleton lines={3} />
@@ -89,7 +86,7 @@ export function ResultPanel({
             }}
           />
         ) : null}
-        <ResultPending phase={resultProbe.phase} onRetry={resultProbe.retry} />
+        <ResultPending phase={resultObservation.phase} onRetry={resultObservation.retry} />
       </>
     )
   }
@@ -123,7 +120,13 @@ export function ResultPanel({
  * landed after the status transition: `Updating…`, or `Update delayed` plus a
  * local Retry on expiry.
  */
-function ResultPending({ phase, onRetry }: { phase: BoundedProbePhase; onRetry: () => void }) {
+function ResultPending({
+  phase,
+  onRetry,
+}: {
+  phase: DownstreamObservationPhase
+  onRetry: () => void
+}) {
   const headingId = useId()
   return (
     <ContentSurface tone="raised" aria-labelledby={headingId}>

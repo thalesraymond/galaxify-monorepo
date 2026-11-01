@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { expectResultObservationSurvivesNavigation } from './expedition-result'
+
 import {
   expectAuthenticatedDashboard,
   expectNoTokenInUrl,
@@ -16,6 +18,10 @@ import {
  * the firefox, webkit, and mobile-webkit projects and stays engine-neutral.
  */
 test.describe('cross-browser release journeys', () => {
+  test('Expedition result Retry survives navigation', async ({ page }) => {
+    await expectResultObservationSurvivesNavigation(page)
+  })
+
   test('signup enters the app and the session survives a reload', async ({ page }) => {
     await page.goto('/signup')
     await expect(page.getByRole('heading', { level: 1, name: 'Create your account' })).toBeVisible()
