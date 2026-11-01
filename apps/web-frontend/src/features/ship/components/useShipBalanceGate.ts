@@ -4,8 +4,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiTransport } from '@/shared/api/TransportContext'
 import {
   downstreamReconciliation,
+  getBalanceGateExpiry,
+  getBalanceGateExpirySnapshot,
   getBalanceGateKeys,
   onClearDownstreamObservations,
+  subscribeToBalanceGateExpiry,
   subscribeToBalanceGateKeys,
 } from '@/shared/reconciliation'
 import { getShip, shipQueryKey } from '../api/shipApi'
@@ -24,21 +27,22 @@ export type ShipBalanceGate = {
 const GATE_READ_TIMEOUT_MS = 5_000
 
 /**
- * Expiry state is shared by every mounted gate surface. A successful fresh
- * read after the expiry epoch releases every view without a navigation
- * restarting the read, and a failed read stays failed until the player
- * retries. This is epoch bookkeeping, not a second observation scheduler.
+ * Read/approval bookkeeping shared by every mounted gate surface. Expiry
+ * generations live in the session registry because they must advance even
+ * while no gate surface is mounted (for example, a Daily retry that expires
+ * on the Dailies route). This module only coordinates which fresh read
+ * belongs to which generation; it schedules nothing.
  */
-let expiryEpoch: number | undefined
-let expirySignature: string | undefined
+let handledExpiryGeneration = -1
 let freshEpoch: number | undefined
-let attemptedEpoch: number | undefined
-let failedEpoch: number | undefined
+let attemptedGeneration: number | undefined
+let failedGeneration: number | undefined
+let readToken = 0
 let freshnessSnapshot = ''
 const freshnessListeners = new Set<() => void>()
 
 function freshnessKey(): string {
-  return `${expiryEpoch ?? ''}|${freshEpoch ?? ''}|${attemptedEpoch ?? ''}|${failedEpoch ?? ''}`
+  return `${freshEpoch ?? ''}|${attemptedGeneration ?? ''}|${failedGeneration ?? ''}|${readToken}`
 }
 
 function publishFreshness(): void {
@@ -60,23 +64,44 @@ function getFreshnessSnapshot(): string {
 }
 
 function resetFreshness(): void {
-  expiryEpoch = undefined
-  expirySignature = undefined
+  handledExpiryGeneration = -1
   freshEpoch = undefined
-  attemptedEpoch = undefined
-  failedEpoch = undefined
+  attemptedGeneration = undefined
+  failedGeneration = undefined
+  readToken += 1
+  publishFreshness()
+}
+
+function resetForGeneration(generation: number): void {
+  if (generation === handledExpiryGeneration) return
+  handledExpiryGeneration = generation
+  freshEpoch = undefined
+  attemptedGeneration = undefined
+  failedGeneration = undefined
   publishFreshness()
 }
 
 onClearDownstreamObservations(resetFreshness)
+
+function parseExpiry(snapshot: string): {
+  readonly epoch: number | undefined
+  readonly generation: number
+} {
+  const [epochText = '', generationText = '0'] = snapshot.split('|')
+  return {
+    epoch: epochText === '' ? undefined : Number(epochText),
+    generation: Number(generationText),
+  }
+}
 
 /**
  * Narrow balance-dependent gate derived from the session's Daily award
  * observations. The hook subscribes as a visible observer to every registered
  * Daily key so a round can run and expire even when no Daily row is mounted.
  * While any round is updating, gated actions stay closed. After expiry the
- * gate opens only once an authoritative Ship read succeeds; a cached balance
- * from before the expiry is never treated as fresh confirmation.
+ * gate opens only once an authoritative Ship read succeeds for that expiry
+ * generation; a cached balance from before the expiry is never fresh
+ * confirmation.
  */
 export function useShipBalanceGate(): ShipBalanceGate {
   const transport = useApiTransport()
@@ -105,7 +130,12 @@ export function useShipBalanceGate(): ShipBalanceGate {
     getPhaseSignature,
     getPhaseSignature,
   )
-  // Subscribes the render to the shared expiry/read bookkeeping.
+  const expirySnapshot = useSyncExternalStore(
+    subscribeToBalanceGateExpiry,
+    getBalanceGateExpirySnapshot,
+    getBalanceGateExpirySnapshot,
+  )
+  // Subscribes the render to the shared read/approval bookkeeping.
   useSyncExternalStore(subscribeToFreshness, getFreshnessSnapshot, getFreshnessSnapshot)
 
   const ship = useQuery({
@@ -120,21 +150,12 @@ export function useShipBalanceGate(): ShipBalanceGate {
     .filter((entry) => entry.endsWith(':delayed'))
     .map((entry) => entry.slice(0, entry.lastIndexOf(':')))
     .join(',')
+  const { epoch: expiryEpoch, generation: expiryGeneration } = parseExpiry(expirySnapshot)
 
-  // A new expiry set (or the last one clearing) starts a new freshness epoch.
+  // A new expiry generation invalidates the previous approval and attempt.
   useEffect(() => {
-    if (delayedSignature === '') {
-      if (expiryEpoch !== undefined) resetFreshness()
-      return
-    }
-    if (expirySignature === delayedSignature) return
-    expirySignature = delayedSignature
-    expiryEpoch = Date.now()
-    freshEpoch = undefined
-    attemptedEpoch = undefined
-    failedEpoch = undefined
-    publishFreshness()
-  }, [delayedSignature])
+    resetForGeneration(expiryGeneration)
+  }, [expiryGeneration])
 
   // Any successful authoritative Ship read after the epoch releases the gate.
   useEffect(() => {
@@ -143,28 +164,33 @@ export function useShipBalanceGate(): ShipBalanceGate {
       ship.status !== 'success' ||
       ship.data.kind !== 'ready' ||
       ship.dataUpdatedAt <= expiryEpoch ||
-      freshEpoch === ship.dataUpdatedAt
+      (freshEpoch !== undefined && freshEpoch >= ship.dataUpdatedAt)
     ) {
       return
     }
     freshEpoch = ship.dataUpdatedAt
-    failedEpoch = undefined
+    failedGeneration = undefined
     publishFreshness()
-  }, [ship.status, ship.data, ship.dataUpdatedAt])
+  }, [expiryEpoch, ship.status, ship.data, ship.dataUpdatedAt])
 
-  // One automatic read per expiry epoch, shared by every gate surface.
+  const hasFreshApproval =
+    expiryEpoch !== undefined && freshEpoch !== undefined && freshEpoch > expiryEpoch
+
+  // One automatic read per expiry generation, shared by every gate surface.
   useEffect(() => {
     if (
       delayedSignature === '' ||
       updating ||
       expiryEpoch === undefined ||
-      freshEpoch !== undefined ||
-      attemptedEpoch === expiryEpoch
+      expiryGeneration === 0 ||
+      hasFreshApproval
     ) {
       return
     }
+    if (attemptedGeneration === expiryGeneration) return
+    const readGeneration = expiryGeneration
     const readEpoch = expiryEpoch
-    attemptedEpoch = readEpoch
+    attemptedGeneration = readGeneration
     publishFreshness()
     const controller = new AbortController()
     let settled = false
@@ -172,7 +198,8 @@ export function useShipBalanceGate(): ShipBalanceGate {
       if (settled) return
       settled = true
       controller.abort()
-      failedEpoch = expiryEpoch
+      if (getBalanceGateExpiry().generation !== readGeneration) return
+      failedGeneration = readGeneration
       publishFreshness()
     }, GATE_READ_TIMEOUT_MS)
     void observeShip(queryClient, transport, controller.signal)
@@ -180,13 +207,14 @@ export function useShipBalanceGate(): ShipBalanceGate {
         if (settled) return
         settled = true
         clearTimeout(timer)
-        if (expiryEpoch !== readEpoch) return
+        if (getBalanceGateExpiry().generation !== readGeneration) return
         if (result.kind === 'ready') {
-          // The read started after expiry even when the clock has millisecond resolution.
+          // The read started after expiry even when the clock has millisecond
+          // resolution.
           freshEpoch = Math.max(Date.now(), readEpoch + 1)
-          failedEpoch = undefined
+          failedGeneration = undefined
         } else {
-          failedEpoch = readEpoch
+          failedGeneration = readGeneration
         }
         publishFreshness()
       })
@@ -194,26 +222,38 @@ export function useShipBalanceGate(): ShipBalanceGate {
         if (settled) return
         settled = true
         clearTimeout(timer)
-        failedEpoch = expiryEpoch
+        if (getBalanceGateExpiry().generation !== readGeneration) return
+        failedGeneration = readGeneration
         publishFreshness()
       })
     return () => {
       clearTimeout(timer)
       controller.abort()
-      // An unmount/dependency change is not a failed read: let the next
-      // mounted gate surface try once instead of stranding `refreshing`.
-      if (!settled && freshEpoch === undefined) {
-        attemptedEpoch = undefined
+      // An unmount is not a failed read: hand the attempt to another mounted
+      // surface (readToken wakes its effect) or the next mount.
+      if (!settled && getBalanceGateExpiry().generation === readGeneration) {
+        attemptedGeneration = undefined
+        readToken += 1
         publishFreshness()
       }
     }
-  }, [delayedSignature, updating, queryClient, transport, retryToken])
+  }, [
+    delayedSignature,
+    updating,
+    expiryEpoch,
+    expiryGeneration,
+    hasFreshApproval,
+    queryClient,
+    transport,
+    retryToken,
+  ])
 
   const balance = ship.data?.kind === 'ready' ? ship.data.ship.materials_balance : undefined
   const retry = useCallback(() => {
-    attemptedEpoch = undefined
-    failedEpoch = undefined
+    attemptedGeneration = undefined
+    failedGeneration = undefined
     freshEpoch = undefined
+    readToken += 1
     publishFreshness()
     setRetryToken((value) => value + 1)
   }, [])
@@ -237,10 +277,10 @@ export function useShipBalanceGate(): ShipBalanceGate {
       retry,
     }
   }
-  if (expiryEpoch !== undefined && freshEpoch !== undefined && freshEpoch > expiryEpoch) {
+  if (hasFreshApproval) {
     return { state: 'open', reason: '', balance, retry }
   }
-  if (failedEpoch === expiryEpoch) {
+  if (failedGeneration === expiryGeneration) {
     return {
       state: 'stale',
       reason: 'The Ship balance could not be refreshed. Retry before using it.',

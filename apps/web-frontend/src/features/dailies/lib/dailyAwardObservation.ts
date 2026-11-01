@@ -6,6 +6,7 @@ import {
   downstreamReconciliation,
   onClearDownstreamObservations,
   registerDownstreamObservation,
+  markBalanceGateExpired,
   registerBalanceGateKey,
   unregisterBalanceGateKey,
   type DownstreamObservationPhase,
@@ -231,6 +232,9 @@ function notifyPhase(dailyId: string): void {
     unregisterBalanceGateKey(dailyAwardObservationKey(dailyId))
   } else {
     registerBalanceGateKey(dailyAwardObservationKey(dailyId))
+  }
+  if (phase === 'delayed' && expectation !== undefined && expectation.phase !== 'delayed') {
+    markBalanceGateExpired()
   }
   if (expectation === undefined || expectation.phase === phase) {
     return

@@ -347,3 +347,48 @@ it('closes the released gate again when the Daily observation is retried', async
     /balance is updating/,
   )
 })
+
+it('requires a fresh read after a retry expires while no gate surface is mounted', async () => {
+  await startDaily()
+  await advanceFakeTime(9_000)
+  await advanceUntil(
+    () => !screen.getByRole('button', { name: 'Repair Ship' }).hasAttribute('disabled'),
+    'first expiry approval',
+  )
+
+  // The gate hook unmounts on Dailies; the completed row remains the observer
+  // and the session registry must still record the retried round's expiry.
+  fireEvent.click(screen.getByRole('link', { name: 'Dailies' }))
+  await advanceUntil(
+    () => screen.queryByRole('heading', { level: 1, name: 'Dailies' }) !== null,
+    'dailies route',
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+  await advanceFakeTime(1_000)
+  fail = true
+  await advanceFakeTime(9_000)
+  expect(screen.getByText('Update delayed')).toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('link', { name: 'Ship' }))
+  await advanceUntil(
+    () => screen.queryByRole('heading', { level: 1, name: 'Ship' }) !== null,
+    'ship route',
+  )
+  const repair = screen.getByRole('button', { name: 'Repair Ship' })
+  expect(repair).toBeDisabled()
+  await advanceUntil(
+    () =>
+      screen.queryAllByText('The Ship balance could not be refreshed. Retry before using it.')
+        .length > 0,
+    'second-expiry read failure',
+  )
+  expect(repair).toHaveAccessibleDescription(/could not be refreshed/)
+
+  fail = false
+  fireEvent.click(
+    within(screen.getByRole('region', { name: 'Materials' })).getByRole('button', {
+      name: 'Retry',
+    }),
+  )
+  await advanceUntil(() => !repair.hasAttribute('disabled'), 'second-expiry fresh read')
+})

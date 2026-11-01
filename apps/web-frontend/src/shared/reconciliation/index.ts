@@ -12,6 +12,10 @@ export type { DownstreamObservationView } from './useDownstreamObservation'
 export {
   registerBalanceGateKey,
   unregisterBalanceGateKey,
+  markBalanceGateExpired,
   subscribeToBalanceGateKeys,
   getBalanceGateKeys,
+  subscribeToBalanceGateExpiry,
+  getBalanceGateExpirySnapshot,
+  getBalanceGateExpiry,
 } from './balanceGate'
