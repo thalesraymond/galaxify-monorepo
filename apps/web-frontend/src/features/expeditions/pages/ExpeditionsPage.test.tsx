@@ -50,7 +50,9 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
-  clearDownstreamObservations()
+  act(() => {
+    clearDownstreamObservations()
+  })
   vi.useRealTimers()
   setVisibility(true)
   server.server.resetHandlers()
@@ -600,11 +602,29 @@ describe('Expeditions overview — in flight and resolution', () => {
     expect(screen.getByText('Updating…')).toBeInTheDocument()
     scheduler.advance(2_001)
     await advanceUntil(
-      () => screen.queryByText(/Available materials: 330/) !== null,
+      () =>
+        screen.queryByText(/Available materials: 330/) !== null &&
+        screen.queryByText('You have 330 materials') !== null,
       'the reward to land',
     )
     expect(screen.queryByText('Updating…')).not.toBeInTheDocument()
     expect(screen.getByText('You have 330 materials')).toBeInTheDocument()
+  })
+
+  it('confirms a fast reward against the balance held before the resolution', async () => {
+    server.reset('active-expedition')
+    await seedAuthenticatedSession()
+    await renderOverviewFake()
+    await advanceUntil(() => screen.queryByText('Expedition in flight') !== null, 'in flight')
+    scheduler.advance(HOUR + 2_001)
+    await advanceFakeTime(60_050)
+    await advanceUntil(
+      () =>
+        screen.queryByText('Available materials: 330') !== null &&
+        screen.queryByText('Updating…') === null,
+      'fast reward',
+    )
+    expect(screen.queryByText('Update delayed')).not.toBeInTheDocument()
   })
 
   it('keeps stale in-flight data labelled Update delayed with a Retry when a refetch fails', async () => {

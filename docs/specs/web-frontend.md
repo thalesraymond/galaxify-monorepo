@@ -139,7 +139,10 @@ bounded so an observation cannot remain `Updating…` indefinitely.
 - Expedition launch confirms the Expedition, then reconciles Ship deduction
   against the confirmed Ship balance held before submission. Without that
   baseline fresh facts are published but cannot confirm the deduction.
-- Expedition resolution confirms its result, then reconciles Ship reward.
+- Expedition resolution confirms its result, then reconciles Ship reward
+  against a confirmed Ship snapshot whose `updated_at` predates the result's
+  `created_at`. Without that evidence fresh Ship facts are published but do
+  not confirm the reward; the first observation is never used as a baseline.
 
 The browser cannot prove when Expedition's private Ship cache has consumed an
 event. End the visible sync boundary when authoritative Ship state changes. A
