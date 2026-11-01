@@ -1,31 +1,20 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 
 import type { Daily, Difficulty } from '@/api/generated/daily/types.gen'
 import { isApiHttpError, type ApiTransport } from '@/api/transport'
-import { observeShip } from '@/features/ship'
+import { shipQueryKey, type ShipState } from '@/features/ship'
+import { downstreamReconciliation, type DownstreamObservationPhase } from '@/shared/reconciliation'
 
 import { completeDaily, dailiesQueryKey, type DailyListFilters } from '../api/dailyApi'
+import {
+  dailyAwardObservationKey,
+  getDailyAwardExpectations,
+  registerDailyAwardObservation,
+  subscribeToDailyAwardExpectations,
+} from '../lib/dailyAwardObservation'
 import type { DifficultyRewards } from '../lib/difficulties'
 import { requestFailureMessage } from '../lib/message'
-
-/**
- * Bounded reconciliation schedule after Daily completion
- * (web-frontend.md §3.4): reconcile immediately, then at approximately
- * 1, 2, 4, and 8 seconds (measured from completion) while the tab is visible
- * and online.
- */
-const PROBE_SCHEDULE_MS = [1_000, 2_000, 4_000, 8_000] as const
-
-/** Delay from the previous probe to the next schedule milestone. */
-function nextProbeDelay(index: number): number | undefined {
-  const absolute = PROBE_SCHEDULE_MS[index]
-  if (absolute === undefined) {
-    return undefined
-  }
-  const previous = index === 0 ? 0 : (PROBE_SCHEDULE_MS[index - 1] ?? 0)
-  return absolute - previous
-}
 
 export type CompletionFailure = {
   readonly dailyId: string
@@ -45,22 +34,29 @@ export type ReconciliationState = {
 }
 
 /**
- * One probe session per Daily id, so completing several Dailies reconciles
- * independently: a second completion never steals the first row's schedule.
+ * The shared module's phases map onto the row's reconciliation language: an
+ * updating round is still probing, an expired round is delayed, and a retired
+ * round (the expected award was observed) is ready.
  */
-type ProbeSession = {
-  readonly dailyId: string
-  baseline: number | undefined
-  observed: number | undefined
-  expectedAward: number
-  nextProbeIndex: number
-  timer: number | undefined
-  generation: number
-  done: boolean
+function reconciliationPhase(phase: DownstreamObservationPhase): ReconciliationState['phase'] {
+  switch (phase) {
+    case 'updating':
+      return 'probing'
+    case 'delayed':
+      return 'delayed'
+    case 'idle':
+      return 'ready'
+  }
 }
 
-function isReconciliationPaused(): boolean {
-  return document.visibilityState === 'hidden' || !navigator.onLine
+/**
+ * The last confirmed Ship balance the browser held. It is the pre-command
+ * baseline: an award that was already applied when the first fresh read
+ * arrives must never be mistaken for the starting balance.
+ */
+function captureShipBaseline(queryClient: QueryClient): number | undefined {
+  const state = queryClient.getQueryData<ShipState>(shipQueryKey)
+  return state?.kind === 'ready' ? state.ship.materials_balance : undefined
 }
 
 /**
@@ -97,8 +93,12 @@ function restoreCompletedRow(
  * Owns completion as the only optimistic domain mutation (§3.3) plus the
  * bounded Ship reconciliation (§3.4): mark COMPLETED immediately (or remove
  * the row under the PENDING filter), restore in place with a row-level Retry
- * on failure, settle as completed on DAILY_ALREADY_COMPLETED, and probe the
+ * on failure, settle as completed on DAILY_ALREADY_COMPLETED, and observe the
  * Ship balance afterwards.
+ *
+ * The reconciliation itself belongs to the shared Downstream Reconciliation
+ * module: this hook contributes the pre-command baseline and the typed award,
+ * and renders the session-owned expectation the module reports back.
  */
 export function useDailyCompletion(
   transport: ApiTransport,
@@ -107,185 +107,33 @@ export function useDailyCompletion(
 ) {
   const queryClient = useQueryClient()
   const [failures, setFailures] = useState<ReadonlyMap<string, CompletionFailure>>(new Map())
-  const [reconciliations, setReconciliations] = useState<ReadonlyMap<string, ReconciliationState>>(
-    new Map(),
+
+  const expectations = useSyncExternalStore(
+    subscribeToDailyAwardExpectations,
+    getDailyAwardExpectations,
+    getDailyAwardExpectations,
   )
 
-  const sessionsRef = useRef(new Map<string, ProbeSession>())
-  const generationRef = useRef(0)
-  // The probe loop re-schedules itself; the ref keeps the recursive call on the
-  // latest callback without a forward reference (react-hooks/refs).
-  const runProbeRef = useRef<(session: ProbeSession) => Promise<void>>(async () => {})
-
-  const updateReconciliation = useCallback((dailyId: string, state: ReconciliationState): void => {
-    setReconciliations((previous) => {
-      const next = new Map(previous)
-      next.set(dailyId, state)
-      return next
-    })
-  }, [])
-
-  /**
-   * Probes the Ship balance once, then schedules the next probe from the
-   * bounded 1/2/4/8s schedule. The first probe (nextProbeIndex 0) establishes
-   * the baseline; a later probe that observes the expected award lands marks
-   * the reconciliation ready; exhausting the schedule marks `delayed`.
-   */
-  const runProbe = useCallback(
-    async (session: ProbeSession): Promise<void> => {
-      const generation = session.generation
-      let balance: number | undefined
-      try {
-        const ship = await observeShip(queryClient, transport)
-        balance = ship.kind === 'ready' ? ship.ship.materials_balance : undefined
-      } catch {
-        balance = undefined
-      }
-      const current = sessionsRef.current.get(session.dailyId)
-      if (generation !== session.generation || current !== session) {
-        return
-      }
-      session.observed = balance
-      const baseline = session.baseline
-      if (
-        session.nextProbeIndex > 0 &&
-        session.expectedAward > 0 &&
-        baseline !== undefined &&
-        balance !== undefined &&
-        balance - baseline >= session.expectedAward
-      ) {
-        // The authoritative Ship balance moved by the expected award.
-        session.done = true
-        updateReconciliation(session.dailyId, {
-          phase: 'ready',
-          baseline,
-          observed: balance,
-          expectedAward: session.expectedAward,
-        })
-        return
-      }
-      if (session.baseline === undefined && balance !== undefined) {
-        session.baseline = balance
-      }
-      updateReconciliation(session.dailyId, {
-        phase: 'probing',
-        baseline: session.baseline,
-        observed: balance,
-        expectedAward: session.expectedAward,
+  const reconciliations = useMemo(() => {
+    const next = new Map<string, ReconciliationState>()
+    for (const [dailyId, expectation] of expectations) {
+      next.set(dailyId, {
+        phase: reconciliationPhase(expectation.phase),
+        baseline: expectation.baseline,
+        observed: expectation.observed,
+        expectedAward: expectation.expectedAward,
       })
-      if (isReconciliationPaused()) {
-        return
-      }
-      const delay = nextProbeDelay(session.nextProbeIndex)
-      if (delay === undefined) {
-        session.done = true
-        updateReconciliation(session.dailyId, {
-          phase: 'delayed',
-          baseline: session.baseline,
-          observed: session.observed,
-          expectedAward: session.expectedAward,
-        })
-        return
-      }
-      session.nextProbeIndex += 1
-      session.timer = window.setTimeout(() => {
-        session.timer = undefined
-        void runProbeRef.current(session)
-      }, delay)
-    },
-    [queryClient, transport, updateReconciliation],
-  )
-
-  useEffect(() => {
-    runProbeRef.current = runProbe
-  }, [runProbe])
-
-  const startReconciliation = useCallback(
-    (dailyId: string, expectedAward: number): void => {
-      const previous = sessionsRef.current.get(dailyId)
-      if (previous !== undefined && previous.timer !== undefined) {
-        window.clearTimeout(previous.timer)
-      }
-      const session: ProbeSession = {
-        dailyId,
-        baseline: undefined,
-        observed: undefined,
-        expectedAward,
-        nextProbeIndex: 0,
-        timer: undefined,
-        generation: (generationRef.current += 1),
-        done: false,
-      }
-      sessionsRef.current.set(dailyId, session)
-      updateReconciliation(dailyId, {
-        phase: 'probing',
-        baseline: undefined,
-        observed: undefined,
-        expectedAward,
-      })
-      void runProbe(session)
-    },
-    [updateReconciliation, runProbe],
-  )
-
-  const pauseSessions = useCallback((): void => {
-    for (const session of sessionsRef.current.values()) {
-      if (session.timer !== undefined) {
-        window.clearTimeout(session.timer)
-        session.timer = undefined
-      }
     }
-  }, [])
-
-  const resumeSessions = useCallback((): void => {
-    if (isReconciliationPaused()) {
-      return
-    }
-    for (const session of sessionsRef.current.values()) {
-      if (!session.done && session.timer === undefined) {
-        void runProbe(session)
-      }
-    }
-  }, [runProbe])
-
-  // Pause reconciliation while the tab is hidden or offline (spec §3.2);
-  // resume the remaining probe schedules on visibility or connectivity.
-  useEffect(() => {
-    const sessions = sessionsRef.current
-    const handleVisibility = (): void => {
-      if (document.visibilityState === 'hidden') {
-        pauseSessions()
-      } else {
-        resumeSessions()
-      }
-    }
-    const handleOffline = (): void => {
-      pauseSessions()
-    }
-    const handleOnline = (): void => {
-      resumeSessions()
-    }
-    document.addEventListener('visibilitychange', handleVisibility)
-    window.addEventListener('offline', handleOffline)
-    window.addEventListener('online', handleOnline)
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibility)
-      window.removeEventListener('offline', handleOffline)
-      window.removeEventListener('online', handleOnline)
-      for (const session of sessions.values()) {
-        if (session.timer !== undefined) {
-          window.clearTimeout(session.timer)
-        }
-      }
-      generationRef.current += 1
-      sessions.clear()
-    }
-  }, [pauseSessions, resumeSessions])
+    return next
+  }, [expectations])
 
   const completeMutation = useMutation({
     mutationFn: ({ dailyId }: { readonly dailyId: string; readonly difficulty: Difficulty }) =>
       completeDaily(transport, dailyId),
     onMutate: async ({ dailyId }) => {
+      // The baseline is read synchronously from the confirmed Ship cache, so
+      // the Player's command is never delayed to obtain it.
+      const baseline = captureShipBaseline(queryClient)
       // Completion is the only optimistic domain mutation: mark the row
       // COMPLETED and disable its control immediately (spec §3.3). Under the
       // PENDING filter the completed row belongs in the (hidden) completed
@@ -303,7 +151,7 @@ export function useDailyCompletion(
           daily.id === dailyId ? { ...daily, status: 'COMPLETED' as const } : daily,
         )
       })
-      return { previous }
+      return { previous, baseline }
     },
     onError: (error, variables, context) => {
       const previous = context?.previous
@@ -317,7 +165,13 @@ export function useDailyCompletion(
         // completed (spec §3.3), and reconcile the Ship as if this tab had won.
         void queryClient.invalidateQueries({ queryKey: dailiesQueryKey(filters) })
         const expectedAward = difficulties.get(variables.difficulty)?.reward ?? 0
-        startReconciliation(variables.dailyId, expectedAward)
+        registerDailyAwardObservation(
+          variables.dailyId,
+          expectedAward,
+          context?.baseline,
+          queryClient,
+          transport,
+        )
         return
       }
       setFailures((previousFailures) => {
@@ -330,7 +184,7 @@ export function useDailyCompletion(
         return next
       })
     },
-    onSuccess: (completed) => {
+    onSuccess: (completed, _variables, context) => {
       setFailures((previousFailures) => {
         const next = new Map(previousFailures)
         next.delete(completed.id)
@@ -339,7 +193,13 @@ export function useDailyCompletion(
       // Refresh the authoritative list; each reconciliation observation also
       // refreshes the shared Ship cache through its owning feature (§3.4).
       void queryClient.invalidateQueries({ queryKey: dailiesQueryKey(filters) })
-      startReconciliation(completed.id, completed.awarded_materials)
+      registerDailyAwardObservation(
+        completed.id,
+        completed.awarded_materials,
+        context.baseline,
+        queryClient,
+        transport,
+      )
     },
   })
 
@@ -350,16 +210,11 @@ export function useDailyCompletion(
     [completeMutation],
   )
 
-  const retryReconciliation = useCallback(
-    (dailyId: string): void => {
-      const session = sessionsRef.current.get(dailyId)
-      if (session === undefined) {
-        return
-      }
-      startReconciliation(dailyId, session.expectedAward)
-    },
-    [startReconciliation],
-  )
+  const retryReconciliation = useCallback((dailyId: string): void => {
+    // A local Retry restarts the observation budget only: the shared round
+    // keeps its baseline and typed award expectation.
+    downstreamReconciliation.retry(dailyAwardObservationKey(dailyId))
+  }, [])
 
   return {
     complete,

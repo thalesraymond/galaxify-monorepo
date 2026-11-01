@@ -217,6 +217,88 @@ describe('DownstreamReconciliation', () => {
     expect(calls).toHaveLength(2)
   })
 
+  it('tells a phase listener about phase changes without making it an observer', async () => {
+    const { read, calls } = createRead()
+    const phases: string[] = []
+    store.subscribeToPhase(KEY, () => {
+      phases.push(store.getPhase(KEY))
+    })
+    store.register({ key: KEY, read, isSatisfied: () => false, publish: () => {} })
+
+    expect(phases).toEqual(['updating'])
+
+    // A phase listener is not a visible observer: the round stays paused.
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(calls).toHaveLength(0)
+    expect(store.getPhase(KEY)).toBe('updating')
+    expect(phases).toEqual(['updating'])
+  })
+
+  it('pauses a phase-only round and resumes it on a visible observer without resetting', async () => {
+    const { read, calls } = createRead()
+    const phases: string[] = []
+    store.subscribeToPhase(KEY, () => {
+      phases.push(store.getPhase(KEY))
+    })
+    store.register({ key: KEY, read, isSatisfied: () => false, publish: () => {} })
+
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(calls).toHaveLength(0)
+
+    store.subscribe(KEY, () => {})
+    expect(calls).toHaveLength(1)
+
+    await vi.advanceTimersByTimeAsync(100)
+    calls[0]?.reject(new Error('unavailable'))
+    await settle()
+
+    // The paused time did not burn the budget: the next read needs the
+    // remaining ~900ms of the 1s mark, not a fresh one.
+    await vi.advanceTimersByTimeAsync(899)
+    expect(calls).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(calls).toHaveLength(2)
+    expect(phases).toEqual(['updating'])
+  })
+
+  it('reports the delayed phase to phase listeners when a round expires', async () => {
+    const { read, calls } = createRead()
+    const phases: string[] = []
+    store.subscribeToPhase(KEY, () => {
+      phases.push(store.getPhase(KEY))
+    })
+    store.subscribe(KEY, () => {})
+    store.register({ key: KEY, read, isSatisfied: () => false, publish: () => {} })
+
+    for (const gap of [0, 1_000, 1_000, 2_000, 4_000]) {
+      await vi.advanceTimersByTimeAsync(gap)
+      calls.at(-1)?.reject(new Error('unavailable'))
+      await settle()
+    }
+
+    expect(store.getPhase(KEY)).toBe('delayed')
+    expect(phases.at(-1)).toBe('delayed')
+  })
+
+  it('detaches a phase listener without touching the visible observers', async () => {
+    const { read, calls } = createRead()
+    const phases: string[] = []
+    const detach = store.subscribeToPhase(KEY, () => {
+      phases.push(store.getPhase(KEY))
+    })
+    store.subscribe(KEY, () => {})
+    store.register({ key: KEY, read, isSatisfied: () => false, publish: () => {} })
+
+    detach()
+    calls[0]?.reject(new Error('unavailable'))
+    await settle()
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(phases).toEqual(['updating'])
+    // The visible observer still drives the round.
+    expect(calls).toHaveLength(2)
+  })
+
   it('never overlaps reads and skips marks a slow read runs past instead of catching up', async () => {
     const { read, calls } = createRead()
     store.subscribe(KEY, () => {})
@@ -425,5 +507,29 @@ describe('DownstreamReconciliation', () => {
     await settle()
     await vi.advanceTimersByTimeAsync(1_000)
     expect(second.calls).toHaveLength(2)
+  })
+
+  it('runs session-cleanup hooks so domain side state is dropped with the rounds', () => {
+    const { read, calls } = createRead()
+    const cleanup = vi.fn()
+    store.onClear(cleanup)
+    store.subscribe(KEY, () => {})
+    store.register({ key: KEY, read, isSatisfied: () => false, publish: () => {} })
+
+    store.clear()
+
+    expect(cleanup).toHaveBeenCalledTimes(1)
+    expect(store.getPhase(KEY)).toBe('idle')
+    expect(calls[0]?.signal.aborted).toBe(true)
+  })
+
+  it('detaches a session-cleanup hook when its adapter releases it', () => {
+    const cleanup = vi.fn()
+    const detach = store.onClear(cleanup)
+
+    detach()
+    store.clear()
+
+    expect(cleanup).not.toHaveBeenCalled()
   })
 })

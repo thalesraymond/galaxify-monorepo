@@ -24,3 +24,24 @@ branches are independent for now so implementers can work in parallel, but a
 merge/integrate step will likely be needed before landing. See
 [`decisions/stacked-layout-prs.md`](decisions/stacked-layout-prs.md) and
 [`problems/parallel-playwright-worktrees.md`](problems/parallel-playwright-worktrees.md).
+
+## [2026-11-01] record | Fake timers must fake `performance` for bounded observations
+
+The shared Downstream Reconciliation module measures active time with
+`performance.now()`. `apps/web-frontend/src/test/fakeTimers.ts` narrowed
+Vitest's `toFake` list to keep React responsive and left `performance` out, so
+every bounded observation read its first fact and then froze before its 1/2/4/8
+second marks. The helper now fakes `performance` too. See
+[`problems/fake-timers-freeze-bounded-observations.md`](problems/fake-timers-freeze-bounded-observations.md).
+
+## [2026-11-01] record | A module-level subscription never pauses an observation
+
+The shared Downstream Reconciliation module counts visible observers as the
+only thing that keeps reads running. The Daily award adapter followed its
+round's phase with a module-level `subscribe`, so `hasObserver` was
+permanently true and pending observations never paused while no view
+displayed the affected Ship balance (spec §3.2). The module now has a
+phase-only seam (`subscribeToPhase`), the completed row is the visible
+observer, and a completion after a delayed round restarts the bounded budget
+instead of being swallowed by the expired one. See
+[`problems/module-level-subscription-never-pauses-observations.md`](problems/module-level-subscription-never-pauses-observations.md).

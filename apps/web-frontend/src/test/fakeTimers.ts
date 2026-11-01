@@ -8,11 +8,15 @@ import { vi } from 'vitest'
  * UI actually schedules are faked. RTL's `waitFor`/`findBy*` cannot
  * auto-advance Vitest fake timers, so tests settle with `act`-wrapped
  * advances and synchronous queries.
+ *
+ * `performance` is faked with the clock: bounded observations measure their
+ * active time with `performance.now()`, so an unfaked clock would freeze that
+ * budget and the observation would never reach its later read marks.
  */
 export function enableFakeTimers(now: number): void {
   vi.useFakeTimers({
     now,
-    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
   })
 }
 

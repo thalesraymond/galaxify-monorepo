@@ -39,6 +39,12 @@ This wiki complements, and does not replace, [`docs/adr/`](../adr/) and
 - [Parallel Playwright worktrees](problems/parallel-playwright-worktrees.md) —
   Fixed dev-server ports and shared screenshot baselines make independent
   parallel lanes test each other or drift after the first merge.
+- [Fake timers freeze bounded observations](problems/fake-timers-freeze-bounded-observations.md) —
+  A narrowed `toFake` list left `performance.now()` real, so shared-module
+  observations read once and never advanced.
+- [Module-level subscriptions never pause observations](problems/module-level-subscription-never-pauses-observations.md) —
+  A phase-only subscription counted as a visible observer, so pending
+  observations never paused while no view displayed the affected resource.
 
 ## Subsystems
 

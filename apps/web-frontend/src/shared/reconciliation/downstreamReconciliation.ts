@@ -12,6 +12,10 @@
  * clear every entry, and any response that settles after its round was
  * superseded, expired, or cleared is discarded before it can publish facts or
  * restore an observation.
+ *
+ * Observers and phase listeners are different seams: only a visible observer
+ * of the affected resource keeps reads running, while a phase listener merely
+ * follows the round's phase (a domain adapter rendering what it expects).
  */
 
 export type DownstreamObservationPhase = 'idle' | 'updating' | 'delayed'
@@ -79,6 +83,18 @@ export class DownstreamReconciliation {
    * with the same identity restarts and is notified normally.
    */
   private readonly listeners = new Map<string, Set<() => void>>()
+  /**
+   * Phase listeners follow a round's phase without observing the affected
+   * resource. They learn that a round started, expired, or settled, but they
+   * never count as a visible observer and never wake a paused round.
+   */
+  private readonly phaseListeners = new Map<string, Set<() => void>>()
+  /**
+   * Session-cleanup hooks for domain adapters that keep side state beside the
+   * module's rounds (their own expectation records). A session boundary clears
+   * both, so the adapter never keeps expectations for a retired round.
+   */
+  private readonly clearListeners = new Set<() => void>()
 
   /**
    * Registers the expected change. Registering an already-known pending `key`
@@ -142,6 +158,31 @@ export class DownstreamReconciliation {
     }
   }
 
+  /**
+   * Subscribes to a round's phase changes without observing the affected
+   * resource. A phase listener never counts as a visible observer: reads stay
+   * paused while only phase listeners are registered, and the round resumes
+   * with its remaining budget when a visible observer appears. It never wakes
+   * a paused round on its own.
+   */
+  public subscribeToPhase(key: string, listener: () => void): () => void {
+    const listeners = this.phaseListeners.get(key) ?? new Set<() => void>()
+    listeners.add(listener)
+    this.phaseListeners.set(key, listeners)
+    let subscribed = true
+    return () => {
+      if (!subscribed) {
+        return
+      }
+      subscribed = false
+      const current = this.phaseListeners.get(key)
+      current?.delete(listener)
+      if (current !== undefined && current.size === 0) {
+        this.phaseListeners.delete(key)
+      }
+    }
+  }
+
   public getPhase(key: string): DownstreamObservationPhase {
     return this.entries.get(key)?.phase ?? 'idle'
   }
@@ -165,10 +206,25 @@ export class DownstreamReconciliation {
   }
 
   /**
+   * Registers a session-cleanup hook. The listener runs inside `clear()` (and
+   * therefore `dispose()`), so domain adapters can drop the side state they
+   * keep beside the module's rounds. The returned function detaches it.
+   */
+  public onClear(listener: () => void): () => void {
+    this.clearListeners.add(listener)
+    return () => {
+      this.clearListeners.delete(listener)
+    }
+  }
+
+  /**
    * Session boundary: cancels every pending round and aborts in-flight reads.
    * A response that settles afterwards cannot publish or restore anything.
    */
   public clear(): void {
+    // Domain side state goes first: a retired round must not read as a
+    // settled expectation to an adapter that is still subscribed to it.
+    this.notifyClear()
     for (const entry of this.entries.values()) {
       this.cancelWork(entry)
       entry.round += 1
@@ -182,6 +238,7 @@ export class DownstreamReconciliation {
   public dispose(): void {
     this.clear()
     this.listeners.clear()
+    this.phaseListeners.clear()
   }
 
   private pump(entry: ObservationEntry): void {
@@ -357,11 +414,21 @@ export class DownstreamReconciliation {
   }
 
   private notify(entry: ObservationEntry): void {
-    const observers = this.listeners.get(entry.key)
-    if (observers === undefined) {
+    this.notifyListeners(this.listeners.get(entry.key))
+    this.notifyListeners(this.phaseListeners.get(entry.key))
+  }
+
+  private notifyListeners(listeners: Set<() => void> | undefined): void {
+    if (listeners === undefined) {
       return
     }
-    for (const listener of observers) {
+    for (const listener of listeners) {
+      listener()
+    }
+  }
+
+  private notifyClear(): void {
+    for (const listener of [...this.clearListeners]) {
       listener()
     }
   }
@@ -378,6 +445,15 @@ export function registerDownstreamObservation<Facts>(request: DownstreamObservat
 /** Reads the phase of an expected change (`idle` when nothing is pending). */
 export function downstreamObservationPhase(key: string): DownstreamObservationPhase {
   return downstreamReconciliation.getPhase(key)
+}
+
+/**
+ * Registers a session-cleanup hook for domain adapters that keep side state
+ * beside the module's rounds. The listener runs when pending observations are
+ * cleared; the returned function detaches it.
+ */
+export function onClearDownstreamObservations(listener: () => void): () => void {
+  return downstreamReconciliation.onClear(listener)
 }
 
 /** Cancels every pending observation at a session boundary (logout, account change). */
