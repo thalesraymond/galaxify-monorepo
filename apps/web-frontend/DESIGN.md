@@ -103,7 +103,8 @@ fills, 9.08:1). `--color-danger` remains the base fill/edge value.
 
 - **Below 768 px:** compact mobile header/account trigger, fixed four-item bottom
   navigation, one task-first column, safe-area-aware bottom padding, no sticky
-  action bars.
+  action bars. Bottom-navigation labels stay at least 14 px and fit the 320 px
+  layout.
 - **768–1023 px:** narrower persistent labelled sidebar and one-column route
   content.
 - **1024 px and wider:** persistent sidebar and optional asymmetric main/support
@@ -142,6 +143,8 @@ error, unavailable, and stale/delayed states where applicable.
   `aria-describedby`.
 - Dialogs trap focus, close on Escape, restore focus, and expose labelled dialog
   semantics.
+- Disclosure summaries keep a visible open/closed indicator; native
+  `<details>` semantics supply the expanded state.
 - Skeletons resemble final content; they do not pulse aggressively.
 - `Preparing…`, `Updating…`, and `Update delayed` pair text with non-color cues.
 - Destructive actions are visually separated and use explicit confirmation.
