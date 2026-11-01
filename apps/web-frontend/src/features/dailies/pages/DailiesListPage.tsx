@@ -310,37 +310,41 @@ export function DailiesListPage() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <PageHeader
-          title="Dailies"
-          description={`Your recurring Dailies for ${formatOccurrenceDate(selectedDate)}.`}
-        />
-        <Link className={styles.createLink} to="/dailies/new">
-          Create Daily
-        </Link>
+      <div className={styles.navigation}>
+        <div className={styles.pageHeader}>
+          <PageHeader title="Dailies" />
+          <Link className={styles.createLink} to="/dailies/new">
+            Create Daily
+          </Link>
+        </div>
+        <LocalTabs label="Dailies navigation" tabs={dailyTabs} />
       </div>
-      <LocalTabs label="Dailies navigation" tabs={dailyTabs} />
 
       <div className={styles.toolbar}>
         <div className={styles.dateControls} role="group" aria-label="Daily date">
-          <Button variant="secondary" onClick={previousDay}>
-            Previous day
-          </Button>
-          <Field
-            className={styles.dateInput}
-            label="Date"
-            type="date"
-            value={selectedDate}
-            onChange={(event) => {
-              updateParams({ date: event.target.value })
-            }}
-          />
-          <Button variant="secondary" onClick={nextDay}>
-            Next day
-          </Button>
-          <Button variant="quiet" onClick={goToToday}>
-            Today
-          </Button>
+          <div className={styles.dateSelection}>
+            <div className={styles.dateInput}>
+              <Field
+                label="Date"
+                type="date"
+                value={selectedDate}
+                onChange={(event) => {
+                  updateParams({ date: event.target.value })
+                }}
+              />
+            </div>
+            <Button variant="quiet" onClick={goToToday}>
+              Today
+            </Button>
+          </div>
+          <div className={styles.dayControls}>
+            <Button variant="secondary" onClick={previousDay}>
+              Previous day
+            </Button>
+            <Button variant="secondary" onClick={nextDay}>
+              Next day
+            </Button>
+          </div>
         </div>
         <div className={styles.filterControls} role="group" aria-label="Daily status filter">
           {FILTER_OPTIONS.map((option) => (
@@ -359,12 +363,7 @@ export function DailiesListPage() {
         </div>
       </div>
 
-      <ContentSurface aria-labelledby="dailies-list-heading">
-        <h2 className={styles.listHeading} id="dailies-list-heading">
-          Current Dailies
-        </h2>
-        {body}
-      </ContentSurface>
+      <ContentSurface aria-label="Current Dailies">{body}</ContentSurface>
 
       {focusAnnouncement !== undefined ? <LiveRegion message={focusAnnouncement} /> : null}
 
