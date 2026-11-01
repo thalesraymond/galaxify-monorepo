@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import { getShip, shipQueryKey } from '@/features/ship'
 import { useApiTransport } from '@/shared/api/TransportContext'
+import { useDownstreamObservation } from '@/shared/reconciliation'
 import { Skeleton, UnavailableState } from '@/shared/ui'
 
 import {
@@ -14,6 +15,7 @@ import {
   type CurrentExpedition,
   type Expedition,
 } from '../api/expeditionApi'
+import { launchDeductionKey } from '../lib/launchDeductionObservation'
 import { ExpeditionProgress } from './ExpeditionProgress'
 import { LaunchForm } from './LaunchForm'
 import { MaterialsBalance, type MaterialsSync } from './MaterialsBalance'
@@ -78,27 +80,14 @@ export function ExpeditionOverview() {
   const currentStale = currentQuery.isRefetchError
 
   // Bounded Ship deduction reconciliation after a launch (§3.4).
-  const [deduction, setDeduction] = useState<{ expectedBalance: number | undefined } | undefined>(
-    undefined,
-  )
-  const deductionProbe = useShipReconciliation({
-    enabled: deduction !== undefined,
-    expectedBalance: deduction?.expectedBalance,
-    direction: 'decrease',
-  })
+  const inFlight =
+    currentQuery.data?.kind === 'current' && currentQuery.data.expedition.status === 'IN_FLIGHT'
+  const expeditionId = currentQuery.data?.kind === 'current' ? currentQuery.data.expedition.id : ''
+  const deductionProbe = useDownstreamObservation(launchDeductionKey(expeditionId), inFlight)
   const deductionSync: MaterialsSync = {
     balance,
     phase: deductionProbe.phase,
     onRetry: deductionProbe.retry,
-  }
-
-  function handleLaunched(expedition: Expedition): void {
-    const balanceNow =
-      shipQuery.data?.kind === 'ready' ? shipQuery.data.ship.materials_balance : undefined
-    setDeduction({
-      expectedBalance:
-        balanceNow === undefined ? undefined : balanceNow - expedition.materials_invested,
-    })
   }
 
   if (currentQuery.isPending) {
@@ -167,7 +156,7 @@ export function ExpeditionOverview() {
           balanceAtResolution={resolved.balanceAtResolution}
         />
       ) : null}
-      <LaunchForm balance={balance} onLaunched={handleLaunched} />
+      <LaunchForm balance={balance} />
     </div>
   )
 }
@@ -198,7 +187,6 @@ function ResolvedMission({
   const rewardProbe = useShipReconciliation({
     enabled: rewardExpected !== undefined,
     expectedBalance: rewardExpected,
-    direction: 'increase',
   })
   const rewardSync: MaterialsSync = {
     balance,

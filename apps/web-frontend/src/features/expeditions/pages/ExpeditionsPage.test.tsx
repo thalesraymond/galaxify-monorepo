@@ -1,6 +1,6 @@
 process.env.TZ = 'UTC'
 
-import { fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, screen } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -8,12 +8,15 @@ import {
   FIXED_MOCK_EPOCH_MS,
   ManualMockScheduler,
   createMockTestServer,
+  createHealthyShip,
   fixedUuid,
   onUnhandledMockRequest,
 } from '@/mocks'
 import { renderAppAt } from '@/test/renderApp'
 import { renderExpeditionRoute } from '@/test/renderExpeditionRoute'
 import { advanceFakeTime, advanceUntil, seedAuthenticatedSession } from '@/test/expeditionTestUtils'
+import { enableFakeTimers } from '@/test/fakeTimers'
+import { clearDownstreamObservations } from '@/shared/reconciliation'
 
 import type { MockTestServer } from '@/mocks'
 
@@ -30,6 +33,7 @@ function setVisibility(visible: boolean): void {
 }
 
 beforeEach(async () => {
+  clearDownstreamObservations()
   scheduler = new ManualMockScheduler(FIXED_MOCK_EPOCH_MS)
   server = createMockTestServer({ scenario: 'established-player', scheduler })
   server.server.listen({ onUnhandledRequest: onUnhandledMockRequest })
@@ -42,6 +46,7 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
+  clearDownstreamObservations()
   vi.useRealTimers()
   setVisibility(true)
   server.server.resetHandlers()
@@ -50,7 +55,7 @@ afterEach(() => {
 
 /** Switches to full fake timers (anchored at the fixed epoch) to drive probes. */
 function enableProbeTimers(): void {
-  vi.useFakeTimers({ now: new Date(FIXED_MOCK_EPOCH_MS) })
+  enableFakeTimers(FIXED_MOCK_EPOCH_MS)
 }
 
 async function renderOverview(): Promise<void> {
@@ -77,6 +82,137 @@ function changeInvestment(value: string): void {
 }
 
 describe('Expeditions overview — launch form', () => {
+  it('compares a fast deduction with the balance from before submitting the launch', async () => {
+    let balance = 250
+    server.server.use(
+      http.get('/api/ship/ships/me', () =>
+        HttpResponse.json(createHealthyShip({ materials_balance: balance })),
+      ),
+      http.post('/api/expedition/expeditions/launch', () => {
+        balance = 210
+      }),
+    )
+    await renderOverviewFake()
+    await advanceUntil(() => screen.queryByText('You have 250 materials') !== null, 'balance')
+    changeInvestment('40')
+    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'quote')
+    fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
+    await advanceUntil(() => screen.queryByText(/Available materials: 210/) !== null, 'deduction')
+    await advanceFakeTime(200)
+    expect(screen.queryByText('Updating…')).not.toBeInTheDocument()
+    expect(screen.queryByText('Update delayed')).not.toBeInTheDocument()
+  })
+
+  it('does not confirm a deduction from retained data after Ship refresh fails', async () => {
+    let fail = false
+    server.server.use(
+      http.get('/api/ship/ships/me', () =>
+        fail ? HttpResponse.error() : HttpResponse.json(createHealthyShip()),
+      ),
+      http.post('/api/expedition/expeditions/launch', () => {
+        fail = true
+      }),
+    )
+    await renderOverviewFake()
+    await advanceUntil(() => screen.queryByText('You have 250 materials') !== null, 'balance')
+    changeInvestment('40')
+    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'quote')
+    fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
+    await advanceUntil(() => screen.queryByText('Expedition in flight') !== null, 'launch')
+    await advanceFakeTime(9_000)
+    expect(screen.getByText(/Available materials: 250/)).toBeInTheDocument()
+    expect(screen.getByText('Update delayed')).toBeInTheDocument()
+  })
+  it('keeps the original threshold across navigation, delayed Retry, awards and spending', async () => {
+    let balance = 250
+    let reads = 0
+    let launches = 0
+    server.server.use(
+      http.get('/api/ship/ships/me', () => {
+        reads += 1
+        return HttpResponse.json(createHealthyShip({ materials_balance: balance }))
+      }),
+      http.post('/api/expedition/expeditions/launch', () => {
+        launches += 1
+      }),
+    )
+    await renderOverviewFake()
+    await advanceUntil(() => screen.queryByText('You have 250 materials') !== null, 'balance')
+    changeInvestment('40')
+    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'quote')
+    fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
+    await advanceUntil(() => screen.queryByText('Expedition in flight') !== null, 'launch')
+    balance = 230 // A concurrent award can mask part of the 40-material deduction.
+    await advanceFakeTime(1_500)
+    expect(screen.getByText('Updating…')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('link', { name: 'View history' }))
+    await advanceUntil(() => screen.queryByText('Expedition in flight') === null, 'history')
+    await advanceFakeTime(500)
+    const pausedReads = reads
+    await advanceFakeTime(10_000)
+    expect(reads).toBe(pausedReads)
+    fireEvent.click(screen.getByRole('link', { name: 'Overview' }))
+    await advanceUntil(() => screen.queryByText('Expedition in flight') !== null, 'overview')
+    expect(screen.getByText('Updating…')).toBeInTheDocument()
+    await advanceFakeTime(8_500)
+    expect(screen.getByText('Update delayed')).toBeInTheDocument()
+    balance = 205 // Subsequent repair spending crosses the original threshold (210).
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await advanceUntil(
+      () => screen.queryByText(/Available materials: 205/) !== null,
+      'fresh balance',
+    )
+    expect(screen.queryByText('Updating…')).not.toBeInTheDocument()
+    expect(launches).toBe(1)
+  })
+  it('does not invent a deduction baseline when the initial Ship read fails', async () => {
+    let fail = true
+    server.server.use(
+      http.get('/api/ship/ships/me', () =>
+        fail
+          ? HttpResponse.error()
+          : HttpResponse.json(createHealthyShip({ materials_balance: 210 })),
+      ),
+      http.post('/api/expedition/expeditions/launch', () => {
+        fail = false
+      }),
+    )
+    await renderOverviewFake()
+    await advanceUntil(
+      () => screen.queryByRole('heading', { name: 'Launch an Expedition' }) !== null,
+      'launch form',
+    )
+    await advanceFakeTime(3_000)
+    changeInvestment('40')
+    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'quote')
+    fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
+    await advanceUntil(
+      () => screen.queryByText('Expedition in flight') !== null,
+      'the in-flight view',
+    )
+    expect(screen.getByText('Updating…')).toBeInTheDocument()
+    await advanceFakeTime(8_500)
+    expect(screen.getByText('Update delayed')).toBeInTheDocument()
+    expect(screen.getByText(/Available materials: 210/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await advanceFakeTime(8_500)
+    expect(screen.getByText('Update delayed')).toBeInTheDocument()
+  })
+
+  it('clears a pending deduction at the session boundary', async () => {
+    await renderOverviewFake()
+    await advanceUntil(() => screen.queryByText('You have 250 materials') !== null, 'balance')
+    changeInvestment('40')
+    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'quote')
+    fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
+    await advanceUntil(() => screen.queryByText('Updating…') !== null, 'deduction')
+    act(() => {
+      clearDownstreamObservations()
+    })
+    expect(screen.queryByText('Updating…')).not.toBeInTheDocument()
+    await advanceFakeTime(9_000)
+    expect(screen.queryByText('Update delayed')).not.toBeInTheDocument()
+  })
   it('shows the exact balance, shortcuts, and a live quote for the investment', async () => {
     await renderOverview()
 

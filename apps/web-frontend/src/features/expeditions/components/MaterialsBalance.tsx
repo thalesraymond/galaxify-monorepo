@@ -1,10 +1,10 @@
 import { Button, StatusBadge } from '@/shared/ui'
-import type { ShipReconciliationPhase } from './useShipReconciliation'
+import type { DownstreamObservationPhase } from '@/shared/reconciliation'
 import styles from './expeditionPanels.module.css'
 
 export type MaterialsSync = {
   readonly balance: number | undefined
-  readonly phase: ShipReconciliationPhase
+  readonly phase: DownstreamObservationPhase
   readonly onRetry: () => void
 }
 
