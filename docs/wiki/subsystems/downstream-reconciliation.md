@@ -25,6 +25,14 @@ was described in `docs/specs/web-frontend.md` §3.2. Navigation pointers:
 - Expedition result adapter and observer: `features/expeditions/components/`
   `useExpeditionResultReconciliation.ts` and `ResultPanel.tsx` under the same
   frontend source directory. Session cleanup is in `features/auth/session/SessionProvider.tsx`.
+- As of `galaxify-monorepo@6ec832c` (2026-11-01), Expedition launch deduction
+  is a session-owned expectation in `features/expeditions/lib/`
+  `launchDeductionObservation.ts`, registered from `LaunchForm`'s pre-submit
+  mutation context and observed by `ExpeditionOverview`. Launch no longer uses
+  the local `useShipReconciliation` scheduler; resolution reward still did at
+  that SHA, awaiting #226.
+- Baseline and retained-data races are described in
+  [reconciliation baseline capture](../problems/reconciliation-baseline-capture.md).
 
 For timing and observer pitfalls see [fake timers](../problems/fake-timers-freeze-bounded-observations.md)
 and [module-level subscriptions](../problems/module-level-subscription-never-pauses-observations.md).

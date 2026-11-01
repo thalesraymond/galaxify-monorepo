@@ -78,3 +78,14 @@ This supersedes the earlier assumption that Firefox and WebKit were unavailable:
 Firefox ran successfully, and the WebKit failure reported host libraries.
 Issue #224 release was blocked by the implementer's push restriction; no PR
 was created and no merge was performed in this task.
+
+## [2026-11-01] merged | Expedition launch deduction
+
+Issue #225 (PR #262, galaxify-monorepo@6ec832c) moved launch deduction onto the
+shared module with a pre-submit baseline, session-owned expectation, navigation
+resume, Retry, and session clearing. Review strengthened two tests that could
+not detect success-time baselines or retained-data confirmation; the race and
+the QueryClient route seam are recorded in
+[`problems/reconciliation-baseline-capture.md`](problems/reconciliation-baseline-capture.md).
+Full frontend gate passed in CI in 6m07s. Resolution reward remains on the local
+scheduler for #226.

@@ -52,6 +52,9 @@ This wiki complements, and does not replace, [`docs/adr/`](../adr/) and
 - [Playwright lock/install mismatch](problems/playwright-lock-install-mismatch.md) —
   On 2026-11-01, stale installed Playwright requested different browser revisions;
   after a locked install, host WebKit libraries blocked full verification.
+- [Reconciliation baseline capture](problems/reconciliation-baseline-capture.md) —
+  On 2026-11-01, issue #225 showed that a success-callback baseline can already
+  include the expected change; capture it pre-submit and test the cache race.
 
 ## Subsystems
 
