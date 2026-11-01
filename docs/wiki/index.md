@@ -41,7 +41,8 @@ This wiki complements, and does not replace, [`docs/adr/`](../adr/) and
   parallel lanes test each other or drift after the first merge.
 - [Fake timers freeze bounded observations](problems/fake-timers-freeze-bounded-observations.md) —
   A narrowed `toFake` list left `performance.now()` real, so shared-module
-  observations read once and never advanced.
+  observations read once and never advanced. On 2026-11-01, issue #224 also
+  exposed visibility-polling margins and session cleanup requirements in tests.
 - [Module-level subscriptions never pause observations](problems/module-level-subscription-never-pauses-observations.md) —
   A phase-only subscription counted as a visible observer, so pending
   observations never paused while no view displayed the affected resource.
@@ -52,4 +53,6 @@ _None yet._
 
 ## Preferences
 
-_None yet._
+- On 2026-11-01, the user authorized a serial issue → review → PR → green CI →
+  merge loop, and approved mocked-HTTP UI and public observation/coordinator
+  APIs with controlled clocks as issue #224 test seams.

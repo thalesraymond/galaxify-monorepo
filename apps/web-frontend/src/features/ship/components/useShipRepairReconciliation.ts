@@ -25,17 +25,22 @@ export function useShipRepairReconciliation(queryClient: QueryClient, transport:
     registerDownstreamObservation({
       key: REPAIR_READINESS_KEY,
       read: async (signal) => {
-        const [ship, quote] = await Promise.all([
+        const [ship, quote] = await Promise.allSettled([
           observeShip(queryClient, transport, signal),
           getExpeditionQuote(transport, PROBE_INVESTMENT, signal),
         ])
         return { ship, quote }
       },
       isSatisfied: ({ ship, quote }) =>
-        ship.kind === 'ready' &&
-        quote.projected_balance + quote.materials_invested === ship.ship.materials_balance,
+        ship.status === 'fulfilled' &&
+        quote.status === 'fulfilled' &&
+        ship.value.kind === 'ready' &&
+        quote.value.projected_balance + quote.value.materials_invested ===
+          ship.value.ship.materials_balance,
       publish: ({ quote }) => {
-        queryClient.setQueryData(expeditionQuoteQueryKeyFor(PROBE_INVESTMENT), quote)
+        if (quote.status === 'fulfilled') {
+          queryClient.setQueryData(expeditionQuoteQueryKeyFor(PROBE_INVESTMENT), quote.value)
+        }
       },
     })
   }

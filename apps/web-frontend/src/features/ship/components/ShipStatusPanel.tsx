@@ -49,8 +49,10 @@ export function ShipStatusPanel() {
     queryFn: ({ signal }) => getShip(transport, signal),
   })
 
-  const { reconciliation, beginReconciliation, retryReconciliation } =
-    useShipRepairReconciliation(queryClient, transport)
+  const { reconciliation, beginReconciliation, retryReconciliation } = useShipRepairReconciliation(
+    queryClient,
+    transport,
+  )
 
   const repairMutation = useMutation({
     mutationFn: () => repairShipAndCache(queryClient, transport),
@@ -187,7 +189,8 @@ export function ShipStatusPanel() {
         {reconciliation.kind === 'delayed' ? (
           <div className={styles.delayed}>
             <p>
-              The repair is saved, but we could not confirm current Expedition readiness. You can retry now.
+              The repair is saved, but we could not confirm current Expedition readiness. You can
+              retry now.
             </p>
             <Button variant="secondary" onClick={retryReconciliation}>
               Retry

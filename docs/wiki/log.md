@@ -45,3 +45,14 @@ phase-only seam (`subscribeToPhase`), the completed row is the visible
 observer, and a completion after a delayed round restarts the bounded budget
 instead of being swallowed by the expired one. See
 [`problems/module-level-subscription-never-pauses-observations.md`](problems/module-level-subscription-never-pauses-observations.md).
+
+## [2026-11-01] record | Serial workflow and Ship repair observation tests
+
+The user authorized a serial issue → review → PR → green CI → merge loop and
+approved mocked-HTTP UI and public observation/coordinator APIs with controlled
+clocks as test seams for #224. The partial Ship repair migration is recorded at
+galaxify-monorepo@535e41428b38cf25606f2c1c4d74ab50acffd576; review identified
+that resuming a hidden tab can incur up to 250 ms of visibility polling before
+active time accrues, and singleton observations must be cleared before fake
+timers are restored to isolate tests. Completion and verification remain subject
+to review and CI.
