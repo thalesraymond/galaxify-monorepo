@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
 import { RouterProvider } from 'react-router'
 
 import { SessionProvider, type SessionRuntime } from '@/features/auth'
@@ -13,6 +13,8 @@ export type AppProvidersProps = {
   router: AppRouter
   /** Optional session runtime so tests can inject fakes. */
   sessionRuntime?: SessionRuntime | undefined
+  /** Optional shared query client for integration tests. */
+  queryClient?: QueryClient | undefined
 }
 
 /**
@@ -20,11 +22,11 @@ export type AppProvidersProps = {
  * infrastructure like the query client and session access; server state is
  * never mirrored here.
  */
-export function AppProviders({ router, sessionRuntime }: AppProvidersProps) {
-  const [queryClient] = useState(createQueryClient)
+export function AppProviders({ router, sessionRuntime, queryClient }: AppProvidersProps) {
+  const [client] = useState(() => queryClient ?? createQueryClient())
 
   return (
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={client}>
       <SessionProvider runtime={sessionRuntime}>
         <RouterProvider router={router} />
       </SessionProvider>

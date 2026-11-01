@@ -136,7 +136,9 @@ bounded so an observation cannot remain `Updating…` indefinitely.
   that baseline the observation refreshes and publishes facts but never claims
   the award was observed.
 - Ship repair confirms Ship immediately, then reconciles Expedition readiness.
-- Expedition launch confirms the Expedition, then reconciles Ship deduction.
+- Expedition launch confirms the Expedition, then reconciles Ship deduction
+  against the confirmed Ship balance held before submission. Without that
+  baseline fresh facts are published but cannot confirm the deduction.
 - Expedition resolution confirms its result, then reconciles Ship reward.
 
 The browser cannot prove when Expedition's private Ship cache has consumed an

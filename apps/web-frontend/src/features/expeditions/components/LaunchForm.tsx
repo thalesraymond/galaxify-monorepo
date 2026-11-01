@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { isApiHttpError, isApiTransportError } from '@/api/transport'
-import { shipQueryKey } from '@/features/ship'
+import { shipQueryKey, type ShipState } from '@/features/ship'
 import { useApiTransport } from '@/shared/api/TransportContext'
 import {
   Button,
@@ -21,9 +21,12 @@ import {
   getExpeditionQuote,
   launchExpedition,
   type CurrentExpedition,
-  type Expedition,
   type ExpeditionQuote,
 } from '../api/expeditionApi'
+import {
+  launchDeductionSessionGeneration,
+  registerLaunchDeduction,
+} from '../lib/launchDeductionObservation'
 import { formatAbsoluteTime, formatPercentChance, formatResolveWindow } from './format'
 import styles from './launchForm.module.css'
 
@@ -68,13 +71,7 @@ function parseInvestment(value: string): number | undefined {
  * Launch action that always revalidates authoritative state first and never
  * auto-replays on conflict (§5.6).
  */
-export function LaunchForm({
-  balance,
-  onLaunched,
-}: {
-  balance: number | undefined
-  onLaunched: (expedition: Expedition) => void
-}) {
+export function LaunchForm({ balance }: { balance: number | undefined }) {
   const transport = useApiTransport()
   const queryClient = useQueryClient()
   const [inputValue, setInputValue] = useState('')
@@ -102,6 +99,23 @@ export function LaunchForm({
 
   const launchMutation = useMutation({
     mutationFn: (materials: number) => launchExpedition(transport, materials),
+    onMutate: () => {
+      const state = queryClient.getQueryState<ShipState>(shipQueryKey)
+      return {
+        sessionGeneration: launchDeductionSessionGeneration(),
+        baseline:
+          state?.status === 'success' && state.data?.kind === 'ready'
+            ? state.data.ship.materials_balance
+            : undefined,
+      }
+    },
+    onSuccess: (expedition, _materials, context) => {
+      if (context.sessionGeneration !== launchDeductionSessionGeneration()) return
+      registerLaunchDeduction(expedition, context.baseline, queryClient, transport)
+      queryClient.setQueryData(currentExpeditionQueryKey, { kind: 'current', expedition })
+      void queryClient.invalidateQueries({ queryKey: currentExpeditionQueryKey })
+      void queryClient.invalidateQueries({ queryKey: shipQueryKey })
+    },
   })
 
   const shortcuts =
@@ -153,13 +167,9 @@ export function LaunchForm({
       }
       const expedition = await launchMutation.mutateAsync(investment)
       // Confirm the Expedition, then reconcile the Ship deduction (§3.4).
-      queryClient.setQueryData(currentExpeditionQueryKey, { kind: 'current', expedition })
-      void queryClient.invalidateQueries({ queryKey: currentExpeditionQueryKey })
-      void queryClient.invalidateQueries({ queryKey: shipQueryKey })
       setAnnouncement(
         `Expedition launched. It resolves at ${formatAbsoluteTime(expedition.resolve_at)}.`,
       )
-      onLaunched(expedition)
     } catch (error: unknown) {
       if (isApiHttpError(error, 'EXPEDITION_ALREADY_ACTIVE')) {
         void queryClient.invalidateQueries({ queryKey: currentExpeditionQueryKey })

@@ -1,4 +1,5 @@
 import { render } from '@testing-library/react'
+import type { QueryClient } from '@tanstack/react-query'
 import { createMemoryRouter, type RouteObject } from 'react-router'
 
 import { AppProviders } from '@/app/providers'
@@ -43,7 +44,7 @@ const expeditionRouteTree: RouteObject[] = [
 ]
 
 /** Renders the expedition subtree with fake timers already enabled. */
-export function renderExpeditionRoute(path: string) {
+export function renderExpeditionRoute(path: string, queryClient?: QueryClient) {
   const router = createMemoryRouter(expeditionRouteTree, { initialEntries: [path] })
-  return render(<AppProviders router={router} />)
+  return render(<AppProviders router={router} queryClient={queryClient} />)
 }
