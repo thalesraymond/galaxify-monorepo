@@ -2,9 +2,10 @@ import { QueryClient } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiTransport } from '@/api/transport'
+import { clearDownstreamObservations } from '@/shared/reconciliation'
 import { createDamagedShip } from '@/mocks'
 
-import { shipQueryKey, type ShipState } from './shipApi'
+import { getShipFetchMark, markShipPublished, shipQueryKey, type ShipState } from './shipApi'
 import { observeShip, repairShipAndCache } from './shipQueries'
 
 let queryClient: QueryClient
@@ -197,4 +198,42 @@ it('rejects a cancelled read instead of publishing retained facts as fresh', asy
 
   await expect(read).rejects.toThrow(/fresh authoritative/i)
   expect(queryClient.getQueryData(shipQueryKey)).toEqual({ kind: 'ready', ship: cached })
+})
+
+it('rejects an older read that resolves after a newer command publish', async () => {
+  const response = deferred<Response>()
+  const started = deferred<AbortSignal | null | undefined>()
+  const transport = new ApiTransport({
+    fetch: (_input, init) => {
+      started.resolve(init?.signal)
+      return response.promise
+    },
+  })
+  const observation = observeShip(queryClient, transport).catch((error: unknown) => error)
+  await started.promise
+
+  const repaired = createDamagedShip({ hull_health: 100, materials_balance: 62 })
+  const published = { kind: 'ready', ship: repaired } satisfies ShipState
+  queryClient.setQueryData(shipQueryKey, published)
+  markShipPublished(published)
+
+  response.resolve(jsonResponse(createDamagedShip({ materials_balance: 250 })))
+  const error = await observation
+  expect(error).toBeInstanceOf(Error)
+  expect(error).toMatchObject({
+    message: expect.stringMatching(/superseded by a command publish/i),
+  })
+  expect(queryClient.getQueryData(shipQueryKey)).toEqual(published)
+})
+
+it('clears the Ship fetch marker at the session boundary', () => {
+  const published = { kind: 'ready', ship: createDamagedShip() } satisfies ShipState
+  markShipPublished(published)
+  const before = getShipFetchMark().generation
+
+  clearDownstreamObservations()
+
+  const after = getShipFetchMark()
+  expect(after.state).toBeUndefined()
+  expect(after.generation).toBeGreaterThan(before)
 })

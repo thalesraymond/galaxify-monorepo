@@ -1,5 +1,6 @@
 import { zShipGetMeResponse, zShipRepairResponse } from '@/api/generated/ship/zod.gen'
 import { isApiHttpError, type ApiHttpError, type ApiTransport } from '@/api/transport'
+import { onClearDownstreamObservations } from '@/shared/reconciliation'
 
 export const shipQueryKey = ['ship'] as const
 
@@ -8,6 +9,7 @@ export type ShipState =
   | { readonly kind: 'provisioning'; readonly error: ApiHttpError }
 
 let shipFetchGeneration = 0
+let shipCommandRevision = 0
 let lastFetchedShipState: ShipState | undefined
 
 /** Marker used to distinguish a real fetch from a reverted/cached read. */
@@ -23,6 +25,23 @@ function markFetched(state: ShipState): ShipState {
   lastFetchedShipState = state
   return state
 }
+
+/** Monotonic revision of command-published authoritative snapshots. */
+export function getShipCommandRevision(): number {
+  return shipCommandRevision
+}
+
+/** A command-published authoritative snapshot also invalidates older reads. */
+export function markShipPublished(state: ShipState): void {
+  shipCommandRevision += 1
+  markFetched(state)
+}
+
+onClearDownstreamObservations(() => {
+  shipFetchGeneration += 1
+  shipCommandRevision += 1
+  lastFetchedShipState = undefined
+})
 
 export async function getShip(transport: ApiTransport, signal?: AbortSignal): Promise<ShipState> {
   try {

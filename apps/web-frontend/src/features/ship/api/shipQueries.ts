@@ -3,7 +3,15 @@ import type { QueryClient } from '@tanstack/react-query'
 import type { ApiTransport } from '@/api/transport'
 import { getDownstreamSessionGeneration } from '@/shared/reconciliation'
 
-import { getShip, getShipFetchMark, repairShip, shipQueryKey, type ShipState } from './shipApi'
+import {
+  getShip,
+  getShipCommandRevision,
+  getShipFetchMark,
+  markShipPublished,
+  repairShip,
+  shipQueryKey,
+  type ShipState,
+} from './shipApi'
 
 /**
  * Composes the caller's abort signal with the query's own signal: a bounded
@@ -44,9 +52,16 @@ export async function observeShip(
   // A negative stale time is always stale, even when data was written in the
   // same millisecond, so an observation always reaches the server.
   const before = getShipFetchMark().generation
+  const commandRevision = getShipCommandRevision()
   const data = await queryClient.query({
     queryKey: shipQueryKey,
-    queryFn: ({ signal: querySignal }) => getShip(transport, composeSignals(signal, querySignal)),
+    queryFn: async ({ signal: querySignal }) => {
+      const state = await getShip(transport, composeSignals(signal, querySignal))
+      if (getShipCommandRevision() !== commandRevision) {
+        throw new Error('Ship read was superseded by a command publish.')
+      }
+      return state
+    },
     staleTime: -1,
     retry: false,
   })
@@ -71,6 +86,8 @@ export async function repairShipAndCache(
   if (generation !== getDownstreamSessionGeneration()) return ship
   await queryClient.cancelQueries({ queryKey: shipQueryKey, exact: true })
   if (generation !== getDownstreamSessionGeneration()) return ship
-  queryClient.setQueryData(shipQueryKey, { kind: 'ready', ship } satisfies ShipState)
+  const published = { kind: 'ready', ship } satisfies ShipState
+  queryClient.setQueryData(shipQueryKey, published)
+  markShipPublished(published)
   return ship
 }
