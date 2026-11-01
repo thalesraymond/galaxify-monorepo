@@ -10,6 +10,9 @@
     "npm": ">=11.0.0"
   },
   "scripts": {
+    "prototype:convergence": "vite --config prototype-convergence/vite.config.ts --mode prototype",
+    "prototype:convergence:build": "tsc -p prototype-convergence/tsconfig.json && vite build --config prototype-convergence/vite.config.ts --mode prototype",
+    "prototype:convergence:preview": "vite preview --config prototype-convergence/vite.config.ts",
     "prototype:identity": "vite --config prototype-identity/vite.config.ts --mode prototype",
     "prototype:identity:build": "tsc -p prototype-identity/tsconfig.json && vite build --config prototype-identity/vite.config.ts --mode prototype",
     "prototype:identity:preview": "vite preview --config prototype-identity/vite.config.ts",

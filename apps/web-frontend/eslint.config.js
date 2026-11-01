@@ -28,6 +28,7 @@ export default tseslint.config(
     ignores: [
       'dist/**',
       'dist-prototype-identity/**',
+      'dist-prototype-convergence/**',
       'coverage/**',
       'node_modules/**',
       'playwright-report/**',

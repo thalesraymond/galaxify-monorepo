@@ -1,0 +1,118 @@
+[
+  {
+    "variant": "after-hours",
+    "width": 1440,
+    "routes": 7,
+    "overflow": false,
+    "axeViolations": 0,
+    "keyboardJourney": "pass",
+    "management": "date/status URL scope, create, edit, dirty-navigation guard, complete, delete, history pass",
+    "balances": [
+      120,
+      145,
+      87,
+      47
+    ],
+    "reducedMotion": true,
+    "consoleErrors": []
+  },
+  {
+    "variant": "after-hours",
+    "width": 768,
+    "routes": 7,
+    "overflow": false,
+    "axeViolations": 0,
+    "keyboardJourney": "pass",
+    "management": "date/status URL scope, create, edit, dirty-navigation guard, complete, delete, history pass",
+    "balances": [
+      120,
+      145,
+      87,
+      47
+    ],
+    "reducedMotion": true,
+    "consoleErrors": []
+  },
+  {
+    "variant": "after-hours",
+    "width": 390,
+    "routes": 7,
+    "overflow": false,
+    "axeViolations": 0,
+    "keyboardJourney": "pass",
+    "management": "date/status URL scope, create, edit, dirty-navigation guard, complete, delete, history pass",
+    "balances": [
+      120,
+      145,
+      87,
+      47
+    ],
+    "reducedMotion": true,
+    "consoleErrors": []
+  },
+  {
+    "variant": "after-hours",
+    "width": 320,
+    "routes": 7,
+    "overflow": false,
+    "axeViolations": 0,
+    "keyboardJourney": "pass",
+    "management": "date/status URL scope, create, edit, dirty-navigation guard, complete, delete, history pass",
+    "balances": [
+      120,
+      145,
+      87,
+      47
+    ],
+    "reducedMotion": true,
+    "consoleErrors": []
+  },
+  {
+    "variant": "after-hours",
+    "width": 1440,
+    "dailyStates": [
+      "empty",
+      "loading",
+      "unavailable",
+      "retry",
+      "filtered"
+    ],
+    "menuEscape": "not applicable"
+  },
+  {
+    "variant": "after-hours",
+    "width": 768,
+    "dailyStates": [
+      "empty",
+      "loading",
+      "unavailable",
+      "retry",
+      "filtered"
+    ],
+    "menuEscape": "pass"
+  },
+  {
+    "variant": "after-hours",
+    "width": 390,
+    "dailyStates": [
+      "empty",
+      "loading",
+      "unavailable",
+      "retry",
+      "filtered"
+    ],
+    "menuEscape": "pass"
+  },
+  {
+    "variant": "after-hours",
+    "width": 320,
+    "dailyStates": [
+      "empty",
+      "loading",
+      "unavailable",
+      "retry",
+      "filtered"
+    ],
+    "menuEscape": "pass"
+  }
+]

@@ -1,0 +1,5 @@
+{
+  "extends": "../tsconfig.app.json",
+  "compilerOptions": { "tsBuildInfoFile": "../node_modules/.tmp/prototype-convergence.tsbuildinfo" },
+  "include": ["*.tsx", "*.ts"]
+}
