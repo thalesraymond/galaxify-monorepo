@@ -1,0 +1,30 @@
+---
+type: subsystem
+created: 2026-11-01
+updated: 2026-11-01
+sources:
+  - "galaxify-monorepo@dfb2577db9d07c3f3dd0cf6340c3f0ff8df6923d"
+---
+
+# Downstream reconciliation navigation
+
+On 2026-11-01 at the reviewed SHA, the frontend's bounded observation contract
+was described in `docs/specs/web-frontend.md` §3.2. Navigation pointers:
+
+- Coordinator, lifecycle, subscriptions and tests:
+  `apps/web-frontend/src/shared/reconciliation/downstreamReconciliation.ts`
+  and `downstreamReconciliation.test.ts`.
+- Public exports and visible-observer React hook:
+  `apps/web-frontend/src/shared/reconciliation/index.ts` and
+  `useDownstreamObservation.ts`.
+- Ship repair adapter and consumer: `apps/web-frontend/src/features/ship/components/`
+  `useShipRepairReconciliation.ts` and `ShipStatusPanel.tsx`; fresh reads are
+  defined in `features/ship/api/shipQueries.ts`.
+- Daily award adapter and observer: `features/dailies/lib/dailyAwardObservation.ts`
+  and `features/dailies/components/DailyRow.tsx` under `apps/web-frontend/src/`.
+- Expedition result adapter and observer: `features/expeditions/components/`
+  `useExpeditionResultReconciliation.ts` and `ResultPanel.tsx` under the same
+  frontend source directory. Session cleanup is in `features/auth/session/SessionProvider.tsx`.
+
+For timing and observer pitfalls see [fake timers](../problems/fake-timers-freeze-bounded-observations.md)
+and [module-level subscriptions](../problems/module-level-subscription-never-pauses-observations.md).

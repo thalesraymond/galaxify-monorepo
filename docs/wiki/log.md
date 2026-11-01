@@ -45,3 +45,36 @@ phase-only seam (`subscribeToPhase`), the completed row is the visible
 observer, and a completion after a delayed round restarts the bounded budget
 instead of being swallowed by the expired one. See
 [`problems/module-level-subscription-never-pauses-observations.md`](problems/module-level-subscription-never-pauses-observations.md).
+
+## [2026-11-01] record | Serial workflow and Ship repair observation tests
+
+The user authorized a serial issue → review → PR → green CI → merge loop and
+approved mocked-HTTP UI and public observation/coordinator APIs with controlled
+clocks as test seams for #224. The partial Ship repair migration is recorded at
+galaxify-monorepo@535e41428b38cf25606f2c1c4d74ab50acffd576; review identified
+that resuming a hidden tab can incur up to 250 ms of visibility polling before
+active time accrues, and singleton observations must be cleared before fake
+timers are restored to isolate tests. Completion and verification remain subject
+to review and CI.
+
+## [2026-11-01] cleanup | Remove unused Ship readiness probe
+
+Review of galaxify-monorepo@89969b59acbbaec96f431b84280e50e07d98dcc2 found
+the Ship API readiness probe was referenced only by its dedicated tests. Removed
+the obsolete probe and those tests; the Ship API, query, and panel tests, full
+unit suite, formatting, typecheck, lint, and production build passed. Full browser
+verification remains for CI because Firefox and WebKit are unavailable locally.
+
+## [2026-11-01] record | Locked Playwright verification and reconciliation navigation
+
+At galaxify-monorepo@dfb2577db9d07c3f3dd0cf6340c3f0ff8df6923d, a locked
+install corrected the stale Playwright version. Full verification reached the
+cross-browser gate: Firefox passed, but WebKit and mobile WebKit could not
+launch because host libraries were missing. See the
+[problem note](problems/playwright-lock-install-mismatch.md),
+[subsystem map](subsystems/downstream-reconciliation.md), and
+[subsequent ticket decision](decisions/bounded-reconciliation-tickets.md).
+This supersedes the earlier assumption that Firefox and WebKit were unavailable:
+Firefox ran successfully, and the WebKit failure reported host libraries.
+Issue #224 release was blocked by the implementer's push restriction; no PR
+was created and no merge was performed in this task.

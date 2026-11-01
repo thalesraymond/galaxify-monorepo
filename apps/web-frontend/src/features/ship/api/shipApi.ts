@@ -1,4 +1,3 @@
-import { zExpeditionQuoteResponse } from '@/api/generated/expedition/zod.gen'
 import { zShipGetMeResponse, zShipRepairResponse } from '@/api/generated/ship/zod.gen'
 import { isApiHttpError, type ApiHttpError, type ApiTransport } from '@/api/transport'
 
@@ -37,39 +36,4 @@ export function repairShip(
     method: 'POST',
     response: zShipRepairResponse,
   })
-}
-
-/**
- * The OpenAPI minimum for `materials_invested` on the Expedition quote
- * endpoint (`docs/openapi/expedition-service.yaml`). The probe invests this
- * amount and compares `projected_balance` against
- * `expectedMaterialsBalance - EXPEDITION_QUOTE_PROBE_INVESTMENT`.
- */
-export const EXPEDITION_QUOTE_PROBE_INVESTMENT = 1
-
-/**
- * Probes whether the Expedition service has consumed the Ship repair event
- * (`web-frontend.md` §3.4) by reading its quote view of the materials balance.
- * Any readiness failure, outage, or stale balance keeps the probe failing so
- * the UI can bound its reconciliation window.
- *
- * The quote endpoint requires `materials_invested >= 1` (OpenAPI minimum), so
- * the probe invests `EXPEDITION_QUOTE_PROBE_INVESTMENT` and compares
- * `projected_balance` against `expectedMaterialsBalance - EXPEDITION_QUOTE_PROBE_INVESTMENT`.
- */
-export async function probeExpeditionReadiness(
-  transport: ApiTransport,
-  expectedMaterialsBalance: number,
-): Promise<boolean> {
-  try {
-    const quote = await transport.request({
-      service: 'expedition',
-      path: '/expeditions/quote',
-      query: { materials_invested: EXPEDITION_QUOTE_PROBE_INVESTMENT },
-      response: zExpeditionQuoteResponse,
-    })
-    return quote.projected_balance === expectedMaterialsBalance - EXPEDITION_QUOTE_PROBE_INVESTMENT
-  } catch {
-    return false
-  }
 }

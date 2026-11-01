@@ -1,15 +1,8 @@
 import { ApiTransport } from '@/api/transport'
-import { createDamagedShip, createExpeditionQuote } from '@/mocks'
+import { createDamagedShip } from '@/mocks'
 import { describe, expect, it, vi } from 'vitest'
 
-import {
-  EXPEDITION_QUOTE_PROBE_INVESTMENT,
-  getShip,
-  probeExpeditionReadiness,
-  repairShip,
-  shipQueryKey,
-  type ShipState,
-} from './shipApi'
+import { getShip, repairShip, shipQueryKey, type ShipState } from './shipApi'
 
 describe('ship API adapter', () => {
   it('owns the query key and reads the Ship over GET /ships/me', async () => {
@@ -76,40 +69,6 @@ describe('ship API adapter', () => {
     })
 
     await expect(getShip(transport)).rejects.toMatchObject({ kind: 'api', code: 'INTERNAL_ERROR' })
-  })
-
-  it('probes Expedition readiness through the quote endpoint', async () => {
-    let url = ''
-    const transport = new ApiTransport({
-      fetch: (input) => {
-        url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-        return Promise.resolve(jsonResponse(createExpeditionQuote()))
-      },
-    })
-
-    // The fixture's projected balance (119) matches a fresh damaged Ship's
-    // balance minus the probe's minimum investment.
-    await expect(probeExpeditionReadiness(transport, 120)).resolves.toBe(true)
-    await expect(probeExpeditionReadiness(transport, 62)).resolves.toBe(false)
-    expect(url).toBe(
-      `/api/expedition/expeditions/quote?materials_invested=${EXPEDITION_QUOTE_PROBE_INVESTMENT}`,
-    )
-  })
-
-  it('treats a not-ready Expedition outcome as a failed probe', async () => {
-    const transport = new ApiTransport({
-      fetch: vi.fn().mockResolvedValue(
-        errorResponse(
-          {
-            code: 'EXPEDITION_SHIP_STATE_NOT_READY',
-            message: 'Ship state is still provisioning.',
-          },
-          503,
-        ),
-      ) as typeof globalThis.fetch,
-    })
-
-    await expect(probeExpeditionReadiness(transport, 120)).resolves.toBe(false)
   })
 })
 

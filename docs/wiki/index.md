@@ -33,6 +33,9 @@ This wiki complements, and does not replace, [`docs/adr/`](../adr/) and
 - [Stack overlapping layout tickets](decisions/stacked-layout-prs.md) — On
   2026-10-31, six coupled layout PRs were stacked in merge order, each
   refreshing the snapshots the combined tree made stale.
+- [Bounded reconciliation tickets](decisions/bounded-reconciliation-tickets.md) —
+  On 2026-11-01, subsequent prompts were bounded and required regression fixes,
+  locked browser installs, and review of retired callers and helpers.
 
 ## Problems
 
@@ -41,15 +44,23 @@ This wiki complements, and does not replace, [`docs/adr/`](../adr/) and
   parallel lanes test each other or drift after the first merge.
 - [Fake timers freeze bounded observations](problems/fake-timers-freeze-bounded-observations.md) —
   A narrowed `toFake` list left `performance.now()` real, so shared-module
-  observations read once and never advanced.
+  observations read once and never advanced. On 2026-11-01, issue #224 also
+  exposed visibility-polling margins and session cleanup requirements in tests.
 - [Module-level subscriptions never pause observations](problems/module-level-subscription-never-pauses-observations.md) —
   A phase-only subscription counted as a visible observer, so pending
   observations never paused while no view displayed the affected resource.
+- [Playwright lock/install mismatch](problems/playwright-lock-install-mismatch.md) —
+  On 2026-11-01, stale installed Playwright requested different browser revisions;
+  after a locked install, host WebKit libraries blocked full verification.
 
 ## Subsystems
 
-_None yet._
+- [Downstream reconciliation](subsystems/downstream-reconciliation.md) —
+  On 2026-11-01, navigation pointers mapped the coordinator, public hook,
+  domain adapters, and lifecycle tests at the reviewed SHA.
 
 ## Preferences
 
-_None yet._
+- On 2026-11-01, the user authorized a serial issue → review → PR → green CI →
+  merge loop, and approved mocked-HTTP UI and public observation/coordinator
+  APIs with controlled clocks as issue #224 test seams.

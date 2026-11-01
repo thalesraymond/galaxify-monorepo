@@ -1,111 +1,49 @@
-import { useEffect, useState } from 'react'
+import type { QueryClient } from '@tanstack/react-query'
 
 import type { ApiTransport } from '@/api/transport'
+import { expeditionQuoteQueryKeyFor, getExpeditionQuote } from '@/features/expeditions'
+import {
+  downstreamReconciliation,
+  registerDownstreamObservation,
+  useDownstreamObservation,
+} from '@/shared/reconciliation'
 
-import { probeExpeditionReadiness } from '../api/shipApi'
+import { observeShip } from '../api/shipQueries'
 
-export type ShipReconciliationState =
-  { readonly kind: 'idle' } | { readonly kind: 'updating' } | { readonly kind: 'delayed' }
+const REPAIR_READINESS_KEY = 'ship:repair:readiness'
+const PROBE_INVESTMENT = 1
 
-/**
- * Cumulative probe schedule after a successful Ship repair
- * (`web-frontend.md` §3.4): reconcile immediately and after approximately
- * 1, 2, 4, and 8 seconds.
- */
-const FIRST_PROBE_DELAY_MS = 0
-const PROBE_DELAY_STEPS_MS: readonly number[] = [1_000, 1_000, 2_000, 4_000]
-/** While the tab is hidden or offline, wait briefly and re-check before probing. */
-const PAUSED_PROBE_POLL_MS = 250
+/** The expectation belongs to the session; the visible panel only observes it. */
+export function useShipRepairReconciliation(queryClient: QueryClient, transport: ApiTransport) {
+  const { phase, retry } = useDownstreamObservation(REPAIR_READINESS_KEY, true)
 
-/**
- * Bounded Ship-to-Expedition readiness reconciliation (`web-frontend.md`
- * §3.4). After `beginReconciliation(balance)` it probes the Expedition quote
- * until it reflects the authoritative balance, pausing while the tab is hidden
- * or offline. If the bounded window expires, it surfaces `delayed` and
- * `retryReconciliation` starts a fresh round.
- */
-export function useShipRepairReconciliation(transport: ApiTransport) {
-  const [reconcileBalance, setReconcileBalance] = useState<number>()
-  const [reconcileRound, setReconcileRound] = useState(0)
-  const [reconciliation, setReconciliation] = useState<ShipReconciliationState>({ kind: 'idle' })
-
-  useEffect(() => {
-    if (reconcileBalance === undefined) {
+  const beginReconciliation = (): void => {
+    if (downstreamReconciliation.getPhase(REPAIR_READINESS_KEY) !== 'idle') {
+      downstreamReconciliation.retry(REPAIR_READINESS_KEY)
       return
     }
-    const balance = reconcileBalance
-    // Object indirection keeps flow analysis from narrowing `cancelled` to
-    // false inside the probe closures (it is only cleared on cleanup).
-    const control: { cancelled: boolean } = { cancelled: false }
-    const isCancelled = (): boolean => control.cancelled
-    let timer: number | undefined
-    let step = 0
-
-    const isPaused = (): boolean => document.visibilityState !== 'visible' || !navigator.onLine
-
-    async function runProbe(): Promise<void> {
-      if (isCancelled()) {
-        return
-      }
-      setReconciliation({ kind: 'updating' })
-      let succeeded: boolean
-      try {
-        succeeded = await probeExpeditionReadiness(transport, balance)
-      } catch {
-        succeeded = false
-      }
-      if (isCancelled()) {
-        return
-      }
-      if (succeeded) {
-        setReconciliation({ kind: 'idle' })
-        return
-      }
-      step += 1
-      if (step > PROBE_DELAY_STEPS_MS.length) {
-        setReconciliation({ kind: 'delayed' })
-        return
-      }
-      scheduleProbe()
-    }
-
-    function scheduleProbe(): void {
-      const delayMs = isPaused()
-        ? PAUSED_PROBE_POLL_MS
-        : step === 0
-          ? FIRST_PROBE_DELAY_MS
-          : (PROBE_DELAY_STEPS_MS[step - 1] ?? 1_000)
-      timer = window.setTimeout(() => {
-        if (isPaused()) {
-          scheduleProbe()
-          return
+    registerDownstreamObservation({
+      key: REPAIR_READINESS_KEY,
+      read: async (signal) => {
+        const [ship, quote] = await Promise.allSettled([
+          observeShip(queryClient, transport, signal),
+          getExpeditionQuote(transport, PROBE_INVESTMENT, signal),
+        ])
+        return { ship, quote }
+      },
+      isSatisfied: ({ ship, quote }) =>
+        ship.status === 'fulfilled' &&
+        quote.status === 'fulfilled' &&
+        ship.value.kind === 'ready' &&
+        quote.value.projected_balance + quote.value.materials_invested ===
+          ship.value.ship.materials_balance,
+      publish: ({ quote }) => {
+        if (quote.status === 'fulfilled') {
+          queryClient.setQueryData(expeditionQuoteQueryKeyFor(PROBE_INVESTMENT), quote.value)
         }
-        void runProbe()
-      }, delayMs)
-    }
-
-    scheduleProbe()
-
-    return () => {
-      control.cancelled = true
-      if (timer !== undefined) {
-        window.clearTimeout(timer)
-      }
-    }
-  }, [reconcileBalance, reconcileRound, transport])
-
-  /** Starts a reconciliation round for the authoritative post-repair balance. */
-  const beginReconciliation = (balance: number): void => {
-    setReconciliation({ kind: 'updating' })
-    setReconcileBalance(balance)
-    setReconcileRound((round) => round + 1)
+      },
+    })
   }
 
-  /** Restarts the bounded window after it expired. */
-  const retryReconciliation = (): void => {
-    setReconciliation({ kind: 'updating' })
-    setReconcileRound((round) => round + 1)
-  }
-
-  return { reconciliation, beginReconciliation, retryReconciliation }
+  return { reconciliation: { kind: phase }, beginReconciliation, retryReconciliation: retry }
 }
