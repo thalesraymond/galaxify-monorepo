@@ -12,6 +12,10 @@ import { useQueryClient } from '@tanstack/react-query'
 
 import { ApiTransport } from '@/api/transport'
 import { TransportProvider } from '@/shared/api/TransportContext'
+import {
+  clearDownstreamObservations,
+  disposeDownstreamReconciliation,
+} from '@/shared/reconciliation'
 
 import { AccessTokenStore } from './accessToken'
 import { LocalRefreshTokenStorage, type RefreshTokenStorage } from './refreshTokenStorage'
@@ -71,8 +75,9 @@ const SessionContext = createContext<SessionContextValue | undefined>(undefined)
 
 /**
  * Owns the session runtime for the application. On every session boundary it
- * clears private query cache so stale protected data can never flash
- * (`web-frontend.md` §4.1, §4.2).
+ * clears private query cache and cancels session-owned downstream
+ * observations, so stale protected data can never flash and obsolete work can
+ * never publish facts into a later session (`web-frontend.md` §4.1, §4.2).
  */
 export function SessionProvider({
   children,
@@ -94,14 +99,17 @@ export function SessionProvider({
     const detach = active.manager.setEffects({
       onAuthenticated: () => {
         queryClient.clear()
+        clearDownstreamObservations()
       },
       onCleared: () => {
         queryClient.clear()
+        clearDownstreamObservations()
       },
     })
     active.manager.start()
     return () => {
       detach()
+      disposeDownstreamReconciliation()
     }
   }, [active, queryClient])
 

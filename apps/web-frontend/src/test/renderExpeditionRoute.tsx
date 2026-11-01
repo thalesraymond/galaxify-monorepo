@@ -23,6 +23,10 @@ import {
  * Date-only mocking and real timers.
  */
 const expeditionRouteTree: RouteObject[] = [
+  // Logout lands here; a lightweight stand-in keeps the eager tree complete
+  // without mounting the real lazy login boundary. It sits outside the guard,
+  // exactly like the real route table.
+  { path: '/login', element: <div>Login</div> },
   {
     element: <RequireAuth />,
     children: [

@@ -1,6 +1,6 @@
 process.env.TZ = 'UTC'
 
-import { fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, screen } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -10,9 +10,11 @@ import {
   ManualMockScheduler,
   createActiveExpedition,
   createMockTestServer,
+  createResolvedExpedition,
   fixedUuid,
   onUnhandledMockRequest,
 } from '@/mocks'
+import { SESSION_REFRESH_STORAGE_KEY } from '@/features/auth'
 import { renderAppAt } from '@/test/renderApp'
 import { renderExpeditionRoute } from '@/test/renderExpeditionRoute'
 import { advanceFakeTime, advanceUntil, seedAuthenticatedSession } from '@/test/expeditionTestUtils'
@@ -38,9 +40,17 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.useRealTimers()
+  setVisibility(true)
   server.server.resetHandlers()
   server.server.close()
 })
+
+function setVisibility(visible: boolean): void {
+  Object.defineProperty(document, 'visibilityState', {
+    configurable: true,
+    get: () => (visible ? 'visible' : 'hidden'),
+  })
+}
 
 function enableProbeTimers(): void {
   vi.useFakeTimers({ now: new Date(FIXED_MOCK_EPOCH_MS) })
@@ -298,5 +308,317 @@ describe('Expedition detail', () => {
       'the refresh to recover',
     )
     expect(screen.getByText('Expedition in flight')).toBeInTheDocument()
+  })
+})
+
+/**
+ * The fixture's resolved Expedition with its typed result stripped, matching a
+ * status transition whose result has not propagated yet.
+ */
+function expeditionWithoutResult(id: string): Expedition {
+  const resolved = createResolvedExpedition(id)
+  return {
+    id: resolved.id,
+    user_id: resolved.user_id,
+    materials_invested: resolved.materials_invested,
+    success_chance: resolved.success_chance,
+    resolve_at: resolved.resolve_at,
+    status: resolved.status,
+    created_at: resolved.created_at,
+    resolved_at: resolved.resolved_at ?? resolved.created_at,
+  }
+}
+
+/**
+ * The shared Downstream Reconciliation lifecycle exercised through the real
+ * caller: `/expeditions/:id` observes a resolved-but-untyped result, publishes
+ * fresh facts into the shared detail query, and survives navigation, pauses,
+ * slow/error reads, expiry/retry, and session clearing.
+ */
+describe('Expedition detail — result observation lifecycle', () => {
+  const id = RESOLVED_ID
+
+  it('survives navigation and resumes the remaining budget with no reads while away', async () => {
+    let resultAvailable = false
+    let detailCalls = 0
+    const withoutResult = expeditionWithoutResult(id)
+    const withResult = createResolvedExpedition(id)
+    server.server.use(
+      http.get(`/api/expedition/expeditions/${id}`, () => {
+        detailCalls += 1
+        return HttpResponse.json(resultAvailable ? withResult : withoutResult)
+      }),
+    )
+    await renderDetailFake(id)
+
+    await advanceUntil(
+      () => screen.queryByText('Confirming your result') !== null,
+      'the pending result',
+    )
+    // The mount read plus the immediate observation read.
+    expect(detailCalls).toBe(2)
+
+    // Burn part of the budget: the ≈1s mark read.
+    await advanceFakeTime(1_100)
+    expect(detailCalls).toBe(3)
+
+    // Route away: no visible observer of the affected resource, so reads pause
+    // without consuming the remaining budget.
+    fireEvent.click(screen.getByRole('link', { name: 'History' }))
+    await advanceUntil(
+      () => screen.queryByRole('heading', { level: 1, name: 'Expedition history' }) !== null,
+      'the history page',
+    )
+    await advanceFakeTime(20_000)
+    expect(detailCalls).toBe(3)
+
+    // Return: the pending round is still Updating with its remaining budget.
+    fireEvent.click(screen.getByRole('link', { name: /Success/ }))
+    await advanceUntil(
+      () => screen.queryByRole('heading', { level: 1, name: 'Expedition detail' }) !== null,
+      'the detail page again',
+    )
+    expect(screen.getByText('Confirming your result')).toBeInTheDocument()
+    expect(screen.getByText('Updating…')).toBeInTheDocument()
+    expect(screen.queryByText('Update delayed')).not.toBeInTheDocument()
+
+    await advanceFakeTime(500)
+    expect(detailCalls).toBe(3)
+
+    resultAvailable = true
+    await advanceUntil(
+      () => screen.queryByText('Expedition resolved') !== null,
+      'the reconciled result',
+    )
+    expect(screen.getByText('Success')).toBeInTheDocument()
+    expect(screen.getByText('+80 materials')).toBeInTheDocument()
+    expect(detailCalls).toBe(4)
+  })
+
+  it('does not start reads while already hidden and starts once visible', async () => {
+    let resultAvailable = false
+    let detailCalls = 0
+    const withoutResult = expeditionWithoutResult(id)
+    const withResult = createResolvedExpedition(id)
+    server.server.use(
+      http.get(`/api/expedition/expeditions/${id}`, () => {
+        detailCalls += 1
+        return HttpResponse.json(resultAvailable ? withResult : withoutResult)
+      }),
+    )
+    setVisibility(false)
+    await renderDetailFake(id)
+
+    await advanceUntil(
+      () => screen.queryByText('Confirming your result') !== null,
+      'the pending result',
+    )
+    // Only the mount read: the bounded schedule must not start while paused.
+    expect(detailCalls).toBe(1)
+    await advanceFakeTime(10_000)
+    expect(detailCalls).toBe(1)
+    expect(screen.getByText('Updating…')).toBeInTheDocument()
+
+    setVisibility(true)
+    resultAvailable = true
+    await advanceUntil(
+      () => screen.queryByText('Expedition resolved') !== null,
+      'the result after becoming visible',
+    )
+    expect(detailCalls).toBe(2)
+  })
+
+  it('preserves a delayed result and its Retry identity across navigation', async () => {
+    let available = false
+    let detailCalls = 0
+    server.server.use(
+      http.get(`/api/expedition/expeditions/${id}`, () => {
+        detailCalls += 1
+        return HttpResponse.json(
+          available ? createResolvedExpedition(id) : expeditionWithoutResult(id),
+        )
+      }),
+    )
+    await renderDetailFake(id)
+    await advanceUntil(
+      () => screen.queryByText('Confirming your result') !== null,
+      'the pending result',
+    )
+    await advanceFakeTime(8_500)
+    expect(screen.getByText('Update delayed')).toBeInTheDocument()
+    expect(detailCalls).toBe(6)
+
+    fireEvent.click(screen.getByRole('link', { name: 'History' }))
+    await advanceUntil(
+      () => screen.queryByRole('heading', { name: 'Expedition history' }) !== null,
+      'history',
+    )
+    await advanceFakeTime(20_000)
+    fireEvent.click(screen.getByRole('link', { name: /Success/ }))
+    await advanceUntil(() => screen.queryByText('Update delayed') !== null, 'the delayed result')
+    expect(detailCalls).toBe(6)
+
+    available = true
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await advanceUntil(
+      () => screen.queryByText('+80 materials') !== null,
+      'the expected result after Retry',
+    )
+    expect(detailCalls).toBe(7)
+    expect(screen.queryByText('Update delayed')).not.toBeInTheDocument()
+  })
+
+  it('bounds hanging reads, expires into Update delayed, and restarts on Retry', async () => {
+    let resultAvailable = false
+    let detailCalls = 0
+    const withoutResult = expeditionWithoutResult(id)
+    const withResult = createResolvedExpedition(id)
+    server.server.use(
+      http.get(`/api/expedition/expeditions/${id}`, () => {
+        detailCalls += 1
+        if (detailCalls === 1) {
+          return HttpResponse.json(withoutResult)
+        }
+        if (resultAvailable) {
+          return HttpResponse.json(withResult)
+        }
+        return new Promise<never>(() => {})
+      }),
+    )
+    await renderDetailFake(id)
+
+    await advanceUntil(
+      () => screen.queryByText('Confirming your result') !== null,
+      'the pending result',
+    )
+    expect(detailCalls).toBe(2)
+
+    // The immediate read hangs: timeout ends this round instead of starting
+    // another automatic read alongside a request that may ignore cancellation.
+    await advanceFakeTime(5_500)
+    expect(screen.getByText('Update delayed')).toBeInTheDocument()
+    expect(detailCalls).toBe(2)
+
+    resultAvailable = true
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await advanceUntil(
+      () => screen.queryByText('Expedition resolved') !== null,
+      'the retried result',
+    )
+    expect(screen.getByText('+80 materials')).toBeInTheDocument()
+    expect(detailCalls).toBe(3)
+  })
+
+  it('does not replace a confirmed result with an older missing-result observation', async () => {
+    let calls = 0
+    let resolveRefresh: (response: Response) => void = () => {}
+    let resolveObservation: (response: Response) => void = () => {}
+    const missing = expeditionWithoutResult(id)
+    server.server.use(
+      http.get(`/api/expedition/expeditions/${id}`, () => {
+        calls += 1
+        if (calls === 7) {
+          return new Promise<Response>((resolve) => {
+            resolveRefresh = resolve
+          })
+        }
+        if (calls === 8) {
+          return new Promise<Response>((resolve) => {
+            resolveObservation = resolve
+          })
+        }
+        return HttpResponse.json(missing)
+      }),
+    )
+    await renderDetailFake(id)
+    await advanceFakeTime(8_500)
+    expect(screen.getByText('Update delayed')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('link', { name: 'History' }))
+    await advanceUntil(
+      () => screen.queryByRole('heading', { name: 'Expedition history' }) !== null,
+      'history',
+    )
+    await advanceFakeTime(31_000)
+    fireEvent.click(screen.getByRole('link', { name: /Success/ }))
+    await advanceUntil(() => calls === 7, 'the stale detail refresh')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await advanceUntil(() => calls === 8, 'the retried observation')
+    act(() => {
+      resolveRefresh(HttpResponse.json(createResolvedExpedition(id)))
+    })
+    await advanceUntil(() => screen.queryByText('+80 materials') !== null, 'the confirmed result')
+    act(() => {
+      resolveObservation(HttpResponse.json(missing))
+    })
+    await advanceFakeTime(100)
+    expect(screen.getByText('+80 materials')).toBeInTheDocument()
+    expect(screen.queryByText('Confirming your result')).not.toBeInTheDocument()
+  })
+
+  it('keeps probing after failed fresh reads and confirms only on a fresh success', async () => {
+    let detailCalls = 0
+    const withoutResult = expeditionWithoutResult(id)
+    const withResult = createResolvedExpedition(id)
+    server.server.use(
+      http.get(`/api/expedition/expeditions/${id}`, () => {
+        detailCalls += 1
+        if (detailCalls === 1) {
+          return HttpResponse.json(withoutResult)
+        }
+        if (detailCalls <= 3) {
+          return HttpResponse.json(
+            { error: { code: 'INTERNAL_ERROR', message: 'Boom.' } },
+            { status: 500 },
+          )
+        }
+        return HttpResponse.json(withResult)
+      }),
+    )
+    await renderDetailFake(id)
+
+    await advanceUntil(
+      () => screen.queryByText('Confirming your result') !== null,
+      'the pending result',
+    )
+    await advanceFakeTime(1_100)
+    // The immediate and ≈1s reads failed: no confirmation, still bounded.
+    expect(detailCalls).toBe(3)
+    expect(screen.getByText('Updating…')).toBeInTheDocument()
+    expect(screen.queryByText('Expedition resolved')).not.toBeInTheDocument()
+
+    await advanceUntil(
+      () => screen.queryByText('Expedition resolved') !== null,
+      'the fresh confirmation',
+    )
+    expect(detailCalls).toBe(4)
+  })
+
+  it('cancels pending observation on logout and never republishes protected facts', async () => {
+    let detailCalls = 0
+    const withoutResult = expeditionWithoutResult(id)
+    server.server.use(
+      http.get(`/api/expedition/expeditions/${id}`, () => {
+        detailCalls += 1
+        return HttpResponse.json(withoutResult)
+      }),
+    )
+    await renderDetailFake(id)
+
+    await advanceUntil(
+      () => screen.queryByText('Confirming your result') !== null,
+      'the pending result',
+    )
+    expect(detailCalls).toBe(2)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Account' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Log out' }))
+    await advanceUntil(
+      () => window.localStorage.getItem(SESSION_REFRESH_STORAGE_KEY) === null,
+      'the logout to clear the session',
+    )
+
+    expect(screen.queryByText('Confirming your result')).not.toBeInTheDocument()
+    await advanceFakeTime(60_000)
+    expect(detailCalls).toBe(2)
   })
 })
