@@ -102,3 +102,15 @@ identities; all landed in `01f695f`. Coverage mode exposed an unrelated
 focus/`aria-current` race, stabilized in `0906a5e` and recorded in
 [`problems/split-ui-settlement-assertions.md`](problems/split-ui-settlement-assertions.md).
 Full frontend gate passed in CI in 5m50s.
+
+## [2026-11-01] merged | Balance-dependent action gate
+
+Issue #227 (PR #266, galaxify-monorepo@a95db7b) added a session registry of
+pending Daily award keys and a Ship gate hook that observes those keys, closes
+Repair/Launch while awards update, and releases only after a successful
+authoritative Ship read following expiry. Review found and fixed two lifecycle
+bugs: same-key retries reusing an approval, and generation reuse after the last
+key settled. The fix uses monotonic session generations and a session-owned
+one-shot read; see
+[`problems/reconciliation-approval-generations.md`](problems/reconciliation-approval-generations.md).
+Full frontend gate passed in CI in 5m50s. Cross-flow verification remains #228.
