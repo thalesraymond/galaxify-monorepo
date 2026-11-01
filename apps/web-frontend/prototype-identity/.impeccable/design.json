@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-01T00:00:00Z",
+  "title": "Design System: Galaxify identity comparison",
+  "extensions": {
+    "colorMeta": {
+      "assembly-data": { "role": "primary", "displayName": "Assembly condition blue", "tonalRamp": ["oklch(15% 0.02 255)", "oklch(26% 0.06 255)", "oklch(38% 0.11 255)", "oklch(49% 0.16 255)", "oklch(61% 0.17 255)", "oklch(72% 0.13 255)", "oklch(84% 0.07 255)", "oklch(95% 0.02 255)"] },
+      "daylight-data": { "role": "primary", "displayName": "Daylight condition teal", "tonalRamp": ["oklch(15% 0.02 183)", "oklch(26% 0.04 183)", "oklch(38% 0.06 183)", "oklch(49% 0.08 183)", "oklch(61% 0.10 183)", "oklch(72% 0.08 183)", "oklch(84% 0.05 183)", "oklch(95% 0.02 183)"] },
+      "afterhours-data": { "role": "primary", "displayName": "After hours condition sky", "tonalRamp": ["oklch(15% 0.02 232)", "oklch(26% 0.04 232)", "oklch(38% 0.07 232)", "oklch(49% 0.10 232)", "oklch(61% 0.12 232)", "oklch(72% 0.11 232)", "oklch(84% 0.07 232)", "oklch(95% 0.02 232)"] }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "button-press", "value": "transform 120ms ease-out", "purpose": "Enabled button presses translate down 1px; reduced motion removes transition." }
+    ],
+    "breakpoints": [
+      { "name": "rail-and-work-collapse", "value": "1100px" },
+      { "name": "mobile-navigation", "value": "850px" },
+      { "name": "stacked-work", "value": "640px" },
+      { "name": "stacked-afterhours-ship", "value": "480px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Assembly primary",
+      "kind": "button",
+      "refersTo": "assembly-primary",
+      "description": "Provisional Geist repair/launch action; also Assembly Complete.",
+      "html": "<button class=\"ds-assembly\">Repair Ship</button><button class=\"ds-assembly\" disabled>Repairing…</button>",
+      "css": ".ds-assembly{font:500 14px/1.5 Geist,sans-serif;background:#141414;color:#fff;border:1px solid #141414;border-radius:6px;min-height:44px;padding:8px 14px;cursor:pointer;transition:transform 120ms ease-out}.ds-assembly:focus-visible{outline:3px solid #1d5fbf;outline-offset:4px}.ds-assembly:active:not(:disabled){transform:translateY(1px)}.ds-assembly:disabled{background:#eee;color:#626262;border-color:#e6e6e6;cursor:default}@media(hover:hover){.ds-assembly:hover:not(:disabled){text-decoration:underline;text-underline-offset:4px}}@media(prefers-reduced-motion:reduce){.ds-assembly{transition:none}}"
+    },
+    {
+      "name": "Daylight primary",
+      "kind": "button",
+      "refersTo": "daylight-primary",
+      "description": "Provisional pill repair/launch action; Daily Complete is outlined instead.",
+      "html": "<button class=\"ds-daylight\">Repair Ship</button>",
+      "css": ".ds-daylight{font:500 14px/1.5 'Instrument Sans',sans-serif;background:#141414;color:#fff;border:1px solid #141414;border-radius:999px;min-height:44px;padding:8px 14px;transition:transform 120ms ease-out}.ds-daylight:focus-visible{outline:3px solid #1d5fbf;outline-offset:4px}.ds-daylight:active:not(:disabled){transform:translateY(1px)}.ds-daylight:disabled{background:#e9ece9;color:#5d635e;border-color:#e6e9e6}@media(hover:hover){.ds-daylight:hover:not(:disabled){text-decoration:underline;text-underline-offset:4px}}@media(prefers-reduced-motion:reduce){.ds-daylight{transition:none}}"
+    },
+    {
+      "name": "After hours primary",
+      "kind": "button",
+      "refersTo": "afterhours-primary",
+      "description": "Provisional reversed repair/launch action.",
+      "html": "<button class=\"ds-night\">Launch Expedition</button>",
+      "css": ".ds-night{font:500 14px/1.5 Inter,sans-serif;background:#fff;color:#000;border:1px solid #fff;border-radius:999px;min-height:44px;padding:8px 14px;transition:transform 120ms ease-out}.ds-night:focus-visible{outline:3px solid #65bde9;outline-offset:4px}.ds-night:active:not(:disabled){transform:translateY(1px)}.ds-night:disabled{background:#252525;color:#b4b4b4;border-color:#292929}@media(hover:hover){.ds-night:hover:not(:disabled){text-decoration:underline;text-underline-offset:4px}}@media(prefers-reduced-motion:reduce){.ds-night{transition:none}}"
+    },
+    {
+      "name": "Assembly investment field",
+      "kind": "input",
+      "description": "Observed number field and textual invalid-value guidance; no fabricated error color.",
+      "html": "<label class=\"ds-field\">Materials to invest<input type=\"number\" min=\"1\" max=\"120\" step=\"1\" value=\"40\" aria-describedby=\"ds-invest-help\"></label><p id=\"ds-invest-help\">Sample quote ready. Chance uses your current hull.</p>",
+      "css": ".ds-field{display:grid;gap:8px;margin:24px 0 12px;font:16px/1.5 Geist,sans-serif;color:#0a0a0a}.ds-field input{font:inherit;font-variant-numeric:tabular-nums;width:100%;min-height:44px;padding:8px 14px;border:1px solid #777;border-radius:6px;background:#fff;color:#0a0a0a;caret-color:#1d5fbf}.ds-field input:focus-visible{outline:3px solid #1d5fbf;outline-offset:4px}"
+    },
+    {
+      "name": "Assembly navigation",
+      "kind": "nav",
+      "description": "Labelled links with observed current, hover, and focus states.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Primary\"><a href=\"#dashboard\" aria-current=\"page\">Dashboard</a><a href=\"#ship\">Ship</a><a href=\"#expeditions\">Expeditions</a></nav>",
+      "css": ".ds-nav{display:flex;gap:8px;font:14px/1.5 Geist,sans-serif}.ds-nav a{min-height:44px;padding:10px 14px;text-decoration:none;color:#626262}.ds-nav a[aria-current=page]{color:#0a0a0a;background:#eee;border-radius:6px}.ds-nav a:focus-visible{outline:3px solid #1d5fbf;outline-offset:4px}@media(hover:hover){.ds-nav a:hover{text-decoration:underline;text-underline-offset:4px}}"
+    },
+    {
+      "name": "Daylight completion marks",
+      "kind": "chip",
+      "description": "Noninteractive statuses for actual fixture Dailies; not invented streaks.",
+      "html": "<div class=\"ds-rhythm\" aria-label=\"1 of three Dailies completed\"><span>Pending</span><span>Pending</span><span class=\"ds-done\">Completed</span></div>",
+      "css": ".ds-rhythm{display:flex;gap:8px;margin:0 0 24px;font:12px/1.5 'Instrument Sans',sans-serif}.ds-rhythm span{flex:1;background:#e9ece9;color:#5d635e;border-radius:99px;padding:6px;text-align:center}.ds-rhythm .ds-done{background:#1f201d;color:#f7f8f7}"
+    },
+    {
+      "name": "After hours Ship container",
+      "kind": "card",
+      "description": "Observed tonal section and narrow-phone stacking; diagram reduced to a labelled placeholder in this layout snippet, not an invented asset.",
+      "html": "<section class=\"ds-ship\"><h2>Ship condition</h2><div class=\"ds-ship-body\"><svg class=\"ds-diagram\" viewBox=\"0 0 252 208\" role=\"img\" aria-label=\"Hull diagram position; full 100-cell geometry lives in main.tsx\"><rect x=\"120\" y=\"8\" width=\"12\" height=\"12\" rx=\"1\" fill=\"#65bde9\"/></svg><div><div class=\"ds-hull\"><span>Hull health</span><strong>42<small> / 100</small></strong></div><p>Damaged · Repair available</p><p>Materials: 120</p></div></div></section>",
+      "css": ".ds-ship{background:#111;color:#fff;border-radius:20px;padding:24px;font:16px/1.5 Inter,sans-serif}.ds-ship h2{font-size:18px;font-weight:500;line-height:1.3;margin:0 0 20px}.ds-ship-body{display:grid;grid-template-columns:minmax(100px,.8fr) minmax(0,1fr);gap:24px;align-items:center}.ds-diagram{display:block;width:100%;max-width:260px;height:190px;margin:0}.ds-hull{display:flex;justify-content:space-between;gap:12px;align-items:baseline}.ds-hull span,.ds-hull small{font-size:14px;color:#b4b4b4}.ds-hull strong{font-size:30px;font-weight:400}@media(max-width:850px){.ds-ship{padding:20px}}@media(max-width:640px){.ds-ship-body{grid-template-columns:minmax(80px,.65fr) minmax(0,1fr);gap:16px}}@media(max-width:480px){.ds-ship-body{display:flex;flex-direction:column;align-items:stretch;gap:16px}.ds-diagram{height:100px;margin:auto}.ds-hull strong{white-space:nowrap}}"
+    },
+    {
+      "name": "Assembly delayed-update notice",
+      "kind": "custom",
+      "refersTo": "update-notice",
+      "description": "Observed fixed notice geometry, explicit pending facts, and local retry action.",
+      "html": "<div class=\"ds-notice\"><span>Update delayed — 25 awarded materials not yet in Ship balance.</span><button>Retry update</button></div>",
+      "css": ".ds-notice{font:14px/1.5 Geist,sans-serif;color:#0a0a0a;margin:16px 0;border:1px solid #777;padding:16px;border-radius:8px}.ds-notice button{display:block;margin-top:12px;font:inherit;border:1px solid #777;background:#fff;color:#0a0a0a;border-radius:6px;min-height:44px;padding:8px 14px;transition:transform 120ms ease-out}.ds-notice button:focus-visible{outline:3px solid #1d5fbf;outline-offset:4px}.ds-notice button:active{transform:translateY(1px)}@media(hover:hover){.ds-notice button:hover{text-decoration:underline;text-underline-offset:4px}}@media(prefers-reduced-motion:reduce){.ds-notice button{transition:none}}"
+    },
+    {
+      "name": "Reserved comparison lane",
+      "kind": "custom",
+      "description": "Static layout demonstration of observed closed/open lane dimensions; actual toggle behavior lives in main.tsx.",
+      "html": "<div class=\"ds-preview\"><div class=\"ds-work\">Independent scrolling app area<p>Dashboard → Ship → Expedition</p></div><aside class=\"ds-lane\">Compare: Assembly / Daylight / After hours<br>Sample controls & state</aside></div>",
+      "css": ".ds-preview{height:100dvh;font:14px/1.5 Geist,sans-serif}.ds-work{height:calc(100dvh - 124px);margin-bottom:124px;overflow:auto;position:relative;background:#f8f8f8;color:#0a0a0a;padding-bottom:24px;scroll-padding:16px}.ds-lane{position:fixed;bottom:0;left:0;width:100%;height:124px;overflow:auto;background:#fff;color:#111;border-top:1px solid #999;padding:8px 12px;z-index:30}.ds-preview.ds-open .ds-work{height:calc(100dvh - min(52dvh,420px));margin-bottom:min(52dvh,420px)}.ds-preview.ds-open .ds-lane{height:min(52dvh,420px)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Three exploratory worlds, one habit-to-Ship loop",
+    "overview": "This is a code-led, Operate-mode comparison, not a production brand system. All three alternatives are provisional and equally exploratory: Assembly's model-kit ledger, Daylight's personal habit planner, and After hours' flat black catalogue. These names describe the built contracts, not a user-approved preference. Live human reaction is still owed; no aesthetic selection has occurred.\n\nThe authority here stops at this disposable prototype. PRODUCT.md supplies product truth; DIRECTIONS.md supplies alternative contracts. The observed implementation is prototype.module.css, main.tsx, and data.ts. This record does not alter the production ../DESIGN.md or certify the whole frontend.",
+    "keyCharacteristics": ["Three unselected, provisional alternatives at equal interaction fidelity.", "Immediate Daily completion; confirmed Ship facts and explicit delayed updates.", "Code-authored geometry and licensed self-hosted type, not generated imagery."],
+    "rules": [
+      { "name": "The Alternative Boundary Rule", "body": "Keep each provisional palette with its own shell; do not promote or blend it into production identity.", "section": "colors" },
+      { "name": "The Reserved Comparison Lane Rule", "body": "Comparison controls occupy a separate bottom lane (124px closed; `min(52dvh, 420px)` open). The app's height is the remaining dynamic viewport and it scrolls independently above that lane. Do not interpret a base viewport capture as the full independently scrolling journey.", "section": "layout" }
+    ],
+    "dos": ["Do retain the alternative-specific palette, typeface, geometry, and shell together while comparing.", "Do preserve independent app/lab scrolling, narrow-phone Ship stacking, and the shared notice geometry.", "Do label synthetic data and keep confirmed facts distinct from pending rewards or deductions."],
+    "donts": ["Don't treat any alternative, descriptive language, or token here as user-approved production identity.", "Don't infer whole-frontend, backend, or WCAG certification from this three-view journey review.", "Don't turn screenshot evidence or synthesized sidecar preview ramps into shipping image assets or new palette tokens."]
+  }
+}

@@ -1,0 +1,230 @@
+[
+  {
+    "variant": "assembly",
+    "width": 1440,
+    "routes": 3,
+    "overflow": false,
+    "axeViolations": 0,
+    "keyboardJourney": "pass",
+    "balances": [
+      120,
+      145,
+      87,
+      47
+    ],
+    "reducedMotion": true,
+    "consoleErrors": []
+  },
+  {
+    "variant": "assembly",
+    "width": 768,
+    "routes": 3,
+    "overflow": false,
+    "axeViolations": 0,
+    "keyboardJourney": "pass",
+    "balances": [
+      120,
+      145,
+      87,
+      47
+    ],
+    "reducedMotion": true,
+    "consoleErrors": []
+  },
+  {
+    "variant": "assembly",
+    "width": 390,
+    "routes": 3,
+    "overflow": false,
+    "axeViolations": 0,
+    "keyboardJourney": "pass",
+    "balances": [
+      120,
+      145,
+      87,
+      47
+    ],
+    "reducedMotion": true,
+    "consoleErrors": []
+  },
+  {
+    "variant": "assembly",
+    "width": 320,
+    "routes": 3,
+    "overflow": false,
+    "axeViolations": 0,
+    "keyboardJourney": "pass",
+    "balances": [
+      120,
+      145,
+      87,
+      47
+    ],
+    "reducedMotion": true,
+    "consoleErrors": []
+  },
+  {
+    "variant": "daylight",
+    "width": 1440,
+    "routes": 3,
+    "overflow": false,
+    "axeViolations": 0,
+    "keyboardJourney": "pass",
+    "balances": [
+      120,
+      145,
+      87,
+      47
+    ],
+    "reducedMotion": true,
+    "consoleErrors": []
+  },
+  {
+    "variant": "daylight",
+    "width": 768,
+    "routes": 3,
+    "overflow": false,
+    "axeViolations": 0,
+    "keyboardJourney": "pass",
+    "balances": [
+      120,
+      145,
+      87,
+      47
+    ],
+    "reducedMotion": true,
+    "consoleErrors": []
+  },
+  {
+    "variant": "daylight",
+    "width": 390,
+    "routes": 3,
+    "overflow": false,
+    "axeViolations": 0,
+    "keyboardJourney": "pass",
+    "balances": [
+      120,
+      145,
+      87,
+      47
+    ],
+    "reducedMotion": true,
+    "consoleErrors": []
+  },
+  {
+    "variant": "daylight",
+    "width": 320,
+    "routes": 3,
+    "overflow": false,
+    "axeViolations": 0,
+    "keyboardJourney": "pass",
+    "balances": [
+      120,
+      145,
+      87,
+      47
+    ],
+    "reducedMotion": true,
+    "consoleErrors": []
+  },
+  {
+    "variant": "after-hours",
+    "width": 1440,
+    "routes": 3,
+    "overflow": false,
+    "axeViolations": 0,
+    "keyboardJourney": "pass",
+    "balances": [
+      120,
+      145,
+      87,
+      47
+    ],
+    "reducedMotion": true,
+    "consoleErrors": []
+  },
+  {
+    "variant": "after-hours",
+    "width": 768,
+    "routes": 3,
+    "overflow": false,
+    "axeViolations": 0,
+    "keyboardJourney": "pass",
+    "balances": [
+      120,
+      145,
+      87,
+      47
+    ],
+    "reducedMotion": true,
+    "consoleErrors": []
+  },
+  {
+    "variant": "after-hours",
+    "width": 390,
+    "routes": 3,
+    "overflow": false,
+    "axeViolations": 0,
+    "keyboardJourney": "pass",
+    "balances": [
+      120,
+      145,
+      87,
+      47
+    ],
+    "reducedMotion": true,
+    "consoleErrors": []
+  },
+  {
+    "variant": "after-hours",
+    "width": 320,
+    "routes": 3,
+    "overflow": false,
+    "axeViolations": 0,
+    "keyboardJourney": "pass",
+    "balances": [
+      120,
+      145,
+      87,
+      47
+    ],
+    "reducedMotion": true,
+    "consoleErrors": []
+  },
+  {
+    "variant": "assembly",
+    "dailyStates": [
+      "empty",
+      "loading",
+      "unavailable",
+      "retry",
+      "filtered"
+    ],
+    "menuEscape": "pass",
+    "switcherArrows": "pass"
+  },
+  {
+    "variant": "daylight",
+    "dailyStates": [
+      "empty",
+      "loading",
+      "unavailable",
+      "retry",
+      "filtered"
+    ],
+    "menuEscape": "pass",
+    "switcherArrows": "pass"
+  },
+  {
+    "variant": "after-hours",
+    "dailyStates": [
+      "empty",
+      "loading",
+      "unavailable",
+      "retry",
+      "filtered"
+    ],
+    "menuEscape": "pass",
+    "switcherArrows": "pass"
+  }
+]
