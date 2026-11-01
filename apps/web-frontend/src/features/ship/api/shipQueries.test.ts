@@ -125,6 +125,27 @@ describe('Ship observation ownership', () => {
     expect(queryClient.getQueryData(shipQueryKey)).toEqual({ kind: 'ready', ship: repaired })
   })
 
+  it('aborts its fresh read when the caller abandons the observation', async () => {
+    const started = deferred<AbortSignal | null | undefined>()
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation((_input, init) => {
+      started.resolve(init?.signal)
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(new DOMException('The operation was aborted.', 'AbortError'))
+        })
+      })
+    })
+    const controller = new AbortController()
+    const observation = observeShip(queryClient, new ApiTransport({ fetch }), controller.signal)
+
+    const signal = await started.promise
+    expect(signal?.aborted).toBe(false)
+
+    controller.abort()
+    expect(signal?.aborted).toBe(true)
+    await expect(observation).rejects.toMatchObject({ kind: 'aborted' })
+  })
+
   it('does not publish an unconfirmed repair when the command fails', async () => {
     const confirmed: ShipState = { kind: 'ready', ship: createDamagedShip() }
     queryClient.setQueryData(shipQueryKey, confirmed)

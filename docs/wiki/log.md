@@ -24,3 +24,12 @@ branches are independent for now so implementers can work in parallel, but a
 merge/integrate step will likely be needed before landing. See
 [`decisions/stacked-layout-prs.md`](decisions/stacked-layout-prs.md) and
 [`problems/parallel-playwright-worktrees.md`](problems/parallel-playwright-worktrees.md).
+
+## [2026-11-01] record | Fake timers must fake `performance` for bounded observations
+
+The shared Downstream Reconciliation module measures active time with
+`performance.now()`. `apps/web-frontend/src/test/fakeTimers.ts` narrowed
+Vitest's `toFake` list to keep React responsive and left `performance` out, so
+every bounded observation read its first fact and then froze before its 1/2/4/8
+second marks. The helper now fakes `performance` too. See
+[`problems/fake-timers-freeze-bounded-observations.md`](problems/fake-timers-freeze-bounded-observations.md).

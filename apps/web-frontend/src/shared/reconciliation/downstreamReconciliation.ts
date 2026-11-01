@@ -79,6 +79,12 @@ export class DownstreamReconciliation {
    * with the same identity restarts and is notified normally.
    */
   private readonly listeners = new Map<string, Set<() => void>>()
+  /**
+   * Session-cleanup hooks for domain adapters that keep side state beside the
+   * module's rounds (their own expectation records). A session boundary clears
+   * both, so the adapter never keeps expectations for a retired round.
+   */
+  private readonly clearListeners = new Set<() => void>()
 
   /**
    * Registers the expected change. Registering an already-known pending `key`
@@ -165,10 +171,25 @@ export class DownstreamReconciliation {
   }
 
   /**
+   * Registers a session-cleanup hook. The listener runs inside `clear()` (and
+   * therefore `dispose()`), so domain adapters can drop the side state they
+   * keep beside the module's rounds. The returned function detaches it.
+   */
+  public onClear(listener: () => void): () => void {
+    this.clearListeners.add(listener)
+    return () => {
+      this.clearListeners.delete(listener)
+    }
+  }
+
+  /**
    * Session boundary: cancels every pending round and aborts in-flight reads.
    * A response that settles afterwards cannot publish or restore anything.
    */
   public clear(): void {
+    // Domain side state goes first: a retired round must not read as a
+    // settled expectation to an adapter that is still subscribed to it.
+    this.notifyClear()
     for (const entry of this.entries.values()) {
       this.cancelWork(entry)
       entry.round += 1
@@ -365,6 +386,12 @@ export class DownstreamReconciliation {
       listener()
     }
   }
+
+  private notifyClear(): void {
+    for (const listener of [...this.clearListeners]) {
+      listener()
+    }
+  }
 }
 
 /** The Player-session store shared by the module's public functions and hook. */
@@ -378,6 +405,15 @@ export function registerDownstreamObservation<Facts>(request: DownstreamObservat
 /** Reads the phase of an expected change (`idle` when nothing is pending). */
 export function downstreamObservationPhase(key: string): DownstreamObservationPhase {
   return downstreamReconciliation.getPhase(key)
+}
+
+/**
+ * Registers a session-cleanup hook for domain adapters that keep side state
+ * beside the module's rounds. The listener runs when pending observations are
+ * cleared; the returned function detaches it.
+ */
+export function onClearDownstreamObservations(listener: () => void): () => void {
+  return downstreamReconciliation.onClear(listener)
 }
 
 /** Cancels every pending observation at a session boundary (logout, account change). */

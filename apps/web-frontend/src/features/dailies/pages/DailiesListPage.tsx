@@ -30,6 +30,7 @@ import {
 } from '../api/dailyApi'
 import { DailyRow } from '../components/DailyRow'
 import { useDailyCompletion } from '../hooks/useDailyCompletion'
+import { confirmShipBalance } from '../lib/dailyAwardObservation'
 import {
   addDays,
   formatOccurrenceDate,
@@ -111,6 +112,14 @@ export function DailiesListPage() {
   )
 
   const completion = useDailyCompletion(transport, filters, difficultyMap)
+
+  // This page renders the Ship balance of every completed row, and a
+  // completion captures its pre-command baseline from the confirmed Ship
+  // cache. The balance is confirmed in the background; the Player's command
+  // never waits for it.
+  useEffect(() => {
+    confirmShipBalance(queryClient, transport)
+  }, [queryClient, transport])
 
   const [deleteTarget, setDeleteTarget] = useState<Daily>()
   const [deleteError, setDeleteError] = useState<string>()

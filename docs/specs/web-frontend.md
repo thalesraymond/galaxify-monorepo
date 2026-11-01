@@ -130,7 +130,11 @@ bounded so an observation cannot remain `Updating…` indefinitely.
 - Signup permits a partial Dashboard while Ship, Daily player state, and
   Expedition Ship state provision for up to about 30 active seconds.
 - Daily completion confirms its typed material award, then reconciles Ship.
-  Gate actions depending on that balance while it updates.
+  Gate actions depending on that balance while it updates. The award's baseline
+  is the confirmed Ship balance the browser held before the command was
+  submitted, never a first read that may already include the award. Without
+  that baseline the observation refreshes and publishes facts but never claims
+  the award was observed.
 - Ship repair confirms Ship immediately, then reconciles Expedition readiness.
 - Expedition launch confirms the Expedition, then reconciles Ship deduction.
 - Expedition resolution confirms its result, then reconciles Ship reward.
@@ -145,8 +149,9 @@ cache. Daily and Expedition reconciliation cross that public seam rather than
 duplicating Ship reads or cache keys. Each observation bypasses cache freshness;
 overlapping observations share the in-flight query. Scheduled probes own their
 bounded retries. A confirmed repair cancels older Ship reads before publishing
-its returned snapshot, so a late response cannot undo the repair. Feature-local
-timers, per-Daily progress, and balance-based satisfaction rules remain unchanged.
+its returned snapshot, so a late response cannot undo the repair. Per-Daily
+progress and the balance-based satisfaction rule remain; the bounded schedule
+itself belongs to the shared Downstream Reconciliation module.
 
 ## 4. Session lifecycle
 

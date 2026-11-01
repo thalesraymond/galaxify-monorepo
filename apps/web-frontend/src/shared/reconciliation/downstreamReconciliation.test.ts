@@ -426,4 +426,28 @@ describe('DownstreamReconciliation', () => {
     await vi.advanceTimersByTimeAsync(1_000)
     expect(second.calls).toHaveLength(2)
   })
+
+  it('runs session-cleanup hooks so domain side state is dropped with the rounds', () => {
+    const { read, calls } = createRead()
+    const cleanup = vi.fn()
+    store.onClear(cleanup)
+    store.subscribe(KEY, () => {})
+    store.register({ key: KEY, read, isSatisfied: () => false, publish: () => {} })
+
+    store.clear()
+
+    expect(cleanup).toHaveBeenCalledTimes(1)
+    expect(store.getPhase(KEY)).toBe('idle')
+    expect(calls[0]?.signal.aborted).toBe(true)
+  })
+
+  it('detaches a session-cleanup hook when its adapter releases it', () => {
+    const cleanup = vi.fn()
+    const detach = store.onClear(cleanup)
+
+    detach()
+    store.clear()
+
+    expect(cleanup).not.toHaveBeenCalled()
+  })
 })

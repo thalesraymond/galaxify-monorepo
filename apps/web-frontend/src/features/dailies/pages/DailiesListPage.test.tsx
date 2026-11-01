@@ -229,7 +229,8 @@ describe('/dailies completion and Ship reconciliation', () => {
       enableProbeTimers()
       fireEvent.click(screen.getByRole('button', { name: 'Complete Calibrate sensors' }))
       await flushProbes()
-      expect(screen.getByText('Ship materials: 250')).toBeInTheDocument()
+      // Offline, the observation reads nothing: no balance is observed yet.
+      expect(screen.getByText('Ship materials: …')).toBeInTheDocument()
 
       window.dispatchEvent(new Event('offline'))
       scheduler.advance(10_000)
@@ -409,7 +410,9 @@ describe('/dailies completion and Ship reconciliation', () => {
     server.server.use(
       http.get('/api/ship/ships/me', () => {
         shipCalls += 1
-        const balance = shipCalls === 1 ? 250 : shipCalls === 2 ? 255 : 260
+        // The page confirms the Ship balance before the completion (the
+        // pre-command baseline); the observation's own reads follow it.
+        const balance = shipCalls <= 2 ? 250 : shipCalls === 3 ? 255 : 260
         return HttpResponse.json(createHealthyShip({ materials_balance: balance }))
       }),
     )
