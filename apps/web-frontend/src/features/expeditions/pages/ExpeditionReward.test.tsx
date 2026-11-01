@@ -11,6 +11,7 @@ import {
 } from '@/mocks'
 import { createHealthyShip, createResolvedExpedition } from '@/mocks'
 import { createQueryClient } from '@/app/queryClient'
+import { createSessionRuntime, type SessionRuntime } from '@/features/auth'
 import { shipQueryKey } from '@/features/ship'
 import { clearDownstreamObservations, downstreamObservationPhase } from '@/shared/reconciliation'
 import { advanceFakeTime, advanceUntil, seedAuthenticatedSession } from '@/test/expeditionTestUtils'
@@ -22,6 +23,19 @@ const server = createMockTestServer({
   scenario: 'resolved-expedition',
   scheduler: new ManualMockScheduler(FIXED_MOCK_EPOCH_MS),
 })
+
+let preparedRuntime: SessionRuntime | undefined
+
+async function prepareAuthenticatedRuntime(): Promise<SessionRuntime> {
+  const runtime = createSessionRuntime()
+  preparedRuntime = runtime
+  runtime.manager.start()
+  await advanceUntil(
+    () => runtime.manager.getSnapshot().status === 'authenticated',
+    'session bootstrap',
+  )
+  return runtime
+}
 
 beforeEach(async () => {
   clearDownstreamObservations()
@@ -35,6 +49,8 @@ afterEach(() => {
   act(() => {
     clearDownstreamObservations()
   })
+  preparedRuntime?.manager.dispose()
+  preparedRuntime = undefined
   vi.useRealTimers()
   server.server.resetHandlers()
   server.server.close()
@@ -51,21 +67,19 @@ it('observes a direct result without claiming confirmation when no baseline is k
 
 it('compares a fast reward to the confirmed pre-resolution balance and never repeats it on revisit', async () => {
   const client = createQueryClient()
+  const runtime = await prepareAuthenticatedRuntime()
+  client.setQueryData(shipQueryKey, {
+    kind: 'ready',
+    ship: createHealthyShip({ materials_balance: 250, updated_at: '2020-01-01T00:00:00Z' }),
+  })
   let reads = 0
   server.server.use(
-    http.get(`/api/expedition/expeditions/${FIXED_EXPEDITION_IDS.resolvedSuccess}`, () => {
-      client.setQueryData(shipQueryKey, {
-        kind: 'ready',
-        ship: createHealthyShip({ materials_balance: 250, updated_at: '2020-01-01T00:00:00Z' }),
-      })
-      return HttpResponse.json(createResolvedExpedition(FIXED_EXPEDITION_IDS.resolvedSuccess))
-    }),
     http.get('/api/ship/ships/me', () => {
       reads += 1
       return HttpResponse.json(createHealthyShip({ materials_balance: 330 }))
     }),
   )
-  renderExpeditionRoute(`/expeditions/${FIXED_EXPEDITION_IDS.resolvedSuccess}`, client)
+  renderExpeditionRoute(`/expeditions/${FIXED_EXPEDITION_IDS.resolvedSuccess}`, client, runtime)
   await advanceUntil(
     () =>
       screen.queryByText('Available materials: 330') !== null &&
@@ -83,6 +97,99 @@ it('compares a fast reward to the confirmed pre-resolution balance and never rep
   await advanceUntil(() => screen.queryByText('+80 materials') !== null, 'result again')
   await advanceFakeTime(1_000)
   expect(reads).toBe(1)
+})
+
+it('publishes fresh facts but never confirms from a cached post-reward snapshot', async () => {
+  const client = createQueryClient()
+  const runtime = await prepareAuthenticatedRuntime()
+  client.setQueryData(shipQueryKey, {
+    kind: 'ready',
+    ship: createHealthyShip({ materials_balance: 330, updated_at: '2026-01-15T09:00:00Z' }),
+  })
+  server.server.use(
+    http.get('/api/ship/ships/me', () =>
+      HttpResponse.json(createHealthyShip({ materials_balance: 340 })),
+    ),
+  )
+  const id = FIXED_EXPEDITION_IDS.resolvedSuccess
+  renderExpeditionRoute(`/expeditions/${id}`, client, runtime)
+  await advanceUntil(
+    () => screen.queryByText('Available materials: 340') !== null,
+    'fresh Ship facts',
+  )
+  expect(getExpeditionRewards().get(id)?.baseline).toBeUndefined()
+  expect(screen.getByText('Updating…')).toBeInTheDocument()
+  await advanceFakeTime(10_000)
+  expect(screen.getByText('Update delayed')).toBeInTheDocument()
+})
+
+it('keeps success and failure reward rounds independent', async () => {
+  const client = createQueryClient()
+  const runtime = await prepareAuthenticatedRuntime()
+  const successId = FIXED_EXPEDITION_IDS.resolvedSuccess
+  const failureId = FIXED_EXPEDITION_IDS.resolvedFailure
+  let balance = 250
+  let reads = 0
+  let holdNextRead = false
+  let heldReadStarted = false
+  let releaseRead = () => {}
+  const gate = new Promise<void>((resolve) => {
+    releaseRead = resolve
+  })
+  const ship = () =>
+    createHealthyShip({ materials_balance: balance, updated_at: '2020-01-01T00:00:00Z' })
+  client.setQueryData(shipQueryKey, { kind: 'ready', ship: ship() })
+  server.server.use(
+    http.get('/api/expedition/expeditions/current', () =>
+      HttpResponse.json(
+        createResolvedExpedition(failureId, { status: 'FAILED', outcome: 'FAILURE' }),
+      ),
+    ),
+    http.get('/api/ship/ships/me', async () => {
+      reads += 1
+      if (holdNextRead) {
+        holdNextRead = false
+        heldReadStarted = true
+        await gate
+      }
+      return HttpResponse.json(ship())
+    }),
+  )
+  renderExpeditionRoute(`/expeditions/${successId}`, client, runtime)
+  await advanceUntil(() => screen.queryByText('Updating…') !== null, 'pending success reward')
+  await advanceUntil(
+    () => reads > 0 && client.getQueryState(shipQueryKey)?.fetchStatus === 'idle',
+    'first success read',
+  )
+  expect(downstreamObservationPhase(expeditionRewardKey(successId))).toBe('updating')
+  holdNextRead = true
+  fireEvent.click(screen.getByRole('link', { name: 'Dashboard' }))
+  await advanceUntil(
+    () =>
+      heldReadStarted && downstreamObservationPhase(expeditionRewardKey(failureId)) === 'updating',
+    'both reward rounds pending',
+  )
+  expect(downstreamObservationPhase(expeditionRewardKey(successId))).toBe('updating')
+  act(() => {
+    releaseRead()
+  })
+  await advanceUntil(
+    () =>
+      getExpeditionRewards().has(failureId) &&
+      downstreamObservationPhase(expeditionRewardKey(failureId)) === 'idle',
+    'zero failure reward confirmation',
+  )
+  expect(getExpeditionRewards().get(failureId)?.expectedBalance).toBe(250)
+  expect(getExpeditionRewards().get(successId)?.expectedBalance).toBe(330)
+  expect(downstreamObservationPhase(expeditionRewardKey(successId))).toBe('updating')
+  expect(screen.getByText('Updating…')).toBeInTheDocument()
+  balance = 330
+  await advanceUntil(
+    () => downstreamObservationPhase(expeditionRewardKey(successId)) === 'idle',
+    'success reward confirmation',
+  )
+  expect(downstreamObservationPhase(expeditionRewardKey(failureId))).toBe('idle')
+  expect(screen.queryByText('Updating…')).not.toBeInTheDocument()
 })
 
 it('retries a delayed observation using the original baseline', async () => {

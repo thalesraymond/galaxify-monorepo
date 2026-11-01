@@ -1,7 +1,5 @@
 import { expect, test } from '@playwright/test'
 
-import type { Expedition } from '../src/api/generated/expedition/types.gen'
-import type { Ship } from '../src/api/generated/ship/types.gen'
 import { seedAuthenticated } from './session'
 
 test('a resolved reward continues observing on the Ship page', async ({ page }) => {
@@ -9,12 +7,9 @@ test('a resolved reward continues observing on the Ship page', async ({ page }) 
   await page.goto('/dashboard')
   await expect(page.getByRole('heading', { name: 'Ship status' })).toBeVisible()
   await page.evaluate(() => {
-    const { backend } = window.__galaxifyMock as unknown as {
-      backend: {
-        getShip: (token: string | undefined) => Ship
-        getExpedition: (token: string | undefined, id: string) => Expedition
-      }
-    }
+    const runtime = window.__galaxifyMock
+    if (runtime === undefined) throw new Error('Mock runtime is unavailable')
+    const { backend } = runtime
     const getShip = backend.getShip.bind(backend)
     const getExpedition = backend.getExpedition.bind(backend)
     let applied = false

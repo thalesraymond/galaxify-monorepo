@@ -97,15 +97,7 @@ for (const viewport of viewports) {
 
     // Gate the mock read after genuine session bootstrap, then release a failure.
     await page.evaluate(() => {
-      const runtime = window.__galaxifyMock as
-        | {
-            readonly scenario: string
-            readonly backend: {
-              awaitResponseDelay(): Promise<void>
-              listDailies(...args: unknown[]): unknown
-            }
-          }
-        | undefined
+      const runtime = window.__galaxifyMock
       if (runtime === undefined) throw new Error('Mock runtime is unavailable')
       const backend = runtime.backend
       const originalDelay = backend.awaitResponseDelay.bind(backend)
