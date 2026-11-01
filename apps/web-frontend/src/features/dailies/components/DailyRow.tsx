@@ -1,9 +1,11 @@
 import { Link } from 'react-router'
 
 import type { Daily } from '@/api/generated/daily/types.gen'
+import { useDownstreamObservation } from '@/shared/reconciliation'
 import { Button, LiveRegion, StatusBadge } from '@/shared/ui'
 
 import type { CompletionFailure, ReconciliationState } from '../hooks/useDailyCompletion'
+import { dailyAwardObservationKey } from '../lib/dailyAwardObservation'
 import { dueTimeContext } from '../lib/dailyTime'
 import type { DifficultyRewards } from '../lib/difficulties'
 import styles from './DailyRow.module.css'
@@ -40,6 +42,12 @@ export function DailyRow({
   const reward = difficultyMeta?.reward
   const stakes =
     reward === undefined ? daily.difficulty : `${daily.difficulty} · +${reward} materials`
+
+  // The completed row displays the affected Ship balance, so it is the visible
+  // observer of the expected award: while the row is mounted the bounded round
+  // runs, and while no view displays it the round pauses without losing its
+  // remaining budget (spec §3.2).
+  useDownstreamObservation(dailyAwardObservationKey(daily.id), reconciliation !== undefined)
 
   return (
     <div className={styles.row} id={`daily-row-${daily.id}`}>

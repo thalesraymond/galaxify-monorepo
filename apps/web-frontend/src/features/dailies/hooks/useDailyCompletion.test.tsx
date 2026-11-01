@@ -6,8 +6,9 @@ import type { Difficulty } from '@/api/generated/daily/types.gen'
 import { ApiTransport } from '@/api/transport'
 import { shipQueryKey, type ShipState } from '@/features/ship'
 import { createDaily, createHealthyShip, FIXED_DAILY_IDS } from '@/mocks/fixtures'
-import { clearDownstreamObservations } from '@/shared/reconciliation'
+import { clearDownstreamObservations, useDownstreamObservation } from '@/shared/reconciliation'
 
+import { dailyAwardObservationKey } from '../lib/dailyAwardObservation'
 import type { DifficultyRewards } from '../lib/difficulties'
 import { useDailyCompletion } from './useDailyCompletion'
 
@@ -111,13 +112,38 @@ type CompletionView = {
   readonly unmount: () => void
 }
 
+type MountOptions = {
+  /**
+   * Whether the harness plays the visible observer of the completed row. A
+   * view that displays the reconciled resource observes it; a view that does
+   * not leaves the bounded round paused.
+   */
+  readonly observes?: boolean
+}
+
 /** Renders the completion hook against a real QueryClient. */
-function mountCompletion(transport: ApiTransport, queryClient: QueryClient): CompletionView {
+function mountCompletion(
+  transport: ApiTransport,
+  queryClient: QueryClient,
+  options: MountOptions = {},
+): CompletionView {
   const view: { current: ReturnType<typeof useDailyCompletion> | undefined } = {
     current: undefined,
   }
   function Harness() {
     view.current = useDailyCompletion(transport, {}, DIFFICULTIES)
+    // The completed row is the visible observer of the affected Ship balance
+    // (spec §3.2); the harness plays that role, so the bounded schedule only
+    // runs while a view displays the reconciled resource.
+    const observes = options.observes ?? true
+    useDownstreamObservation(
+      dailyAwardObservationKey(DAILY_ID),
+      observes && view.current.reconciliations.get(DAILY_ID) !== undefined,
+    )
+    useDownstreamObservation(
+      dailyAwardObservationKey(OTHER_DAILY_ID),
+      observes && view.current.reconciliations.get(OTHER_DAILY_ID) !== undefined,
+    )
     return null
   }
   const { unmount } = render(
@@ -400,5 +426,71 @@ describe('Daily completion reconciliation', () => {
       ship: createHealthyShip({ materials_balance: 275 }),
     })
     expect(view.current?.reconciliations.get(DAILY_ID)?.observed).toBe(275)
+  })
+
+  it('pauses while no view displays the reconciled resource and resumes on the observer', async () => {
+    const queryClient = createQueryClient()
+    confirmShipBalance(queryClient, 250)
+    const backend = createFakeBackend(() => 10)
+    backend.setSteps({ balance: 260 })
+    const first = mountCompletion(backend.transport, queryClient, { observes: false })
+
+    await complete(first, DAILY_ID)
+
+    // No view displays the completed row: the round is paused and reads
+    // nothing, while the expectation still belongs to the session.
+    await advance(10_000)
+    await settle()
+    expect(backend.shipCalls).toBe(0)
+    expect(first.current?.reconciliations.get(DAILY_ID)).toEqual({
+      phase: 'probing',
+      baseline: 250,
+      observed: undefined,
+      expectedAward: 10,
+    })
+
+    first.unmount()
+
+    // The row appears again: the round resumes with its remaining budget and
+    // settles on the fresh facts.
+    const second = mountCompletion(backend.transport, queryClient)
+    await settle()
+
+    expect(second.current?.reconciliations.get(DAILY_ID)).toEqual({
+      phase: 'ready',
+      baseline: 250,
+      observed: 260,
+      expectedAward: 10,
+    })
+  })
+
+  it('restarts a delayed round when the same Daily is completed again', async () => {
+    const queryClient = createQueryClient()
+    confirmShipBalance(queryClient, 250)
+    let award = 10
+    const backend = createFakeBackend(() => award)
+    backend.setSteps({ balance: 250 })
+    const view = mountCompletion(backend.transport, queryClient)
+
+    await complete(view, DAILY_ID)
+
+    // The award never lands: the bounded budget expires into delayed.
+    await advanceSchedule()
+    expect(view.current?.reconciliations.get(DAILY_ID)?.phase).toBe('delayed')
+
+    // The award lands later and the Player completes the same Daily again.
+    confirmShipBalance(queryClient, 260)
+    award = 25
+    backend.setSteps({ balance: 285 })
+    await complete(view, DAILY_ID)
+
+    // The later completion starts a fresh observation with its own baseline
+    // and award, and settles on it.
+    expect(view.current?.reconciliations.get(DAILY_ID)).toEqual({
+      phase: 'ready',
+      baseline: 260,
+      observed: 285,
+      expectedAward: 25,
+    })
   })
 })

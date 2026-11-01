@@ -12,6 +12,10 @@
  * clear every entry, and any response that settles after its round was
  * superseded, expired, or cleared is discarded before it can publish facts or
  * restore an observation.
+ *
+ * Observers and phase listeners are different seams: only a visible observer
+ * of the affected resource keeps reads running, while a phase listener merely
+ * follows the round's phase (a domain adapter rendering what it expects).
  */
 
 export type DownstreamObservationPhase = 'idle' | 'updating' | 'delayed'
@@ -79,6 +83,12 @@ export class DownstreamReconciliation {
    * with the same identity restarts and is notified normally.
    */
   private readonly listeners = new Map<string, Set<() => void>>()
+  /**
+   * Phase listeners follow a round's phase without observing the affected
+   * resource. They learn that a round started, expired, or settled, but they
+   * never count as a visible observer and never wake a paused round.
+   */
+  private readonly phaseListeners = new Map<string, Set<() => void>>()
   /**
    * Session-cleanup hooks for domain adapters that keep side state beside the
    * module's rounds (their own expectation records). A session boundary clears
@@ -148,6 +158,31 @@ export class DownstreamReconciliation {
     }
   }
 
+  /**
+   * Subscribes to a round's phase changes without observing the affected
+   * resource. A phase listener never counts as a visible observer: reads stay
+   * paused while only phase listeners are registered, and the round resumes
+   * with its remaining budget when a visible observer appears. It never wakes
+   * a paused round on its own.
+   */
+  public subscribeToPhase(key: string, listener: () => void): () => void {
+    const listeners = this.phaseListeners.get(key) ?? new Set<() => void>()
+    listeners.add(listener)
+    this.phaseListeners.set(key, listeners)
+    let subscribed = true
+    return () => {
+      if (!subscribed) {
+        return
+      }
+      subscribed = false
+      const current = this.phaseListeners.get(key)
+      current?.delete(listener)
+      if (current !== undefined && current.size === 0) {
+        this.phaseListeners.delete(key)
+      }
+    }
+  }
+
   public getPhase(key: string): DownstreamObservationPhase {
     return this.entries.get(key)?.phase ?? 'idle'
   }
@@ -203,6 +238,7 @@ export class DownstreamReconciliation {
   public dispose(): void {
     this.clear()
     this.listeners.clear()
+    this.phaseListeners.clear()
   }
 
   private pump(entry: ObservationEntry): void {
@@ -378,11 +414,15 @@ export class DownstreamReconciliation {
   }
 
   private notify(entry: ObservationEntry): void {
-    const observers = this.listeners.get(entry.key)
-    if (observers === undefined) {
+    this.notifyListeners(this.listeners.get(entry.key))
+    this.notifyListeners(this.phaseListeners.get(entry.key))
+  }
+
+  private notifyListeners(listeners: Set<() => void> | undefined): void {
+    if (listeners === undefined) {
       return
     }
-    for (const listener of observers) {
+    for (const listener of listeners) {
       listener()
     }
   }

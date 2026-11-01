@@ -42,6 +42,9 @@ This wiki complements, and does not replace, [`docs/adr/`](../adr/) and
 - [Fake timers freeze bounded observations](problems/fake-timers-freeze-bounded-observations.md) —
   A narrowed `toFake` list left `performance.now()` real, so shared-module
   observations read once and never advanced.
+- [Module-level subscriptions never pause observations](problems/module-level-subscription-never-pauses-observations.md) —
+  A phase-only subscription counted as a visible observer, so pending
+  observations never paused while no view displayed the affected resource.
 
 ## Subsystems
 

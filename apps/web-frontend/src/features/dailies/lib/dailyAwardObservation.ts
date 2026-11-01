@@ -94,8 +94,11 @@ export function confirmShipBalance(queryClient: QueryClient, transport: ApiTrans
  * Without a baseline the observation still refreshes and publishes facts, but
  * it never claims the award was observed.
  *
- * Registering a Daily whose round is still pending is a no-op: the pending
- * round keeps its budget, baseline, and award.
+ * A Daily id is a stable recurring definition: the same Daily can be
+ * completed again later in the session. A completion while a round is still
+ * in flight is ignored (that round keeps its budget, baseline, and award),
+ * while a completion after the round expired replaces the expectation and
+ * restarts the bounded budget with the new numbers.
  */
 export function registerDailyAwardObservation(
   dailyId: string,
@@ -105,10 +108,16 @@ export function registerDailyAwardObservation(
   transport: ApiTransport,
 ): void {
   const key = dailyAwardObservationKey(dailyId)
-  if (downstreamReconciliation.getPhase(key) !== 'idle') {
+  const phase = downstreamReconciliation.getPhase(key)
+  if (phase === 'updating') {
+    // A genuine in-flight round: its budget, baseline, and award stay as they
+    // are, so a second completion cannot disturb the running observation.
     return
   }
   subscribeToPhases(dailyId)
+  // The expectation belongs to the session, not to the round: the round's
+  // closures read it from the store, so a restarted round judges the new
+  // baseline and award instead of the ones it started with.
   expectations.set(dailyId, {
     dailyId,
     phase: 'updating',
@@ -117,6 +126,12 @@ export function registerDailyAwardObservation(
     expectedAward,
   })
   publishSnapshot()
+  if (phase === 'delayed') {
+    // The previous round expired: restart its bounded budget with the fresh
+    // expectation.
+    downstreamReconciliation.retry(key)
+    return
+  }
   registerDownstreamObservation({
     key,
     read: (signal) => observeShip(queryClient, transport, signal),
@@ -144,12 +159,22 @@ export function clearDailyAwardExpectations(): void {
 }
 
 /**
+ * The expectation a round must use right now. It is read from the store on
+ * every use and never captured when the round was registered: a restarted
+ * round has to judge the fresh baseline and award, not the ones the previous
+ * round started with.
+ */
+function currentExpectation(dailyId: string): DailyAwardExpectation | undefined {
+  return expectations.get(dailyId)
+}
+
+/**
  * The expected award is satisfied by an aggregate balance change, not by proof
  * that this Daily's own event was consumed: overlapping awards and spending
  * can satisfy it, and a spending change can delay it.
  */
 function satisfiesExpectation(dailyId: string, ship: ShipState): boolean {
-  const expectation = expectations.get(dailyId)
+  const expectation = currentExpectation(dailyId)
   if (expectation === undefined || expectation.baseline === undefined) {
     return false
   }
@@ -164,7 +189,7 @@ function satisfiesExpectation(dailyId: string, ship: ShipState): boolean {
  * renders the same observed facts instead of a row-local balance.
  */
 function publishObservation(dailyId: string, ship: ShipState, queryClient: QueryClient): void {
-  const expectation = expectations.get(dailyId)
+  const expectation = currentExpectation(dailyId)
   if (expectation !== undefined) {
     expectations.set(dailyId, {
       ...expectation,
@@ -175,14 +200,19 @@ function publishObservation(dailyId: string, ship: ShipState, queryClient: Query
   queryClient.setQueryData<ShipState>(shipQueryKey, ship)
 }
 
-/** Follows the shared module's phase for one Daily's expected award. */
+/**
+ * Follows the shared module's phase for one Daily's expected award. The
+ * listener is phase-only: the store learns the round's phase, but it never
+ * counts as a visible observer of the affected Ship balance, so reads still
+ * pause while no view displays the completed row (spec §3.2).
+ */
 function subscribeToPhases(dailyId: string): void {
   const key = dailyAwardObservationKey(dailyId)
   const previous = phaseSubscriptions.get(dailyId)
   if (previous !== undefined) {
     previous()
   }
-  const detach = downstreamReconciliation.subscribe(key, () => {
+  const detach = downstreamReconciliation.subscribeToPhase(key, () => {
     notifyPhase(dailyId)
   })
   phaseSubscriptions.set(dailyId, detach)
