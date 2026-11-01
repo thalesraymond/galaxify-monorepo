@@ -55,7 +55,7 @@ function setVisibility(visible: boolean): void {
   })
 }
 
-function enableProbeTimers(): void {
+function enableReconciliationTimers(): void {
   vi.useFakeTimers({ now: new Date(FIXED_MOCK_EPOCH_MS) })
 }
 
@@ -66,11 +66,11 @@ async function renderDetail(id: string): Promise<void> {
 
 /**
  * Fake-timer variant (see renderExpeditionRoute.tsx): journeys whose timers
- * (the resolve-derived poll, the result-lag probe schedule) are scheduled at
+ * (the resolve-derived poll, the result-lag reconciliation schedule) are scheduled at
  * mount need fake timers from the very first render.
  */
 async function renderDetailFake(id: string): Promise<void> {
-  enableProbeTimers()
+  enableReconciliationTimers()
   renderExpeditionRoute(`/expeditions/${id}`)
   await advanceUntil(
     () => screen.queryByRole('heading', { level: 1, name: 'Expedition detail' }) !== null,
@@ -353,7 +353,7 @@ describe('Expedition detail — result observation lifecycle', () => {
         return HttpResponse.json(createResolvedExpedition(id))
       }),
     )
-    enableProbeTimers()
+    enableReconciliationTimers()
     const client = createQueryClient()
     renderExpeditionRoute(`/expeditions/${id}`, client)
     await advanceUntil(() => requested, 'the detail request')

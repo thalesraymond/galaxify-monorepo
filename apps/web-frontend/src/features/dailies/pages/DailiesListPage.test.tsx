@@ -66,13 +66,13 @@ async function renderDailies(): Promise<void> {
 /**
  * Completion/reconciliation tests render and settle the first load with real
  * timers (RTL waitFor does not auto-advance Vitest fake timers), then switch
- * to fake timers to drive the bounded probe schedule deterministically.
+ * to fake timers to drive the bounded reconciliation schedule deterministically.
  */
-function enableProbeTimers(): void {
+function enableReconciliationTimers(): void {
   vi.useFakeTimers({ now: new Date(FIXED_MOCK_EPOCH_MS) })
 }
 
-async function flushProbes(): Promise<void> {
+async function flushReconciliation(): Promise<void> {
   for (let index = 0; index < 6; index += 1) {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0)
@@ -80,7 +80,7 @@ async function flushProbes(): Promise<void> {
   }
 }
 
-/** Advances the frontend probe clock inside act so state updates flush. */
+/** Advances the reconciliation clock inside act so state updates flush. */
 async function advanceClock(ms: number): Promise<void> {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(ms)
@@ -159,10 +159,10 @@ describe('/dailies current list', () => {
 describe('/dailies completion and Ship reconciliation', () => {
   it('completes optimistically, announces the typed award, and reconciles Ship', async () => {
     await renderDailies()
-    enableProbeTimers()
+    enableReconciliationTimers()
 
     fireEvent.click(screen.getByRole('button', { name: 'Complete Calibrate sensors' }))
-    await flushProbes()
+    await flushReconciliation()
 
     // Optimistic: the row is completed and its control is disabled.
     expect(screen.getByText('Completed · +10 materials')).toBeInTheDocument()
@@ -173,28 +173,28 @@ describe('/dailies completion and Ship reconciliation', () => {
       screen.getByText('Calibrate sensors completed. +10 materials awarded.'),
     ).toBeInTheDocument()
 
-    // The mock materializes the award after its 2s window; the probe at ~2s
+    // The mock materializes the award after its 2s window; the reconciliation read at ~2s
     // observes the increased balance and stops.
     scheduler.advance(1_000)
     await advanceClock(1_000)
-    await flushProbes()
+    await flushReconciliation()
     expect(screen.getByText('Ship materials: 250')).toBeInTheDocument()
     scheduler.advance(1_000)
     await advanceClock(1_000)
-    await flushProbes()
+    await flushReconciliation()
     expect(screen.getByText('Ship materials: 260')).toBeInTheDocument()
     expect(screen.queryByText('Update delayed')).not.toBeInTheDocument()
   })
 
   it('pauses reconciliation while the tab is hidden and resumes when visible', async () => {
     await renderDailies()
-    enableProbeTimers()
+    enableReconciliationTimers()
 
     fireEvent.click(screen.getByRole('button', { name: 'Complete Calibrate sensors' }))
-    await flushProbes()
+    await flushReconciliation()
     expect(screen.getByText('Ship materials: 250')).toBeInTheDocument()
 
-    // Hide the tab: the probe schedule pauses and cannot advance.
+    // Hide the tab: the reconciliation schedule pauses and cannot advance.
     Object.defineProperty(document, 'visibilityState', {
       configurable: true,
       get: () => 'hidden',
@@ -202,11 +202,11 @@ describe('/dailies completion and Ship reconciliation', () => {
     document.dispatchEvent(new Event('visibilitychange'))
     scheduler.advance(10_000)
     await advanceClock(10_000)
-    await flushProbes()
+    await flushReconciliation()
     expect(screen.queryByText('Update delayed')).not.toBeInTheDocument()
     expect(screen.getByText('Ship materials: 250')).toBeInTheDocument()
 
-    // Show the tab again: the next probe resumes and reconciles.
+    // Show the tab again: the next reconciliation read resumes and reconciles.
     Object.defineProperty(document, 'visibilityState', {
       configurable: true,
       get: () => 'visible',
@@ -214,10 +214,10 @@ describe('/dailies completion and Ship reconciliation', () => {
     scheduler.advance(1_000)
     document.dispatchEvent(new Event('visibilitychange'))
     await advanceClock(1_000)
-    await flushProbes()
+    await flushReconciliation()
     scheduler.advance(1_000)
     await advanceClock(1_000)
-    await flushProbes()
+    await flushReconciliation()
     expect(screen.getByText('Ship materials: 260')).toBeInTheDocument()
   })
 
@@ -226,26 +226,26 @@ describe('/dailies completion and Ship reconciliation', () => {
     const onlineDescriptor = Object.getOwnPropertyDescriptor(navigator, 'onLine')
     Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
     try {
-      enableProbeTimers()
+      enableReconciliationTimers()
       fireEvent.click(screen.getByRole('button', { name: 'Complete Calibrate sensors' }))
-      await flushProbes()
+      await flushReconciliation()
       // Offline, the observation reads nothing: no balance is observed yet.
       expect(screen.getByText('Ship materials: …')).toBeInTheDocument()
 
       window.dispatchEvent(new Event('offline'))
       scheduler.advance(10_000)
       await advanceClock(10_000)
-      await flushProbes()
+      await flushReconciliation()
       expect(screen.queryByText('Update delayed')).not.toBeInTheDocument()
 
       Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
       scheduler.advance(1_000)
       window.dispatchEvent(new Event('online'))
       await advanceClock(1_000)
-      await flushProbes()
+      await flushReconciliation()
       scheduler.advance(1_000)
       await advanceClock(1_000)
-      await flushProbes()
+      await flushReconciliation()
       expect(screen.getByText('Ship materials: 260')).toBeInTheDocument()
     } finally {
       if (onlineDescriptor !== undefined) {
@@ -260,10 +260,10 @@ describe('/dailies completion and Ship reconciliation', () => {
     server.reset('delayed-propagation')
     await seedAuthenticatedSession()
     await renderDailies()
-    enableProbeTimers()
+    enableReconciliationTimers()
 
     fireEvent.click(screen.getByRole('button', { name: 'Complete Calibrate sensors' }))
-    await flushProbes()
+    await flushReconciliation()
     expect(screen.getByText('Ship materials: 250')).toBeInTheDocument()
 
     // Advance through the 1/2/4/8s schedule; the 5-minute window never elapses.
@@ -275,7 +275,7 @@ describe('/dailies completion and Ship reconciliation', () => {
     await advanceClock(2_000)
     scheduler.advance(4_000)
     await advanceClock(4_000)
-    await flushProbes()
+    await flushReconciliation()
 
     expect(screen.getByText('Update delayed')).toBeInTheDocument()
     expect(screen.getByText('Ship materials: 250')).toBeInTheDocument()
@@ -285,7 +285,7 @@ describe('/dailies completion and Ship reconciliation', () => {
 
     // A local Retry restarts the bounded window; still nothing propagates.
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
-    await flushProbes()
+    await flushReconciliation()
     expect(screen.queryByText('Update delayed')).not.toBeInTheDocument()
     scheduler.advance(1_000)
     await advanceClock(1_000)
@@ -295,7 +295,7 @@ describe('/dailies completion and Ship reconciliation', () => {
     await advanceClock(2_000)
     scheduler.advance(4_000)
     await advanceClock(4_000)
-    await flushProbes()
+    await flushReconciliation()
     expect(screen.getByText('Update delayed')).toBeInTheDocument()
   })
 
@@ -338,29 +338,29 @@ describe('/dailies completion and Ship reconciliation', () => {
     const sessionBody = (await session.json()) as { access_token: string }
     server.backend.completeDaily(sessionBody.access_token, FIXED_DAILY_IDS.calibrate)
 
-    enableProbeTimers()
+    enableReconciliationTimers()
     fireEvent.click(screen.getByRole('button', { name: 'Complete Calibrate sensors' }))
-    await flushProbes()
-    await flushProbes()
+    await flushReconciliation()
+    await flushReconciliation()
 
     // The refetch settles the row as completed and reconciliation runs.
     expect(screen.getByText('Completed · +10 materials')).toBeInTheDocument()
     scheduler.advance(1_000)
     await advanceClock(1_000)
-    await flushProbes()
+    await flushReconciliation()
     scheduler.advance(1_000)
     await advanceClock(1_000)
-    await flushProbes()
+    await flushReconciliation()
     expect(screen.getByText('Ship materials: 260')).toBeInTheDocument()
   })
 
   it('reconciles two completed rows independently (per-row sessions)', async () => {
     await renderDailies()
-    enableProbeTimers()
+    enableReconciliationTimers()
 
     fireEvent.click(screen.getByRole('button', { name: 'Complete Calibrate sensors' }))
     fireEvent.click(screen.getByRole('button', { name: 'Complete Stretch the solar sails' }))
-    await flushProbes()
+    await flushReconciliation()
     expect(screen.getByText('Completed · +10 materials')).toBeInTheDocument()
     expect(screen.getByText('Completed · +50 materials')).toBeInTheDocument()
 
@@ -368,10 +368,10 @@ describe('/dailies completion and Ship reconciliation', () => {
     // window; both rows observe it on their own schedules and stop ready.
     scheduler.advance(1_000)
     await advanceClock(1_000)
-    await flushProbes()
+    await flushReconciliation()
     scheduler.advance(1_000)
     await advanceClock(1_000)
-    await flushProbes()
+    await flushReconciliation()
 
     expect(screen.getAllByText('Ship materials: 300')).toHaveLength(2)
     expect(screen.queryByText('Update delayed')).not.toBeInTheDocument()
@@ -382,11 +382,11 @@ describe('/dailies completion and Ship reconciliation', () => {
     server.reset('delayed-propagation')
     await seedAuthenticatedSession()
     await renderDailies()
-    enableProbeTimers()
+    enableReconciliationTimers()
 
     fireEvent.click(screen.getByRole('button', { name: 'Complete Calibrate sensors' }))
     fireEvent.click(screen.getByRole('button', { name: 'Complete Stretch the solar sails' }))
-    await flushProbes()
+    await flushReconciliation()
 
     // Advance through the full 1/2/4/8s schedule; the 5-minute window never
     // elapses, so every completed row must surface the delayed state.
@@ -398,7 +398,7 @@ describe('/dailies completion and Ship reconciliation', () => {
     await advanceClock(2_000)
     scheduler.advance(4_000)
     await advanceClock(4_000)
-    await flushProbes()
+    await flushReconciliation()
 
     expect(screen.getAllByText('Update delayed')).toHaveLength(2)
     expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(2)
@@ -417,17 +417,17 @@ describe('/dailies completion and Ship reconciliation', () => {
       }),
     )
     await renderDailies()
-    enableProbeTimers()
+    enableReconciliationTimers()
 
     fireEvent.click(screen.getByRole('button', { name: 'Complete Calibrate sensors' }))
-    await flushProbes()
+    await flushReconciliation()
     expect(screen.getByText('Ship materials: 250')).toBeInTheDocument()
 
     // An unrelated +5 movement (not the +10 award) keeps the reconciliation
     // probing; it must not stop as ready nor expire as delayed.
     scheduler.advance(1_000)
     await advanceClock(1_000)
-    await flushProbes()
+    await flushReconciliation()
     expect(screen.getByText('Ship materials: 255')).toBeInTheDocument()
     expect(screen.queryByText('Update delayed')).not.toBeInTheDocument()
     expect(screen.getByText(/Updating…/)).toBeInTheDocument()
@@ -435,7 +435,7 @@ describe('/dailies completion and Ship reconciliation', () => {
     // The full award (baseline + 10) lands; probing stops as ready.
     scheduler.advance(1_000)
     await advanceClock(1_000)
-    await flushProbes()
+    await flushReconciliation()
     expect(screen.getByText('Ship materials: 260')).toBeInTheDocument()
     expect(screen.queryByText(/Updating…/)).not.toBeInTheDocument()
     expect(screen.queryByText('Update delayed')).not.toBeInTheDocument()

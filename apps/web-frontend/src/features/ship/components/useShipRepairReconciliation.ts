@@ -11,7 +11,7 @@ import {
 import { observeShip } from '../api/shipQueries'
 
 const REPAIR_READINESS_KEY = 'ship:repair:readiness'
-const PROBE_INVESTMENT = 1
+const READINESS_INVESTMENT = 1
 
 /** The expectation belongs to the session; the visible panel only observes it. */
 export function useShipRepairReconciliation(queryClient: QueryClient, transport: ApiTransport) {
@@ -27,7 +27,7 @@ export function useShipRepairReconciliation(queryClient: QueryClient, transport:
       read: async (signal) => {
         const [ship, quote] = await Promise.allSettled([
           observeShip(queryClient, transport, signal),
-          getExpeditionQuote(transport, PROBE_INVESTMENT, signal),
+          getExpeditionQuote(transport, READINESS_INVESTMENT, signal),
         ])
         return { ship, quote }
       },
@@ -39,7 +39,7 @@ export function useShipRepairReconciliation(queryClient: QueryClient, transport:
           ship.value.ship.materials_balance,
       publish: ({ quote }) => {
         if (quote.status === 'fulfilled') {
-          queryClient.setQueryData(expeditionQuoteQueryKeyFor(PROBE_INVESTMENT), quote.value)
+          queryClient.setQueryData(expeditionQuoteQueryKeyFor(READINESS_INVESTMENT), quote.value)
         }
       },
     })

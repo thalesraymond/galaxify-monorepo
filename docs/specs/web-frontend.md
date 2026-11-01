@@ -125,21 +125,34 @@ after approximately 1, 2, 4, and 8 active seconds. Stop when the expected change
 is observed. Expiry is a delayed update, not command failure.
 
 Bounded observation reads fresh facts and publishes them to the shared queries;
-retained data from a failed refresh is never fresh confirmation. Slow reads are
-bounded so an observation cannot remain `Updating…` indefinitely.
+retained data from a failed refresh is never fresh confirmation. Reads are
+bounded and aborted on timeout, so an observation cannot remain `Updating…`
+indefinitely. Active time accrues only while the page is visible, online, and at
+least one mounted view displays the affected resource; hidden, offline, and
+unobserved time does not advance the budget. A slow read consumes active time,
+so marks it runs past are skipped rather than fired as a catch-up burst. A
+player-initiated Retry restarts only the bounded budget: it preserves the
+round's identity, baseline, and expectation.
 
 - Signup permits a partial Dashboard while Ship, Daily player state, and
   Expedition Ship state provision for up to about 30 active seconds.
 - Daily completion confirms its typed material award, then reconciles Ship.
   Gate Repair and Launch while a relevant award updates. After observation expiry,
-  release the gate only after a successful authoritative Ship read. A failed or
-  absent read keeps actions unavailable with stale feedback and Retry; expected
-  but unobserved awards are never credited as spendable materials. The award's
-  baseline is the confirmed Ship balance the browser held before the command was
-  submitted, never a first read that may already include the award. Without
-  that baseline the observation refreshes and publishes facts but never claims
-  the award was observed.
+  release the gate only after a successful authoritative Ship read for that
+  expiry generation. A failed, absent, or stale read keeps actions unavailable
+  with stale feedback and Retry; expected but unobserved awards are never
+  credited as spendable materials. An approval never carries across a Retry or
+  a no-key interval. The award's baseline is the confirmed Ship balance the
+  browser held before the command was submitted, never a first read that may
+  already include the award. Without that baseline the observation refreshes
+  and publishes facts but never claims the award was observed.
 - Ship repair confirms Ship immediately, then reconciles Expedition readiness.
+  Readiness agrees only when a fresh quote's projected balance plus its invested
+  materials equals the fresh authoritative Ship balance. A legitimate quote
+  blocker still agrees when those balance facts match; a successful quote with a
+  failed fresh Ship read is not agreement. Repair compares current facts and
+  needs no pre-repair baseline; if the repaired Ship response is discarded, no
+  readiness round starts.
 - Expedition launch confirms the Expedition, then reconciles Ship deduction
   against the confirmed Ship balance held before submission. Without that
   baseline fresh facts are published but cannot confirm the deduction.
@@ -150,6 +163,13 @@ bounded so an observation cannot remain `Updating…` indefinitely.
   History rows do not discover rewards; opening a resolved detail may begin
   observation when that detail exposes its typed result.
 
+Aggregate Ship state carries no receipt-level attribution: an unrelated award
+can satisfy a threshold, and unrelated spending can mask the expected change
+until the facts move again. Observations publish aggregate facts and each
+round's own satisfaction outcome; they never claim which command caused a
+change. Gate release is freshness-based, not proof that the expected event
+arrived.
+
 The browser cannot prove when Expedition's private Ship cache has consumed an
 event. End the visible sync boundary when authoritative Ship state changes. A
 subsequent stale-cache launch rejection becomes a player-initiated retry state,
@@ -158,11 +178,17 @@ not an automatic launch replay.
 The Ship module owns fresh Ship observations and their confirmed TanStack Query
 cache. Daily and Expedition reconciliation cross that public seam rather than
 duplicating Ship reads or cache keys. Each observation bypasses cache freshness;
-overlapping observations share the in-flight query. Scheduled probes own their
-bounded retries. A confirmed repair cancels older Ship reads before publishing
-its returned snapshot, so a late response cannot undo the repair. Per-Daily
-progress and the balance-based satisfaction rule remain; the bounded schedule
-itself belongs to the shared Downstream Reconciliation module.
+overlapping observations share the in-flight query, and every view renders the
+facts published into that one shared Ship query rather than a row- or
+panel-local balance. The shared Downstream Reconciliation module owns the
+bounded schedule and Player Retry; domain adapters own the expectation and
+publish fresh facts. A confirmed repair cancels older Ship reads before
+publishing its returned snapshot, so a late response cannot undo the repair.
+Per-Daily progress and the balance-based satisfaction rule remain.
+
+These reconciliation rules are frontend-only. They preserve the existing
+backend contracts and deliberate event-consumer behavior; no backend contract
+changes.
 
 ## 4. Session lifecycle
 
@@ -331,10 +357,9 @@ Form, and Zod. Organize code feature-first around `auth`, `profile`, `dailies`,
 - Each feature has a narrow public entry point. ESLint forbids cross-feature
   deep imports.
 - Move code to shared only when domain-neutral and used by multiple features.
-  Bounded downstream observation lifecycle machinery belongs to the shared
-  Downstream Reconciliation module (callers still on per-caller probe schedules
-  migrate onto it); feature adapters declare expected-change meaning and publish
-  fresh facts.
+  The shared Downstream Reconciliation module owns the bounded observation
+  lifecycle; feature adapters declare expected-change meaning and publish fresh
+  facts.
 - Use `@/` rooted at `src`; prefer relative imports inside a feature.
 - Use CSS Modules and global semantic custom-property tokens.
 - Avoid utility CSS frameworks and broad component suites. Accessible headless

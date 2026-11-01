@@ -13,8 +13,6 @@ import type { Expedition } from '../api/expeditionApi'
 
 type RewardExpectation = {
   readonly expeditionId: string
-  readonly resultId: string
-  readonly reward: number
   readonly baseline: number | undefined
   readonly expectedBalance: number | undefined
   readonly phase: DownstreamObservationPhase
@@ -63,8 +61,6 @@ export function registerExpeditionReward(
   const key = expeditionRewardKey(expedition.id)
   expectations.set(expedition.id, {
     expeditionId: expedition.id,
-    resultId: result.id,
-    reward,
     baseline,
     expectedBalance,
     phase: 'updating',

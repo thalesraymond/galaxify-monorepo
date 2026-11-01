@@ -87,11 +87,11 @@ export function ExpeditionOverview() {
   const inFlight =
     currentQuery.data?.kind === 'current' && currentQuery.data.expedition.status === 'IN_FLIGHT'
   const expeditionId = currentQuery.data?.kind === 'current' ? currentQuery.data.expedition.id : ''
-  const deductionProbe = useDownstreamObservation(launchDeductionKey(expeditionId), inFlight)
+  const deductionObservation = useDownstreamObservation(launchDeductionKey(expeditionId), inFlight)
   const deductionSync: MaterialsSync = {
     balance,
-    phase: deductionProbe.phase,
-    onRetry: deductionProbe.retry,
+    phase: deductionObservation.phase,
+    onRetry: deductionObservation.retry,
   }
 
   if (currentQuery.isPending) {

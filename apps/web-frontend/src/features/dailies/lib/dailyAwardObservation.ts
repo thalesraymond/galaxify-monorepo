@@ -23,7 +23,6 @@ export function dailyAwardObservationKey(dailyId: string): string {
 
 /** What one Daily's expected award looks like right now. */
 export type DailyAwardExpectation = {
-  readonly dailyId: string
   /** The shared module's phase for this Daily's expected award. */
   readonly phase: DownstreamObservationPhase
   /** The confirmed Ship balance captured before the completion was submitted. */
@@ -122,7 +121,6 @@ export function registerDailyAwardObservation(
   // closures read it from the store, so a restarted round judges the new
   // baseline and award instead of the ones it started with.
   expectations.set(dailyId, {
-    dailyId,
     phase: 'updating',
     baseline,
     observed: undefined,
@@ -150,7 +148,7 @@ export function registerDailyAwardObservation(
  * Drops every expectation. The Player session owns these records: logout, an
  * account change, or disposal must not leave a Daily looking reconciled.
  */
-export function clearDailyAwardExpectations(): void {
+function clearDailyAwardExpectations(): void {
   for (const dailyId of expectations.keys()) {
     unregisterBalanceGateKey(dailyAwardObservationKey(dailyId))
   }

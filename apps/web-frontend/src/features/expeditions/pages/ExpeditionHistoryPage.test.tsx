@@ -37,7 +37,7 @@ afterEach(() => {
   server.server.close()
 })
 
-function enableProbeTimers(): void {
+function enableReconciliationTimers(): void {
   vi.useFakeTimers({ now: new Date(FIXED_MOCK_EPOCH_MS) })
 }
 
@@ -132,7 +132,7 @@ describe('Expedition history', () => {
 
     await screen.findAllByRole('link', { name: /Success|Failed/ })
     expect(screen.getAllByRole('link', { name: /Success|Failed/ })).toHaveLength(10)
-    enableProbeTimers()
+    enableReconciliationTimers()
     fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
     await advanceFakeTime(1_100)
 
