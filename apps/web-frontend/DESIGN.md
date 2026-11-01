@@ -124,6 +124,11 @@ grids. Warm logbook surfaces contain primary work; dark raised panels contain
 supporting Ship/Expedition status. Use layered low-opacity shadows for depth and
 subtle edges only where separation requires them.
 
+Cap simple route columns locally instead of stretching a surface across the
+shell: Profile at 30rem, Daily create/edit at 38rem, and Ship at 40rem. Keep the
+Dashboard's asymmetric main/support composition wide, and do not apply a global
+content cap.
+
 Nested rounded surfaces use concentric radii: outer radius equals inner radius
 plus intervening padding. Align asymmetric icons optically rather than blindly
 centering their boxes.
