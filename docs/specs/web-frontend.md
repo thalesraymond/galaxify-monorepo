@@ -143,6 +143,8 @@ bounded so an observation cannot remain `Updating…` indefinitely.
   against a confirmed Ship snapshot whose `updated_at` predates the result's
   `created_at`. Without that evidence fresh Ship facts are published but do
   not confirm the reward; the first observation is never used as a baseline.
+  History rows do not discover rewards; opening a resolved detail may begin
+  observation when that detail exposes its typed result.
 
 The browser cannot prove when Expedition's private Ship cache has consumed an
 event. End the visible sync boundary when authoritative Ship state changes. A

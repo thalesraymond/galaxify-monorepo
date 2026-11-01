@@ -4,7 +4,9 @@ import { createMemoryRouter, type RouteObject } from 'react-router'
 
 import { AppProviders } from '@/app/providers'
 import { AppShell } from '@/app/shell/AppShell'
+import { DashboardPage } from '@/app/pages/DashboardPage'
 import { RequireAuth } from '@/features/auth'
+import { ShipPage } from '@/app/pages/ShipPage'
 import {
   ExpeditionDetailPage,
   ExpeditionHistoryPage,
@@ -35,6 +37,8 @@ const expeditionRouteTree: RouteObject[] = [
         element: <AppShell />,
         children: [
           { path: '/expeditions', element: <ExpeditionsPage /> },
+          { path: '/dashboard', element: <DashboardPage /> },
+          { path: '/ship', element: <ShipPage /> },
           { path: '/expeditions/history', element: <ExpeditionHistoryPage /> },
           { path: '/expeditions/:expeditionId', element: <ExpeditionDetailPage /> },
         ],

@@ -100,7 +100,7 @@ export const routes: RouteObject[] = [
           {
             path: '/ship',
             element: lazyRoute(() =>
-              import('@/features/ship').then((module) => ({ default: module.ShipPage })),
+              import('./pages/ShipPage').then((module) => ({ default: module.ShipPage })),
             ),
           },
           {

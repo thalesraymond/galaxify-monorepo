@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router'
@@ -40,7 +41,7 @@ const UPDATED_AT_REFRESH_MS = 30_000
  * Route-agnostic so the Dashboard can compose it without page chrome; the
  * `/ship` route is a thin wrapper around it.
  */
-export function ShipStatusPanel() {
+export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode } = {}) {
   const transport = useApiTransport()
   const queryClient = useQueryClient()
 
@@ -185,6 +186,7 @@ export function ShipStatusPanel() {
           {reconciliation.kind === 'updating' ? <StatusBadge status="updating" /> : null}
           {reconciliation.kind === 'delayed' ? <StatusBadge status="delayed" /> : null}
         </div>
+        {materialsSync}
 
         {reconciliation.kind === 'delayed' ? (
           <div className={styles.delayed}>

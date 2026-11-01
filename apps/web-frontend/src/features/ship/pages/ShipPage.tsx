@@ -1,13 +1,15 @@
+import type { ReactNode } from 'react'
+
 import { PageHeader } from '@/shared/ui/PageHeader'
 
 import { ShipStatusPanel } from '../components/ShipStatusPanel'
 import styles from './ShipPage.module.css'
 
-export function ShipPage() {
+export function ShipPage({ materialsSync }: { materialsSync?: ReactNode } = {}) {
   return (
     <div className={styles.page}>
       <PageHeader title="Ship" description="Hull condition, materials, and repair." />
-      <ShipStatusPanel />
+      <ShipStatusPanel materialsSync={materialsSync} />
     </div>
   )
 }
