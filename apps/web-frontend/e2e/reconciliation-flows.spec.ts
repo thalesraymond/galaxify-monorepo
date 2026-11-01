@@ -55,7 +55,7 @@ test('a delayed Daily award releases fresh facts across views without replaying 
 
   await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
   await page.getByRole('button', { name: 'Complete Calibrate sensors' }).click()
-  await page.getByRole('heading', { name: 'Completed (2)', exact: true }).click()
+  await page.locator('summary').filter({ hasText: 'Completed' }).click()
 
   const dailyRow = page.locator('[id^="daily-row-"]').filter({ hasText: 'Calibrate sensors' })
   const repair = page.getByRole('button', { name: 'Repair Ship' })

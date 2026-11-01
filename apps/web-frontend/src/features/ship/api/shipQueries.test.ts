@@ -181,3 +181,20 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   })
   return { promise, resolve }
 }
+
+it('rejects a cancelled read instead of publishing retained facts as fresh', async () => {
+  const cached = createDamagedShip({ materials_balance: 150 })
+  queryClient.setQueryData(shipQueryKey, { kind: 'ready', ship: cached } satisfies ShipState)
+  const response = deferred<Response>()
+  const fetch = vi.fn<typeof globalThis.fetch>().mockReturnValueOnce(response.promise)
+
+  const read = observeShip(queryClient, new ApiTransport({ fetch }))
+  await vi.waitFor(() => {
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+  await queryClient.cancelQueries({ queryKey: shipQueryKey, exact: true })
+  response.resolve(jsonResponse(createDamagedShip({ materials_balance: 60 })))
+
+  await expect(read).rejects.toThrow(/fresh authoritative/i)
+  expect(queryClient.getQueryData(shipQueryKey)).toEqual({ kind: 'ready', ship: cached })
+})

@@ -7,9 +7,26 @@ export type ShipState =
   | { readonly kind: 'ready'; readonly ship: Awaited<ReturnType<typeof zShipGetMeResponse.parse>> }
   | { readonly kind: 'provisioning'; readonly error: ApiHttpError }
 
+let shipFetchGeneration = 0
+let lastFetchedShipState: ShipState | undefined
+
+/** Marker used to distinguish a real fetch from a reverted/cached read. */
+export function getShipFetchMark(): {
+  readonly generation: number
+  readonly state: ShipState | undefined
+} {
+  return { generation: shipFetchGeneration, state: lastFetchedShipState }
+}
+
+function markFetched(state: ShipState): ShipState {
+  shipFetchGeneration += 1
+  lastFetchedShipState = state
+  return state
+}
+
 export async function getShip(transport: ApiTransport, signal?: AbortSignal): Promise<ShipState> {
   try {
-    return {
+    return markFetched({
       kind: 'ready',
       ship: await transport.request({
         service: 'ship',
@@ -17,10 +34,10 @@ export async function getShip(transport: ApiTransport, signal?: AbortSignal): Pr
         response: zShipGetMeResponse,
         signal,
       }),
-    }
+    })
   } catch (error: unknown) {
     if (isApiHttpError(error, 'SHIP_NOT_FOUND')) {
-      return { kind: 'provisioning', error }
+      return markFetched({ kind: 'provisioning', error })
     }
     throw error
   }

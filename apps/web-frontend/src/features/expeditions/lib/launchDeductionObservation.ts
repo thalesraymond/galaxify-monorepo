@@ -10,8 +10,6 @@ import {
 import type { Expedition } from '../api/expeditionApi'
 
 type LaunchDeduction = {
-  readonly expeditionId: string
-  readonly invested: number
   readonly baseline: number | undefined
   readonly expectedBalance: number | undefined
 }
@@ -31,8 +29,6 @@ export function registerLaunchDeduction(
   const key = launchDeductionKey(expedition.id)
   if (expectations.has(key)) return
   const expectation: LaunchDeduction = {
-    expeditionId: expedition.id,
-    invested: expedition.materials_invested,
     baseline,
     expectedBalance: baseline === undefined ? undefined : baseline - expedition.materials_invested,
   }

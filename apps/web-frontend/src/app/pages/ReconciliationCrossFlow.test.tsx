@@ -48,6 +48,7 @@ const EXPEDITION_REWARD_KEY = (expeditionId: string): string => `expedition:${ex
 
 let balance = 250
 let shipRequests = 0
+let failShipReads = false
 let heldShipReadStarted = false
 let holdNextShipRead = false
 let releaseHeldShipRead = () => {}
@@ -149,6 +150,7 @@ function navigateTo(name: 'Dashboard' | 'Dailies' | 'Ship' | 'Expeditions'): voi
 beforeEach(async () => {
   clearDownstreamObservations()
   balance = 250
+  failShipReads = false
   resetReadBookkeeping()
   holdDailyCompletion = false
   heldDailyCompletionStarted = false
@@ -163,6 +165,12 @@ beforeEach(async () => {
   server.server.use(
     http.get('/api/ship/ships/me', async () => {
       shipRequests += 1
+      if (failShipReads) {
+        return HttpResponse.json(
+          { error: { code: 'INTERNAL_ERROR', message: 'Ship read failed' } },
+          { status: 500 },
+        )
+      }
       if (holdNextShipRead) {
         holdNextShipRead = false
         heldShipReadStarted = true
@@ -209,6 +217,7 @@ afterEach(() => {
   holdNextShipRead = false
   holdDailyCompletion = false
   holdNextRepair = false
+  failShipReads = false
   vi.useRealTimers()
   setVisibility(true)
   setOnline(true)
@@ -296,7 +305,9 @@ describe('same resource across views', () => {
 
 describe('shared in-flight reads', () => {
   it('shares one Ship request between two independent pending awards and evaluates them separately', async () => {
-    renderExpeditionRoute('/dashboard')
+    const client = createQueryClient()
+    const querySpy = vi.spyOn(client, 'query')
+    renderExpeditionRoute('/dashboard', client)
     await waitForDashboard()
     expect(materialsRegion().getByText('250')).toBeInTheDocument()
     await advanceFakeTime(1_000)
@@ -310,8 +321,9 @@ describe('shared in-flight reads', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Complete Stretch the solar sails' }))
     await advanceUntil(() => getBalanceGateKeys().length === 2, 'both independent observation keys')
 
-    // Both keys started while the first HTTP read was in flight; TanStack Query
-    // owns the in-flight promise, so the second observation shares it.
+    // Both keys attempted their mark-0 read; TanStack Query owns the in-flight
+    // promise, so the second attempt shares the first HTTP request.
+    expect(querySpy).toHaveBeenCalledTimes(2)
     expect(shipRequests).toBe(1)
 
     releaseHeldShipRead()
@@ -328,6 +340,193 @@ describe('shared in-flight reads', () => {
     expect(dailyRow('Stretch the solar sails').getByText('Updating…')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Repair Ship' })).toBeDisabled()
     expect(shipRequests).toBe(1)
+  })
+})
+
+describe('slow and failed reads', () => {
+  it('keeps last confirmed facts through failures and publishes the next fresh balance everywhere', async () => {
+    server.server.use(
+      http.post('/api/expedition/expeditions/launch', async ({ request }) => {
+        const token = /^Bearer (.+)$/u.exec(request.headers.get('Authorization') ?? '')?.[1]
+        const body = zExpeditionLaunchBody.parse(await request.json())
+        return HttpResponse.json(
+          server.backend.launchExpedition(token, {
+            materials_invested: Number(body.materials_invested),
+          }),
+        )
+      }),
+    )
+
+    renderExpeditionRoute('/expeditions')
+    await waitForExpeditionsPage()
+    await advanceUntil(() => screen.queryByText('You have 250 materials') !== null, 'the balance')
+    fireEvent.change(screen.getByLabelText('Materials to invest'), { target: { value: '40' } })
+    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'the launch quote')
+
+    // The accepted launch starts the deduction round; every Ship read fails
+    // from here until the rounds have expired.
+    failShipReads = true
+    fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
+    await advanceUntil(() => screen.queryByText('Expedition in flight') !== null, 'the launch')
+    await advanceUntil(
+      () => screen.queryByText(/Available materials: 250/) !== null,
+      'the retained launch balance',
+    )
+    expect(screen.getByText('Updating…')).toBeInTheDocument()
+
+    // The Daily award joins the pending deduction round and also fails its
+    // fresh read; retained facts stay visible and neither round settles.
+    navigateTo('Dashboard')
+    await waitForDashboard()
+    fireEvent.click(screen.getByRole('button', { name: 'Complete Calibrate sensors' }))
+    await advanceUntil(
+      () =>
+        dailyRow('Calibrate sensors').queryByText('Updating…') !== null &&
+        screen.getByRole('button', { name: 'Repair Ship' }).hasAttribute('disabled'),
+      'the failed Daily award',
+    )
+    expect(materialsRegion().getByText('250')).toBeInTheDocument()
+    expect(dailyRow('Calibrate sensors').getByText('Ship materials: …')).toBeInTheDocument()
+
+    // The Ship route retains the same confirmed facts and labels the failed
+    // refresh rather than publishing retained data as fresh.
+    navigateTo('Ship')
+    await waitForShipPage()
+    expect(materialsRegion().getByText('250')).toBeInTheDocument()
+    await advanceUntil(
+      () => screen.queryByText('Showing the last known Ship status. Refreshing failed.') !== null,
+      'the failed Ship refresh',
+    )
+    expect(screen.getByRole('button', { name: 'Repair Ship' })).toBeDisabled()
+
+    navigateTo('Dashboard')
+    await waitForDashboardPanels()
+    expect(dailyRow('Calibrate sensors').getByText('Updating…')).toBeInTheDocument()
+
+    // Expiry is delayed, not command failure; the gate's own fresh read also
+    // fails, so it stays stale and offers a local Retry.
+    await advanceFakeTime(9_000)
+    await advanceUntil(
+      () => dailyRow('Calibrate sensors').queryByText('Update delayed') !== null,
+      'the delayed Daily award',
+    )
+    await advanceUntil(
+      () =>
+        screen.queryAllByText('The Ship balance could not be refreshed. Retry before using it.')
+          .length > 0,
+      'the stale gate',
+    )
+    const repair = screen.getByRole('button', { name: 'Repair Ship' })
+    expect(repair).toBeDisabled()
+    expect(repair).toHaveAccessibleDescription(/could not be refreshed/)
+    expect(materialsRegion().getByRole('button', { name: 'Retry' })).toBeEnabled()
+
+    // The deduction round expired alongside the Daily; both views agree on the
+    // last confirmed balance until a read succeeds.
+    navigateTo('Expeditions')
+    await advanceUntil(() => screen.queryByText('Expedition in flight') !== null, 'the overview')
+    await advanceUntil(
+      () => screen.queryByText(/Available materials: 250/) !== null,
+      'the retained deduction balance',
+    )
+    // The deduction round was paused while no Expedition view displayed it;
+    // its remaining budget resumes here and expires unobserved.
+    await advanceFakeTime(9_000)
+    await advanceUntil(() => screen.queryByText('Update delayed') !== null, 'the delayed deduction')
+
+    // The next successful read publishes the same fresh balance everywhere.
+    balance = 270
+    failShipReads = false
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await advanceUntil(
+      () => screen.queryByText(/Available materials: 270/) !== null,
+      'the fresh deduction facts',
+    )
+
+    navigateTo('Dashboard')
+    await waitForDashboardPanels()
+    expect(materialsRegion().getByText('270')).toBeInTheDocument()
+    fireEvent.click(dailyRow('Calibrate sensors').getByRole('button', { name: 'Retry' }))
+    await advanceUntil(
+      () =>
+        dailyRow('Calibrate sensors').queryByText('Ship materials: 270') !== null &&
+        dailyRow('Calibrate sensors').queryByText('Update delayed') === null,
+      'the fresh Daily facts',
+    )
+
+    navigateTo('Ship')
+    await waitForShipPage()
+    expect(materialsRegion().getByText('270')).toBeInTheDocument()
+  })
+
+  it('skips marks past a read bound, expires, and makes cleared-session retries no-ops', async () => {
+    renderExpeditionRoute('/dashboard')
+    await waitForDashboard()
+    await advanceFakeTime(1_000)
+
+    resetReadBookkeeping()
+    fireEvent.click(screen.getByRole('button', { name: 'Complete Calibrate sensors' }))
+    await advanceUntil(
+      () => dailyRow('Calibrate sensors').queryByText('Updating…') !== null,
+      'the updating Daily award',
+    )
+
+    // Hold the read at the ~1 s mark past the 5 s bound. The timeout expires
+    // the round instead of firing the 2/4/8 s marks as a catch-up burst.
+    await advanceFakeTime(600)
+    holdNextShipRead = true
+    await advanceFakeTime(600)
+    await advanceUntil(() => heldShipReadStarted, 'the held slow read')
+    const readsBeforeTimeout = shipRequests
+    failShipReads = true
+    await advanceFakeTime(5_000)
+    await advanceUntil(
+      () => dailyRow('Calibrate sensors').queryByText('Update delayed') !== null,
+      'the timed-out award',
+    )
+
+    // Only the gate's own expiry read follows the timeout; the expired
+    // observation never replays the skipped 2/4/8 s marks.
+    await advanceUntil(
+      () =>
+        screen.queryAllByText('The Ship balance could not be refreshed. Retry before using it.')
+          .length > 0,
+      'the stale gate after timeout',
+    )
+    expect(shipRequests).toBeLessThanOrEqual(readsBeforeTimeout + 1)
+    const readsAfterExpiry = shipRequests
+    await advanceFakeTime(10_000)
+    expect(shipRequests).toBe(readsAfterExpiry)
+    expect(materialsRegion().getByRole('button', { name: 'Retry' })).toBeEnabled()
+
+    // Retry one expired key while the other Daily award is still updating: the
+    // gate stays closed for the newer round.
+    failShipReads = false
+    fireEvent.click(screen.getByRole('button', { name: 'Complete Stretch the solar sails' }))
+    await advanceUntil(
+      () => dailyRow('Stretch the solar sails').queryByText('Updating…') !== null,
+      'the second pending award',
+    )
+    fireEvent.click(dailyRow('Calibrate sensors').getByRole('button', { name: 'Retry' }))
+    await advanceUntil(
+      () => dailyRow('Calibrate sensors').queryByText('Updating…') !== null,
+      'the retried award',
+    )
+    expect(dailyRow('Stretch the solar sails').getByText('Updating…')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Repair Ship' })).toBeDisabled()
+
+    // A session clear retires the round; invoking Retry afterwards is a no-op
+    // and cannot start another read.
+    const readsBeforeClear = shipRequests
+    act(() => {
+      clearDownstreamObservations()
+    })
+    downstreamReconciliation.retry(DAILY_AWARD_KEY(FIXED_DAILY_IDS.calibrate))
+    await advanceFakeTime(5_000)
+    expect(downstreamReconciliation.getPhase(DAILY_AWARD_KEY(FIXED_DAILY_IDS.calibrate))).toBe(
+      'idle',
+    )
+    expect(shipRequests).toBe(readsBeforeClear)
   })
 })
 

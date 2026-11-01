@@ -165,7 +165,8 @@ export function useDailyCompletion(
       return { previous, baseline, sessionGeneration }
     },
     onError: (error, variables, context) => {
-      if (context?.sessionGeneration !== getDownstreamSessionGeneration()) return
+      if (context === undefined || context.sessionGeneration !== getDownstreamSessionGeneration())
+        return
       const previous = context.previous
       if (previous !== undefined) {
         queryClient.setQueryData<Daily[]>(dailiesQueryKey(filters), (current) =>

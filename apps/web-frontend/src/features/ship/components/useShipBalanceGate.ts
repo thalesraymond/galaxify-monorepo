@@ -30,9 +30,10 @@ const GATE_READ_TIMEOUT_MS = 5_000
  * Read/approval bookkeeping shared by every mounted gate surface. Expiry
  * generations live in the session registry because they must advance even
  * while no gate surface is mounted (for example, a Daily retry that expires
- * on the Dailies route). The gate's one fresh read is session-owned: it keeps
- * running when its originating view unmounts, so another surface or a later
- * mount can use its result instead of starting a duplicate read.
+ * on the Dailies route). A read cancelled by navigation is never accepted as
+ * fresh: the Ship seam rejects reverted/cached results. The gate therefore
+ * stays closed or stale until an in-flight read succeeds or the player retries
+ * that expiry generation.
  */
 let handledExpiryGeneration = -1
 let freshEpoch: number | undefined
@@ -40,7 +41,6 @@ let attemptedGeneration: number | undefined
 let failedGeneration: number | undefined
 let activeReadId = 0
 let activeController: AbortController | undefined
-let activeQueryClient: ReturnType<typeof useQueryClient> | undefined
 let activeTimer: ReturnType<typeof setTimeout> | undefined
 let stopActiveAvailability: (() => void) | undefined
 let freshnessSnapshot = ''
@@ -69,15 +69,13 @@ function getFreshnessSnapshot(): string {
 }
 
 function canReadGate(): boolean {
-  return document.visibilityState !== 'hidden' && navigator.onLine
+  return document.visibilityState === 'visible' && navigator.onLine
 }
 
 function subscribeToAvailability(listener: () => void): () => void {
   const changed = (): void => {
     if (!canReadGate() && activeController !== undefined) {
-      const client = activeQueryClient
       abortActiveRead()
-      void client?.cancelQueries({ queryKey: shipQueryKey, exact: true })
       attemptedGeneration = undefined
       publishFreshness()
     }
@@ -103,7 +101,6 @@ function abortActiveRead(): void {
   }
   activeController?.abort()
   activeController = undefined
-  activeQueryClient = undefined
 }
 
 function resetAttempts(): void {
@@ -246,13 +243,11 @@ export function useShipBalanceGate(): ShipBalanceGate {
     publishFreshness()
     const controller = new AbortController()
     activeController = controller
-    activeQueryClient = queryClient
     stopActiveAvailability = subscribeToAvailability(() => {})
     activeTimer = setTimeout(() => {
       if (readId !== activeReadId) return
       activeReadId += 1
       activeController = undefined
-      activeQueryClient = undefined
       activeTimer = undefined
       stopActiveAvailability?.()
       stopActiveAvailability = undefined
@@ -269,7 +264,6 @@ export function useShipBalanceGate(): ShipBalanceGate {
           activeTimer = undefined
         }
         activeController = undefined
-        activeQueryClient = undefined
         stopActiveAvailability?.()
         stopActiveAvailability = undefined
         if (getBalanceGateExpiry().generation !== readGeneration) return
@@ -291,7 +285,6 @@ export function useShipBalanceGate(): ShipBalanceGate {
           activeTimer = undefined
         }
         activeController = undefined
-        activeQueryClient = undefined
         stopActiveAvailability?.()
         stopActiveAvailability = undefined
         if (getBalanceGateExpiry().generation !== readGeneration) return

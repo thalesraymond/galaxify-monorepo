@@ -3,7 +3,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import type { ApiTransport } from '@/api/transport'
 import { getDownstreamSessionGeneration } from '@/shared/reconciliation'
 
-import { getShip, repairShip, shipQueryKey, type ShipState } from './shipApi'
+import { getShip, getShipFetchMark, repairShip, shipQueryKey, type ShipState } from './shipApi'
 
 /**
  * Composes the caller's abort signal with the query's own signal: a bounded
@@ -36,17 +36,29 @@ function composeSignals(caller: AbortSignal | undefined, query: AbortSignal): Ab
  * read (session boundary, superseded round, timeout) instead of letting it
  * publish facts after the round is gone.
  */
-export function observeShip(
+export async function observeShip(
   queryClient: QueryClient,
   transport: ApiTransport,
   signal?: AbortSignal,
 ): Promise<ShipState> {
-  return queryClient.query({
+  // A negative stale time is always stale, even when data was written in the
+  // same millisecond, so an observation always reaches the server.
+  const before = getShipFetchMark().generation
+  const data = await queryClient.query({
     queryKey: shipQueryKey,
     queryFn: ({ signal: querySignal }) => getShip(transport, composeSignals(signal, querySignal)),
-    staleTime: 0,
+    staleTime: -1,
     retry: false,
   })
+  // A cancelled fetch with revert returns the retained cache state instead of
+  // rejecting. A real fetch advances the marker; if a newer read with different
+  // facts landed first, this result must not overwrite it. TanStack structural
+  // sharing may store an equal, but not identical, object.
+  const after = getShipFetchMark()
+  if (after.generation === before || JSON.stringify(after.state) !== JSON.stringify(data)) {
+    throw new Error('Ship read did not produce a fresh authoritative result.')
+  }
+  return data
 }
 
 /** Publish only the confirmed repair, preventing an older read from undoing it. */

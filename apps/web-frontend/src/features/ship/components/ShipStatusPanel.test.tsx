@@ -149,6 +149,45 @@ describe('ShipStatusPanel composite', () => {
     expect(downstreamReconciliation.getPhase('ship:repair:readiness')).toBe('idle')
     expect(screen.queryByText('The Ship was repaired.')).not.toBeInTheDocument()
   })
+  it('drops a repair failure received after the session clears', async () => {
+    const user = userEvent.setup()
+    server.reset('damaged-ship')
+    const queryClient = createQueryClient()
+    const transport = await createPanelTransport()
+    mountPanelTree(queryClient, transport)
+    await screen.findByRole('heading', { level: 2, name: 'Ship status' })
+    let release: () => void = () => {}
+    let received: () => void = () => {}
+    const started = new Promise<void>((resolve) => {
+      received = resolve
+    })
+    server.server.use(
+      http.post('/api/ship/ships/repair', async () => {
+        received()
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+        return HttpResponse.json(
+          { error: { code: 'INTERNAL_ERROR', message: 'Repair failed.' } },
+          { status: 500 },
+        )
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Repair Ship' }))
+    await started
+    act(() => {
+      clearDownstreamObservations()
+    })
+    await act(async () => {
+      release()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    expect(
+      screen.queryByText('We could not reach the Ship service. Try again.'),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('blocks repair while a balance observation is updating', async () => {
     await mountPanel()
     act(() => {

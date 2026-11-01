@@ -70,7 +70,8 @@ export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode }
       setRepairSucceededAt((round) => round + 1)
       beginReconciliation()
     },
-    onError: (error: unknown) => {
+    onError: (error: unknown, generation: number) => {
+      if (generation !== getDownstreamSessionGeneration()) return
       setRepairOutcome(classifyRepairError(error))
     },
   })
