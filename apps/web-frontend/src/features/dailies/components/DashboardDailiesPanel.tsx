@@ -178,6 +178,13 @@ export function DashboardDailiesPanel() {
             {completed.length > 0 ? (
               <details className={styles.completedSection}>
                 <summary>
+                  <svg
+                    className={styles.disclosureIndicator}
+                    aria-hidden="true"
+                    viewBox="0 0 16 16"
+                  >
+                    <path d="m6 3 5 5-5 5" />
+                  </svg>
                   <h3>Completed ({completed.length})</h3>
                 </summary>
                 <ul className={styles.rows}>{completed.map(renderRow)}</ul>

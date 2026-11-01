@@ -76,7 +76,7 @@
   right: 0;
   bottom: 0;
   left: 0;
-  padding: max(var(--space-1), env(safe-area-inset-bottom)) var(--space-2);
+  padding: max(var(--space-1), env(safe-area-inset-bottom)) var(--space-1);
   border-top: 1px solid color-mix(in srgb, var(--color-mint) 20%, transparent);
   background: var(--color-shell);
 }
@@ -89,12 +89,17 @@
   flex-direction: column;
   justify-content: center;
   gap: 0;
-  padding: var(--space-1);
-  font-size: 0.75rem;
+  padding: var(--space-1) 0;
+  font-size: 0.875rem;
+  font-weight: 400;
+  letter-spacing: -0.01em;
   text-align: center;
 }
 .mobileNav .navMark {
   font-size: 1rem;
+}
+.mobileNav .navLink:focus-visible {
+  outline-offset: 0;
 }
 .sidebarAccount {
   margin-top: auto;
