@@ -110,8 +110,9 @@ refetches and settles as completed.
 
 Daily create/edit/delete, profile changes, Ship repair, and Expedition launch
 are pessimistic. Disable only the initiating action, preserve input, and leave
-unrelated navigation/actions available. Toasts are reserved for outcomes that
-would otherwise be invisible.
+unrelated navigation/actions available. While a relevant Daily award is updating,
+balance-dependent Repair and Launch remain unavailable with an adjacent
+explanation. Toasts are reserved for outcomes that would otherwise be invisible.
 
 ### 3.4 Eventual consistency
 
@@ -130,8 +131,11 @@ bounded so an observation cannot remain `Updating…` indefinitely.
 - Signup permits a partial Dashboard while Ship, Daily player state, and
   Expedition Ship state provision for up to about 30 active seconds.
 - Daily completion confirms its typed material award, then reconciles Ship.
-  Gate actions depending on that balance while it updates. The award's baseline
-  is the confirmed Ship balance the browser held before the command was
+  Gate Repair and Launch while a relevant award updates. After observation expiry,
+  release the gate only after a successful authoritative Ship read. A failed or
+  absent read keeps actions unavailable with stale feedback and Retry; expected
+  but unobserved awards are never credited as spendable materials. The award's
+  baseline is the confirmed Ship balance the browser held before the command was
   submitted, never a first read that may already include the award. Without
   that baseline the observation refreshes and publishes facts but never claims
   the award was observed.

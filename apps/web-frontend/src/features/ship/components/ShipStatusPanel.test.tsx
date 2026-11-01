@@ -17,7 +17,11 @@ import {
   onUnhandledMockRequest,
 } from '@/mocks'
 import { TransportProvider } from '@/shared/api/TransportContext'
-import { clearDownstreamObservations } from '@/shared/reconciliation'
+import {
+  clearDownstreamObservations,
+  registerBalanceGateKey,
+  registerDownstreamObservation,
+} from '@/shared/reconciliation'
 import { advanceFake, enableFakeTimers, settleForeground, waitForUi } from '@/test/fakeTimers'
 
 import { shipQueryKey } from '../api/shipApi'
@@ -108,6 +112,22 @@ function ExpeditionObserver({ onObserved }: { onObserved: () => void }) {
 }
 
 describe('ShipStatusPanel composite', () => {
+  it('blocks repair while a balance observation is updating', async () => {
+    await mountPanel()
+    act(() => {
+      registerBalanceGateKey('daily:test:award')
+      registerDownstreamObservation({
+        key: 'daily:test:award',
+        read: () => new Promise(() => {}),
+        isSatisfied: () => false,
+        publish: () => {},
+      })
+    })
+    const repair = screen.getByRole('button', { name: 'Repair Ship' })
+    expect(repair).toBeDisabled()
+    expect(repair).toHaveAccessibleDescription(/balance/i)
+  })
+
   it('keeps concise guidance beside Repair and discloses detailed mechanics on demand', async () => {
     const user = userEvent.setup()
     await mountPanel('damaged-ship')
@@ -560,6 +580,26 @@ describe('ShipStatusPanel composite', () => {
     await advanceFake(1_000)
 
     expect(screen.getByText(/Updated 3 minutes ago/)).toBeInTheDocument()
+  })
+
+  it('does not allow a repair outcome retry while a Daily balance is updating', async () => {
+    const user = userEvent.setup()
+    await mountPanel('damaged-ship')
+    server.server.use(
+      http.post('/api/ship/ships/repair', () => new HttpResponse(null, { status: 500 })),
+    )
+    await user.click(screen.getByRole('button', { name: 'Repair Ship' }))
+    await screen.findByText('We could not reach the Ship service. Try again.')
+    act(() => {
+      registerBalanceGateKey('daily:retry:award')
+      registerDownstreamObservation({
+        key: 'daily:retry:award',
+        read: () => new Promise(() => {}),
+        isSatisfied: () => false,
+        publish: () => {},
+      })
+    })
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeDisabled()
   })
 
   it('focuses the failure outcome and lets Retry repair again', async () => {

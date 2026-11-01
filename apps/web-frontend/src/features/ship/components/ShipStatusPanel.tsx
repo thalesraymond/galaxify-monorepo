@@ -23,6 +23,7 @@ import { getShip, shipQueryKey } from '../api/shipApi'
 import { repairShipAndCache } from '../api/shipQueries'
 import { useShipRepairReconciliation } from './useShipRepairReconciliation'
 import styles from './ShipStatusPanel.module.css'
+import { useShipBalanceGate } from './useShipBalanceGate'
 
 /** Why the Repair control is presently unavailable; shared by eligibility and typed errors. */
 type RepairBlocker = 'hull_full' | 'no_materials'
@@ -44,6 +45,7 @@ const UPDATED_AT_REFRESH_MS = 30_000
 export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode } = {}) {
   const transport = useApiTransport()
   const queryClient = useQueryClient()
+  const balanceGate = useShipBalanceGate()
 
   const shipQuery = useQuery({
     queryKey: shipQueryKey,
@@ -110,6 +112,7 @@ export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode }
   }, [repairSucceededAt])
 
   const retryRepair = (): void => {
+    if (balanceGate.state !== 'open') return
     setRepairOutcome({ kind: 'none' })
     repairButtonRef.current?.focus()
     repairMutation.mutate()
@@ -152,11 +155,15 @@ export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode }
   const repairBlocked: RepairBlocker | undefined =
     ship.hull_health >= 100 ? 'hull_full' : ship.materials_balance <= 0 ? 'no_materials' : undefined
   const repairDescribedBy =
-    repairOutcome.kind !== 'none'
-      ? 'repair-outcome'
-      : repairBlocked !== undefined
-        ? 'repair-guidance'
-        : 'repair-summary'
+    repairBlocked === 'hull_full'
+      ? 'repair-guidance'
+      : balanceGate.state !== 'open'
+        ? 'repair-balance-gate'
+        : repairOutcome.kind !== 'none'
+          ? 'repair-outcome'
+          : repairBlocked !== undefined
+            ? 'repair-guidance'
+            : 'repair-summary'
 
   return (
     <ContentSurface tone="raised" aria-labelledby="ship-status-heading" className={styles.panel}>
@@ -201,6 +208,18 @@ export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode }
         ) : null}
 
         <div className={styles.repair}>
+          {balanceGate.state !== 'open' && repairBlocked !== 'hull_full' ? (
+            <div id="repair-balance-gate">
+              <StatusBadge status={balanceGate.state === 'stale' ? 'delayed' : 'updating'} />
+              <p>{balanceGate.reason}</p>
+              {balanceGate.state === 'stale' ? (
+                <Button variant="secondary" onClick={balanceGate.retry}>
+                  Retry
+                </Button>
+              ) : null}
+              <LiveRegion message={balanceGate.reason} />
+            </div>
+          ) : null}
           {repairBlocked !== undefined ? (
             <p id="repair-guidance" className={styles.copy}>
               {blockerMessage(repairBlocked, 'eligibility')}{' '}
@@ -216,7 +235,7 @@ export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode }
           <Button
             ref={repairButtonRef}
             loading={repairMutation.isPending}
-            disabled={repairBlocked !== undefined}
+            disabled={repairBlocked !== undefined || balanceGate.state !== 'open'}
             aria-describedby={repairDescribedBy}
             onClick={() => {
               setRepairOutcome({ kind: 'none' })
@@ -227,7 +246,12 @@ export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode }
           </Button>
           {repairOutcome.kind !== 'none' ? (
             <div ref={outcomeRegionRef} id="repair-outcome" className={styles.outcome}>
-              <RepairOutcomeMessage outcome={repairOutcome} onRetry={retryRepair} />
+              <RepairOutcomeMessage
+                outcome={repairOutcome}
+                onRetry={retryRepair}
+                disabled={repairBlocked !== undefined || balanceGate.state !== 'open'}
+                describedBy={repairDescribedBy}
+              />
             </div>
           ) : null}
           <Disclosure summary="How repair works">
@@ -276,7 +300,11 @@ function ShipUpdatedAt({ updatedAt }: { updatedAt: string }) {
 function RepairOutcomeMessage({
   outcome,
   onRetry,
+  disabled,
+  describedBy,
 }: {
+  disabled: boolean
+  describedBy: string
   outcome: Exclude<RepairOutcome, { kind: 'none' }>
   onRetry: () => void
 }) {
@@ -294,7 +322,12 @@ function RepairOutcomeMessage({
       return (
         <>
           <FormError>{outcome.message}</FormError>
-          <Button variant="secondary" onClick={onRetry}>
+          <Button
+            variant="secondary"
+            onClick={onRetry}
+            disabled={disabled}
+            aria-describedby={disabled ? describedBy : undefined}
+          >
             Retry
           </Button>
         </>
@@ -305,7 +338,12 @@ function RepairOutcomeMessage({
           <p role="alert" className={styles.copy}>
             We could not reach the Ship service. Try again.
           </p>
-          <Button variant="secondary" onClick={onRetry}>
+          <Button
+            variant="secondary"
+            onClick={onRetry}
+            disabled={disabled}
+            aria-describedby={disabled ? describedBy : undefined}
+          >
             Retry
           </Button>
         </>

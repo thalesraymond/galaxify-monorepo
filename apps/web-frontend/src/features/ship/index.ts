@@ -5,3 +5,4 @@ import { ShipPage } from './pages/ShipPage'
 
 export { ShipPage, ShipStatusPanel, getShip, observeShip, shipQueryKey }
 export type { ShipState } from './api/shipApi'
+export { useShipBalanceGate } from './components/useShipBalanceGate'

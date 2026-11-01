@@ -6,6 +6,9 @@ import {
   downstreamReconciliation,
   onClearDownstreamObservations,
   registerDownstreamObservation,
+  markBalanceGateExpired,
+  registerBalanceGateKey,
+  unregisterBalanceGateKey,
   type DownstreamObservationPhase,
 } from '@/shared/reconciliation'
 
@@ -126,6 +129,7 @@ export function registerDailyAwardObservation(
     expectedAward,
   })
   publishSnapshot()
+  registerBalanceGateKey(key)
   if (phase === 'delayed') {
     // The previous round expired: restart its bounded budget with the fresh
     // expectation.
@@ -147,6 +151,9 @@ export function registerDailyAwardObservation(
  * account change, or disposal must not leave a Daily looking reconciled.
  */
 export function clearDailyAwardExpectations(): void {
+  for (const dailyId of expectations.keys()) {
+    unregisterBalanceGateKey(dailyAwardObservationKey(dailyId))
+  }
   for (const detach of phaseSubscriptions.values()) {
     detach()
   }
@@ -221,6 +228,14 @@ function subscribeToPhases(dailyId: string): void {
 function notifyPhase(dailyId: string): void {
   const phase = downstreamReconciliation.getPhase(dailyAwardObservationKey(dailyId))
   const expectation = expectations.get(dailyId)
+  if (phase === 'idle') {
+    unregisterBalanceGateKey(dailyAwardObservationKey(dailyId))
+  } else {
+    registerBalanceGateKey(dailyAwardObservationKey(dailyId))
+  }
+  if (phase === 'delayed' && expectation !== undefined && expectation.phase !== 'delayed') {
+    markBalanceGateExpired()
+  }
   if (expectation === undefined || expectation.phase === phase) {
     return
   }

@@ -6,6 +6,7 @@ import { AppProviders } from '@/app/providers'
 import { AppShell } from '@/app/shell/AppShell'
 import { DashboardPage } from '@/app/pages/DashboardPage'
 import { RequireAuth, type SessionRuntime } from '@/features/auth'
+import { DailiesListPage } from '@/features/dailies'
 import { ShipPage } from '@/app/pages/ShipPage'
 import {
   ExpeditionDetailPage,
@@ -39,6 +40,7 @@ const expeditionRouteTree: RouteObject[] = [
           { path: '/expeditions', element: <ExpeditionsPage /> },
           { path: '/dashboard', element: <DashboardPage /> },
           { path: '/ship', element: <ShipPage /> },
+          { path: '/dailies', element: <DailiesListPage /> },
           { path: '/expeditions/history', element: <ExpeditionHistoryPage /> },
           { path: '/expeditions/:expeditionId', element: <ExpeditionDetailPage /> },
         ],
