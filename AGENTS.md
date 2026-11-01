@@ -149,3 +149,9 @@ Triage uses the default five labels: `needs-triage`, `needs-info`,
 
 Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See
 `docs/agents/domain.md`.
+
+### Agent wiki
+
+Long-lived agent working memory lives in `docs/wiki/`; read
+[`docs/wiki/index.md`](docs/wiki/index.md) before making decisions and update it
+when something durable is learned.
