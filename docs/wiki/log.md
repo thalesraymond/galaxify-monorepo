@@ -114,3 +114,15 @@ key settled. The fix uses monotonic session generations and a session-owned
 one-shot read; see
 [`problems/reconciliation-approval-generations.md`](problems/reconciliation-approval-generations.md).
 Full frontend gate passed in CI in 5m50s. Cross-flow verification remains #228.
+
+## [2026-11-01] merged | Reconciliation consolidation
+
+Issue #228 (PR #268, galaxify-monorepo@268352d) completed the Downstream
+Reconciliation migration: shared session generations guard Daily, repair,
+launch, result, and reward callbacks; the Ship seam rejects cancelled/reverted
+or command-superseded reads; the gate pauses hidden/offline; and a combined
+real-caller suite plus a Chromium journey cover the flows together. Review found
+and fixed a retained-cache publication path in `observeShip`; see
+[`problems/tanstack-revert-retained-cache.md`](problems/tanstack-revert-retained-cache.md).
+Full frontend gate passed in CI in 5m58s. Remaining non-blocking risk: hiding a
+gate surface can abort a Ship read another observation joined; the round retries.

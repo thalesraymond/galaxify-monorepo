@@ -62,6 +62,9 @@ This wiki complements, and does not replace, [`docs/adr/`](../adr/) and
 - [Reconciliation approval generations](problems/reconciliation-approval-generations.md) —
   On 2026-11-01, #227 showed that gate approvals need monotonic expiry
   generations and session-owned reads, not delayed-key sets or view-scoped reads.
+- [TanStack revert retained cache](problems/tanstack-revert-retained-cache.md) —
+  On 2026-11-01, #228 showed that a cancelled query can resolve the old cache;
+  prove a real fetch and reject command-superseded reads at the Ship seam.
 
 ## Subsystems
 

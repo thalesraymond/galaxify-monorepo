@@ -56,3 +56,11 @@ and [module-level subscriptions](../problems/module-level-subscription-never-pau
   transition into `delayed`. The gate releases only after a successful
   authoritative Ship read following that expiry; failures show stale feedback
   and a gate Retry. See [approval generations](../problems/reconciliation-approval-generations.md).
+- As of `galaxify-monorepo@268352d` (2026-11-01), issue #228 completed the
+  migration: Daily awards, repair readiness, launch deduction, result and
+  reward observation, and the balance gate all use the shared module; no local
+  probe scheduler remains. Command callbacks carry a shared session generation,
+  and the Ship seam rejects cancelled/reverted or command-superseded reads. The
+  combined cross-flow suite lives in `src/app/pages/ReconciliationCrossFlow.test.tsx`;
+  the browser journey is `e2e/reconciliation-flows.spec.ts`. See
+  [TanStack revert retained cache](../problems/tanstack-revert-retained-cache.md).
