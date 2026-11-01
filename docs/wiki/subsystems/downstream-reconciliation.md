@@ -36,3 +36,14 @@ was described in `docs/specs/web-frontend.md` §3.2. Navigation pointers:
 
 For timing and observer pitfalls see [fake timers](../problems/fake-timers-freeze-bounded-observations.md)
 and [module-level subscriptions](../problems/module-level-subscription-never-pauses-observations.md).
+- As of `galaxify-monorepo@7a2e880` (2026-11-01), Expedition resolution
+  reward is a session-owned expectation in `features/expeditions/lib/`
+  `expeditionRewardObservation.ts`, keyed `expedition:{id}:reward`. It is
+  registered by the overview transition or resolved-current branch, the detail
+  `ResultPanel`, and Dashboard when the current Expedition already carries a
+  typed result. History rows never discover rewards; opening a result detail
+  may. The baseline must be a confirmed Ship snapshot whose `updated_at`
+  predates the result's `created_at`; if the snapshot may already include the
+  reward, fresh facts are published but confirmation is never claimed. The
+  local `useProbeSchedule` / `useShipReconciliation` scheduler was removed at
+  that SHA.

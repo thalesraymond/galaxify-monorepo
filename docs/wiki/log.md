@@ -89,3 +89,16 @@ the QueryClient route seam are recorded in
 [`problems/reconciliation-baseline-capture.md`](problems/reconciliation-baseline-capture.md).
 Full frontend gate passed in CI in 6m07s. Resolution reward remains on the local
 scheduler for #226.
+
+## [2026-11-01] merged | Expedition rewards across views
+
+Issue #226 (PR #264, galaxify-monorepo@7a2e880) moved reward observation onto
+the shared module, retained a pre-resolution Ship snapshot validated by
+`updated_at < result.created_at`, registered from the overview, detail, and
+Dashboard, and removed the last local probe scheduler. History deliberately
+does not discover rewards. Review rejected `as unknown as` in E2E and required
+pre-mounted and already-rewarded baseline cases plus two independent pending
+identities; all landed in `01f695f`. Coverage mode exposed an unrelated
+focus/`aria-current` race, stabilized in `0906a5e` and recorded in
+[`problems/split-ui-settlement-assertions.md`](problems/split-ui-settlement-assertions.md).
+Full frontend gate passed in CI in 5m50s.

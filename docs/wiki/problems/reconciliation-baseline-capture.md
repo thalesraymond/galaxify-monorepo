@@ -33,3 +33,13 @@ The route-test seam added in #225 — `AppProviders.queryClient` and
 `renderExpeditionRoute(path, queryClient)` — makes both races deterministic
 without a second application-state store. See also
 [downstream reconciliation](../subsystems/downstream-reconciliation.md).
+
+## Reward evidence is timestamped
+
+On 2026-11-01, issue #226 extended the rule to Expedition rewards: a Ship
+snapshot is usable only when its `updated_at` predates the result's
+`created_at`. A cache that already includes the reward must be rejected, or
+the expected balance overshoots by the reward and never settles. Without that
+evidence the observation still publishes fresh facts, but it never claims
+confirmation. See `galaxify-monorepo@7a2e880` and
+[downstream reconciliation](../subsystems/downstream-reconciliation.md).

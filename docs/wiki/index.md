@@ -53,14 +53,18 @@ This wiki complements, and does not replace, [`docs/adr/`](../adr/) and
   On 2026-11-01, stale installed Playwright requested different browser revisions;
   after a locked install, host WebKit libraries blocked full verification.
 - [Reconciliation baseline capture](problems/reconciliation-baseline-capture.md) —
-  On 2026-11-01, issue #225 showed that a success-callback baseline can already
-  include the expected change; capture it pre-submit and test the cache race.
+  On 2026-11-01, issues #225/#226 showed that success-callback and first-read
+  baselines can already include the expected change; capture pre-command
+  evidence and test the cache race.
+- [Split UI settlement assertions](problems/split-ui-settlement-assertions.md) —
+  On 2026-11-01, a coverage-only flake showed focus and `aria-current` settling
+  in separate commits; wait for related UI facts together.
 
 ## Subsystems
 
 - [Downstream reconciliation](subsystems/downstream-reconciliation.md) —
-  On 2026-11-01, navigation pointers mapped the coordinator, public hook,
-  domain adapters, and lifecycle tests at the reviewed SHA.
+  On 2026-11-01, navigation pointers mapped the coordinator, public hook, and
+  the Daily, repair, launch, and reward adapters through the reviewed SHA.
 
 ## Preferences
 
