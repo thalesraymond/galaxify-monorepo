@@ -1,5 +1,32 @@
 # Comparison evidence — not design approval
 
+## Selected After hours follow-up — 2026-11-01
+
+The user selected After hours as the winner and requested Assembly's top-menu
+layout plus a spacecraft-shaped Ship-detail mosaic. Both amendments are applied;
+dark palette, typography, existing mechanics and mobile Menu remain intact.
+
+The scoped independent follow-up review returned **ship** for those two changes:
+top-menu geometry matches Assembly without importing its light palette; the
+silhouette reads as nose, fuselage, wings and split engines at desktop and phone
+sizes, still with exactly 100 cells and 42 initially intact. No material fixes
+were requested. This does not approve production or the whole frontend.
+
+Current follow-up evidence is `evidence/selected/` (base and scroll-part captures).
+Verification passed four full journeys at 1440/768/390/320, 12 main-view axe
+scans, keyboard/reflow/reduced-motion checks, top-menu row placement, and 100/42
+cell assertions, plus the sample-state/menu/switcher case. Prototype build, repo
+lint and format, and all 385 existing tests pass. Ship and Dashboard inspector
+runs have zero failures; footer-space warnings remain accepted, with no new
+type/color/radius rules introduced. Detector retains the known workhorse-face
+warnings and pre-existing design-record coverage advisories; these were not
+silently broadened into a design-system repair.
+
+The reviewer used the supplied keyboard verification rather than independently
+driving the browser. Its focused input did not include new expanded-menu/focus
+captures or the original quality-bar assets; these limit that review's scope.
+The original comparison below remains historical evidence at `2073fa1`.
+
 ## Review outcome
 
 The independent finish review found matching type/material/ground and three

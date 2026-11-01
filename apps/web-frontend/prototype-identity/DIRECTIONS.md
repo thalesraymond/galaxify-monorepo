@@ -1,5 +1,19 @@
 # Identity comparison — disposable, not a production design authority
 
+## User-selected refinement — 2026-11-01
+
+The human explicitly selected **After hours** as the winner, with two amendments:
+use **Assembly's top-menu layout**, retaining After hours' dark styling; and make
+the Ship-detail hull mosaic recognizable as a spacecraft rather than a generic
+square. The refined silhouette has a nose, fuselage, swept wings and twin aft
+engines, still exactly 100 cells with exactly the confirmed hull count intact.
+Mobile retains the existing labelled Menu disclosure; no game mechanics change.
+
+This supersedes the original After hours sidebar contract below for the selected
+prototype. The original three-way comparison remains captured at commit
+`2073fa1`. Selection authorizes this prototype refinement, not production merging
+or the later whole-frontend design specification.
+
 Question: which visual world makes the existing Daily → Ship → Expedition loop
 feel original while keeping the habit easy? Mode: Operate, code-first. The approved
 map requires all three working alternatives before any aesthetic selection; that

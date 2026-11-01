@@ -1,6 +1,12 @@
 # Galaxify identity comparison
 
-**Throwaway interactive prototypes. Not production, not an approved direction.**
+**Throwaway interactive prototypes. After hours was selected for refinement;
+production implementation and the final specification are not approved.**
+
+The selected After hours prototype now uses Assembly's top navigation in its own
+dark palette. The detailed Ship mosaic depicts a spacecraft with a nose, wings,
+and twin engines while preserving 100 hull cells. Original comparison evidence
+is retained at commit `2073fa1`; follow-up evidence is under `evidence/selected/`.
 
 ## Run
 
@@ -21,8 +27,8 @@ controls resizes the app viewport rather than covering its work:
   compact task work, a cell-based Ship assembly diagram, tight shapes.
 - [Daylight](http://127.0.0.1:4318/dashboard?variant=daylight) — personal greeting,
   labelled sidebar, soft tonal sections, habit-completion marks, less game imagery.
-- [After hours](http://127.0.0.1:4318/dashboard?variant=after-hours) — neutral dark,
-  compact Daily table, game facts in a horizontal band, visible damaged Ship cells.
+- [After hours](http://127.0.0.1:4318/dashboard?variant=after-hours) — selected neutral
+  dark direction, top navigation, compact Daily table, game band and spacecraft hull.
 
 `/dailies`, `/ship`, and `/expeditions` work inside this isolated app. Share the
 `?variant=` value; reload resets all data. Switching alternatives preserves state

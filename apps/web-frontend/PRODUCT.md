@@ -29,7 +29,9 @@ No backend changes or new mechanics are part of the identity exploration.
 ## Brand Commitments
 
 Preserve the Galaxify name and canonical terminology. The existing visual identity
-is not binding for the redesign. No replacement direction is approved yet.
+is not binding for the redesign. The user selected After hours for prototype
+refinement, with Assembly's top navigation and a spacecraft-shaped Ship mosaic.
+This does not approve a production redesign or final cross-frontend specification.
 
 ## Evidence on Hand
 

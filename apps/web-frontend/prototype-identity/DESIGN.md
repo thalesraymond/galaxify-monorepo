@@ -1,6 +1,6 @@
 ---
 name: Galaxify identity comparison (provisional)
-description: Three disposable Operate alternatives; no selected or approved production identity.
+description: After hours selected for prototype refinement; no approved production identity.
 colors:
   assembly-ground: "#f8f8f8"
   assembly-surface: "#fff"
@@ -100,12 +100,12 @@ components:
 
 **Creative North Star: "Three exploratory worlds, one habit-to-Ship loop"**
 
-This is a code-led, Operate-mode comparison, not a production brand system. All three alternatives are provisional and equally exploratory: Assembly's model-kit ledger, Daylight's personal habit planner, and After hours' flat black catalogue. These names describe the built contracts, not a user-approved preference. Live human reaction is still owed; no aesthetic selection has occurred.
+This is a code-led, Operate-mode prototype, not a production brand system. After comparing Assembly's model-kit ledger, Daylight's personal habit planner, and After hours' flat black catalogue, the user selected **After hours**, amended with **Assembly's top navigation** and a **spacecraft-shaped Ship mosaic**. Production approval and cross-frontend validation remain outstanding. The original comparison is preserved at commit `2073fa1`.
 
 The authority here stops at this disposable prototype. [PRODUCT.md](../PRODUCT.md) supplies product truth; [DIRECTIONS.md](DIRECTIONS.md) supplies alternative contracts. The observed implementation is [prototype.module.css](prototype.module.css), [main.tsx](main.tsx), and [data.ts](data.ts). This record does not alter the production `../DESIGN.md` or certify the whole frontend.
 
 **Key Characteristics:**
-- Three unselected, provisional alternatives at equal interaction fidelity.
+- After hours selected for refinement; two original alternatives remain available.
 - Immediate Daily completion; confirmed Ship facts and explicit delayed updates.
 - Code-authored geometry and licensed self-hosted type, not generated imagery.
 
@@ -129,9 +129,9 @@ The hierarchy uses the frontmatter headline, section title, row title, body, lab
 
 ## Layout
 
-Assembly: centered frame (1248px maximum, 24px side padding), top navigation (88px minimum), work/support tracks (1.94fr/1fr) and 24px gaps. Daylight: sidebar (216px), white sheet (32px inset), work area (1100px maximum), work/support tracks (9fr/3fr, support minimum 250px), 16px gaps. After hours: rail (210px), factual header (72px), 32px work inset, Daily rows above a Ship/Expedition band (1.4fr/1fr, 24px gap).
+Assembly: centered frame (1248px maximum, 24px side padding), top navigation (88px minimum), work/support tracks (1.94fr/1fr) and 24px gaps. Daylight: sidebar (216px), white sheet (32px inset), work area (1100px maximum), work/support tracks (9fr/3fr, support minimum 250px), 16px gaps. After hours now uses Assembly's centered frame and top-navigation geometry in its own dark palette, with Daily rows above a Ship/Expedition band (1.4fr/1fr, 24px gap).
 
-At 1100px, Daylight and After hours rails narrow to 180px; Daylight work, detail views, and the game band become one column, with Daylight support temporarily two columns. At 850px desktop navigation is replaced by a labelled Menu and 72px top reservation; side padding becomes 20px. At 640px support and rows stack. At 480px After hours Ship geometry sits above its facts and shrinks to 100px high; hull numbers do not wrap.
+At 1100px, Daylight's rail narrows to 180px; Daylight work, detail views, and the game band become one column, with Daylight support temporarily two columns. At 850px desktop navigation is replaced by a labelled Menu and 72px top reservation; side padding becomes 20px. At 640px support and rows stack. At 480px After hours Ship geometry sits above its facts and shrinks to 100px high; hull numbers do not wrap.
 
 **The Reserved Comparison Lane Rule.** Comparison controls occupy a separate bottom lane (124px closed; `min(52dvh, 420px)` open). The app's height is the remaining dynamic viewport and it scrolls independently above that lane. Do not interpret a base viewport capture as the full independently scrolling journey.
 
@@ -141,7 +141,7 @@ All three alternatives use flat tonal layering, dividers, and whitespace. No sha
 
 ## Shapes
 
-Assembly combines compact controls with lightly rounded sections. Daylight and After hours use pill controls with softer sections; Daylight's outer sheet has its own radius. Notices retain the shared notice shape and padding in every alternative, independent of section radius. The hull is 100 authored SVG cells (12px squares, 1px corner radius); intact cells use data color and damaged cells use raised tone. Daylight deliberately omits this diagram and retains the numeric/meter facts.
+Assembly combines compact controls with lightly rounded sections. Daylight and After hours use pill controls with softer sections; Daylight's outer sheet has its own radius. Notices retain the shared notice shape and padding in every alternative, independent of section radius. The hull is 100 authored SVG cells (12px squares, 1px corner radius). After hours' detailed Ship silhouette now has a nose, swept wings and split engines: intact cells use data color, damaged cells have a neutral control-color outline. Compact overview mosaics keep the original geometry. Daylight deliberately omits this diagram and retains the numeric/meter facts.
 
 ## Components
 

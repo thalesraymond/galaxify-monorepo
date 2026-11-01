@@ -501,39 +501,17 @@
   background: var(--ink);
 }
 .nightFrame {
-  display: grid;
-  grid-template-columns: 210px minmax(0, 1fr);
-}
-.nightNav {
-  min-height: 100%;
-  border-right: 1px solid var(--border);
-  padding: 26px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 40px;
-}
-.nightNav nav {
-  flex-direction: column;
-}
-.nightNav .account {
-  margin-top: auto;
+  max-width: 1248px;
+  margin: auto;
+  padding: 0 24px;
 }
 .after-hours nav a[aria-current='page'] {
   background: transparent;
 }
-.nightHeader {
-  min-height: 72px;
-  padding: 0 32px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  border-bottom: 1px solid var(--border);
-  font-size: 14px;
-  color: var(--muted);
-}
-.nightCanvas .main {
-  padding: 32px;
+.spacecraft .damaged {
+  fill: transparent;
+  stroke: var(--control);
+  stroke-width: 1;
 }
 .nightWork {
   display: grid;
@@ -763,25 +741,19 @@
   .detailWork {
     grid-template-columns: 1fr;
   }
-  .nightFrame {
-    grid-template-columns: 180px minmax(0, 1fr);
-  }
 }
 @media (max-width: 850px) {
   .app {
     padding-top: 72px;
   }
   .topNav,
-  .sideNav,
-  .nightNav,
-  .nightHeader {
+  .sideNav {
     display: none;
   }
   .assemblyFrame {
     padding: 0 20px;
   }
-  .daylightFrame,
-  .nightFrame {
+  .daylightFrame {
     display: block;
     padding: 0;
   }
@@ -789,8 +761,8 @@
     padding: 0 20px;
     border-radius: 0;
   }
-  .nightCanvas .main {
-    padding: 32px 20px;
+  .nightFrame {
+    padding: 0 20px;
   }
   .daylight .main {
     padding-top: 32px;

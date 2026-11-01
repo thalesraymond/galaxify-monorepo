@@ -8,7 +8,10 @@ import assert from 'node:assert/strict'
 const browser = await chromium.launch()
 const results = []
 const base = process.env.PROTOTYPE_URL ?? 'http://127.0.0.1:4319'
-const directory = 'prototype-identity/evidence/after'
+const directory = process.env.PROTOTYPE_EVIDENCE_DIR ?? 'prototype-identity/evidence/after'
+const candidates = process.env.PROTOTYPE_VARIANT
+  ? [process.env.PROTOTYPE_VARIANT]
+  : ['assembly', 'daylight', 'after-hours']
 await mkdir(directory, { recursive: true })
 async function capture(page, name) {
   const surface = page.locator('#prototype-surface')
@@ -50,7 +53,7 @@ async function capture(page, name) {
   )
 }
 try {
-  for (const variant of ['assembly', 'daylight', 'after-hours']) {
+  for (const variant of candidates) {
     for (const width of [1440, 768, 390, 320]) {
       const context = await browser.newContext({
         viewport: { width, height: width < 500 ? 844 : 900 },
@@ -84,6 +87,35 @@ try {
           await new Promise(requestAnimationFrame)
         })
         await capture(page, `${variant}-${route}-${width}`)
+        if (variant === 'after-hours' && route === 'ship') {
+          const diagram = page.getByRole('img', {
+            name: 'Ship hull diagram: 42 of 100 cells intact',
+            exact: true,
+          })
+          assert.equal(await diagram.locator('rect').count(), 100)
+          assert.equal(
+            await diagram
+              .locator('rect')
+              .evaluateAll(
+                (rects) =>
+                  rects.filter((rect) => rect.getAttribute('class')?.includes('intact')).length,
+              ),
+            42,
+          )
+        }
+        if (variant === 'after-hours' && width === 1440) {
+          const navigation = page
+            .getByRole('navigation', { name: 'Primary' })
+            .filter({ visible: true })
+          const positions = await navigation
+            .getByRole('link')
+            .evaluateAll((links) => links.map((link) => link.getBoundingClientRect().top))
+          assert.equal(new Set(positions).size, 1, 'Desktop navigation must occupy one top row')
+          assert.ok(
+            positions.every((top) => top < 88),
+            'Navigation must be at the top, not in a sidebar',
+          )
+        }
         assert.equal(
           await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
           false,
@@ -162,7 +194,7 @@ try {
     }
   }
   // Daily states, filtering, menu Escape, switcher and keyboard order at each width.
-  for (const variant of ['assembly', 'daylight', 'after-hours']) {
+  for (const variant of candidates) {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await page.goto(`${base}/dashboard?variant=${variant}`)
     await page.getByRole('button', { name: 'Menu', exact: true }).click()

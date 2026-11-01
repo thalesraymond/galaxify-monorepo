@@ -24,23 +24,32 @@ function Mark() {
   )
 }
 
-function HullDiagram({ hull }: { hull: number }) {
+function HullDiagram({ hull, spacecraft = false }: { hull: number; spacecraft?: boolean }) {
   let cell = 0
-  const rows = [2, 4, 8, 10, 12, 14, 14, 12, 10, 8, 4, 2]
+  // Both silhouettes contain exactly 100 cells: each cell is one hull point.
+  const rows = spacecraft
+    ? [2, 4, 4, 4, 6, 6, 10, 12, 14, 14, 10, 6, 4, 4]
+    : [2, 4, 8, 10, 12, 14, 14, 12, 10, 8, 4, 2]
   return (
     <svg
-      className={styles.diagram}
-      viewBox="0 0 252 208"
+      className={`${styles.diagram} ${spacecraft ? styles.spacecraft : ''}`}
+      viewBox={spacecraft ? '0 0 256 240' : '0 0 252 208'}
       role="img"
       aria-label={`Ship hull diagram: ${hull} of 100 cells intact`}
     >
       {rows.flatMap((count, row) =>
         Array.from({ length: count }, (_, col) => {
           const intact = cell++ < hull
+          // Split the aft cells into two engines, with a central fuselage above.
+          const aftColumn = row === 11 ? [3, 4, 7, 8, 11, 12][col] : [3, 4, 11, 12][col]
+          const x =
+            spacecraft && row >= 11
+              ? (aftColumn ?? 0) * 16
+              : ((spacecraft ? 256 : 252) - count * 16) / 2 + col * 16
           return (
             <rect
               key={`${row}-${col}`}
-              x={(252 - count * 16) / 2 + col * 16}
+              x={x}
               y={8 + row * 16}
               width="12"
               height="12"
@@ -379,7 +388,9 @@ function Prototype() {
           <span>Level {ship.level}</span>
         </div>
         <div className={styles.shipBody}>
-          {variant !== 'daylight' && <HullDiagram hull={ship.hull} />}
+          {variant !== 'daylight' && (
+            <HullDiagram hull={ship.hull} spacecraft={detailed && variant === 'after-hours'} />
+          )}
           <div className={styles.shipFacts}>
             <div className={styles.hullLabel}>
               <span>Hull health</span>
@@ -636,18 +647,12 @@ function Prototype() {
         </div>
       ) : (
         <div className={styles.nightFrame}>
-          <aside className={styles.nightNav}>
+          <header className={styles.topNav}>
             {brand}
             {navigation}
             {account}
-          </aside>
-          <div className={styles.nightCanvas}>
-            <header className={styles.nightHeader}>
-              <span>Today’s routine</span>
-              <span>January 15, 2026 · 09:00 UTC</span>
-            </header>
-            {main}
-          </div>
+          </header>
+          {main}
         </div>
       )}
       <div className={styles.mobileNav}>
