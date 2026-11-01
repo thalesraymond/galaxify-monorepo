@@ -76,7 +76,12 @@ type ObservationEntry = {
 }
 
 export class DownstreamReconciliation {
-  public sessionGeneration = 0
+  private generation = 0
+
+  /** Monotonic Player-session id, bumped by every clear(). */
+  public get sessionGeneration(): number {
+    return this.generation
+  }
   private readonly entries = new Map<string, ObservationEntry>()
   /**
    * Visible observers live outside the rounds: a session clear retires every
@@ -223,7 +228,7 @@ export class DownstreamReconciliation {
    * A response that settles afterwards cannot publish or restore anything.
    */
   public clear(): void {
-    this.sessionGeneration += 1
+    this.generation += 1
     // Domain side state goes first: a retired round must not read as a
     // settled expectation to an adapter that is still subscribed to it.
     this.notifyClear()

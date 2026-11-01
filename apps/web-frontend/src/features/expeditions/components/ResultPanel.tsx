@@ -1,4 +1,4 @@
-import { useEffect, useId } from 'react'
+import { useEffect, useId, useState } from 'react'
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
@@ -39,15 +39,14 @@ export function ResultPanel({
   expeditionId,
   celebrate,
   showRewardSync = true,
-  sessionGeneration,
 }: {
   expeditionId: string
   celebrate: boolean
   showRewardSync?: boolean
-  sessionGeneration: number
 }) {
   const transport = useApiTransport()
   const queryClient = useQueryClient()
+  const [sessionGeneration] = useState(getDownstreamSessionGeneration)
   const query = useQuery({
     queryKey: expeditionDetailQueryKeyFor(expeditionId),
     queryFn: ({ signal }) => getExpeditionById(transport, expeditionId, signal),
@@ -61,11 +60,7 @@ export function ResultPanel({
       registerExpeditionReward(expedition, queryClient, transport)
   }, [expedition, queryClient, transport, sessionGeneration])
   const resultMissing = isExpeditionResultMissing(expedition)
-  const resultObservation = useExpeditionResultReconciliation(
-    expeditionId,
-    expedition,
-    sessionGeneration,
-  )
+  const resultObservation = useExpeditionResultReconciliation(expeditionId, expedition)
 
   if (query.isPending) {
     return <Skeleton lines={3} />

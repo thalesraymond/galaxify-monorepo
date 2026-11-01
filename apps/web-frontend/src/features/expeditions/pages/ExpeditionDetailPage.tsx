@@ -5,7 +5,6 @@ import { useQuery } from '@tanstack/react-query'
 
 import { isApiHttpError } from '@/api/transport'
 import { useApiTransport } from '@/shared/api/TransportContext'
-import { getDownstreamSessionGeneration } from '@/shared/reconciliation'
 import { LocalTabs, Skeleton, UnavailableState } from '@/shared/ui'
 import { PageHeader } from '@/shared/ui/PageHeader'
 
@@ -70,7 +69,6 @@ export function ExpeditionDetailPage() {
 }
 
 function ExpeditionDetail({ expeditionId }: { expeditionId: string }) {
-  const [sessionGeneration] = useState(getDownstreamSessionGeneration)
   const transport = useApiTransport()
   const query = useQuery({
     queryKey: expeditionDetailQueryKeyFor(expeditionId),
@@ -119,11 +117,7 @@ function ExpeditionDetail({ expeditionId }: { expeditionId: string }) {
       {expedition.status === 'IN_FLIGHT' ? (
         <ExpeditionProgress expedition={expedition} showLinks={false} />
       ) : (
-        <ResultPanel
-          expeditionId={expeditionId}
-          celebrate={newlyObserved}
-          sessionGeneration={sessionGeneration}
-        />
+        <ResultPanel expeditionId={expeditionId} celebrate={newlyObserved} />
       )}
     </div>
   )

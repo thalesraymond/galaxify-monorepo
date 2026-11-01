@@ -144,7 +144,6 @@ export function ExpeditionOverview() {
     return (
       <>
         <ResultPanel
-          sessionGeneration={sessionGeneration}
           expeditionId={current.expedition.id}
           celebrate={false}
           showRewardSync={false}
@@ -164,9 +163,7 @@ export function ExpeditionOverview() {
           }}
         />
       ) : null}
-      {resolved !== undefined ? (
-        <ResultPanel expeditionId={resolved.id} celebrate sessionGeneration={sessionGeneration} />
-      ) : null}
+      {resolved !== undefined ? <ResultPanel expeditionId={resolved.id} celebrate /> : null}
       <PendingExpeditionRewards excludeId={resolved?.id} />
       <LaunchForm balance={balance} />
     </div>
