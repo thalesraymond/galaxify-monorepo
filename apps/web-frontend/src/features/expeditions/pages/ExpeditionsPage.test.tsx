@@ -20,7 +20,11 @@ import { renderAppAt } from '@/test/renderApp'
 import { renderExpeditionRoute } from '@/test/renderExpeditionRoute'
 import { advanceFakeTime, advanceUntil, seedAuthenticatedSession } from '@/test/expeditionTestUtils'
 import { enableFakeTimers } from '@/test/fakeTimers'
-import { clearDownstreamObservations } from '@/shared/reconciliation'
+import {
+  clearDownstreamObservations,
+  registerBalanceGateKey,
+  registerDownstreamObservation,
+} from '@/shared/reconciliation'
 
 import type { MockTestServer } from '@/mocks'
 
@@ -88,6 +92,25 @@ function changeInvestment(value: string): void {
 }
 
 describe('Expeditions overview — launch form', () => {
+  it('blocks launch with an accessible reason while the Daily balance updates', async () => {
+    await renderOverviewFake()
+    await advanceUntil(() => screen.queryByText('You have 250 materials') !== null, 'balance')
+    changeInvestment('40')
+    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'quote')
+    act(() => {
+      registerBalanceGateKey('daily:pending:award')
+      registerDownstreamObservation({
+        key: 'daily:pending:award',
+        read: () => new Promise(() => {}),
+        isSatisfied: () => false,
+        publish: () => {},
+      })
+    })
+    const launch = screen.getByRole('button', { name: 'Launch Expedition' })
+    expect(launch).toBeDisabled()
+    expect(launch).toHaveAccessibleDescription(/balance is updating/i)
+  })
+
   it('compares a fast deduction with the balance from before submitting the launch', async () => {
     const queryClient = createQueryClient()
     let launched = false

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { isApiHttpError, isApiTransportError } from '@/api/transport'
-import { shipQueryKey, type ShipState } from '@/features/ship'
+import { shipQueryKey, useShipBalanceGate, type ShipState } from '@/features/ship'
 import { useApiTransport } from '@/shared/api/TransportContext'
 import {
   Button,
@@ -74,6 +74,7 @@ function parseInvestment(value: string): number | undefined {
 export function LaunchForm({ balance }: { balance: number | undefined }) {
   const transport = useApiTransport()
   const queryClient = useQueryClient()
+  const balanceGate = useShipBalanceGate()
   const [inputValue, setInputValue] = useState('')
   const [debouncedValue, setDebouncedValue] = useState('')
   const [launchError, setLaunchError] = useState<LaunchError | undefined>(undefined)
@@ -131,7 +132,7 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
   const quoteEligible = quoteQuery.data?.eligible === true
 
   async function submitLaunch(): Promise<void> {
-    if (investment === undefined) {
+    if (investment === undefined || balanceGate.state !== 'open') {
       return
     }
     setLaunchError(undefined)
@@ -214,6 +215,18 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
           <span className={styles.loadingHint}> Loading your balance…</span>
         ) : null}
       </p>
+      {balanceGate.state !== 'open' ? (
+        <div id="launch-balance-gate">
+          <StatusBadge status={balanceGate.state === 'stale' ? 'delayed' : 'updating'} />
+          <p>{balanceGate.reason}</p>
+          {balanceGate.state === 'stale' ? (
+            <Button variant="secondary" onClick={balanceGate.retry}>
+              Retry
+            </Button>
+          ) : null}
+          <LiveRegion message={balanceGate.reason} />
+        </div>
+      ) : null}
       <div className={styles.form}>
         <Field
           hint="Whole materials, at least 1."
@@ -258,7 +271,8 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
 
         <div className={styles.actions}>
           <Button
-            disabled={!quoteEligible || investment === undefined}
+            disabled={!quoteEligible || investment === undefined || balanceGate.state !== 'open'}
+            aria-describedby={balanceGate.state !== 'open' ? 'launch-balance-gate' : undefined}
             loading={launchMutation.isPending}
             onClick={() => {
               void submitLaunch()
@@ -274,6 +288,8 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
             <Button
               variant="secondary"
               loading={launchMutation.isPending}
+              disabled={balanceGate.state !== 'open'}
+              aria-describedby={balanceGate.state !== 'open' ? 'launch-balance-gate' : undefined}
               onClick={() => {
                 void submitLaunch()
               }}
@@ -289,6 +305,8 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
             <Button
               variant="secondary"
               loading={launchMutation.isPending}
+              disabled={balanceGate.state !== 'open'}
+              aria-describedby={balanceGate.state !== 'open' ? 'launch-balance-gate' : undefined}
               onClick={() => {
                 void submitLaunch()
               }}
@@ -303,6 +321,8 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
             <Button
               variant="secondary"
               loading={launchMutation.isPending}
+              disabled={balanceGate.state !== 'open'}
+              aria-describedby={balanceGate.state !== 'open' ? 'launch-balance-gate' : undefined}
               onClick={() => {
                 void submitLaunch()
               }}
