@@ -297,6 +297,13 @@ export function DailiesListPage() {
             {statusFilter !== 'PENDING' && completed.length > 0 ? (
               <details className={styles.completedSection} open={statusFilter === 'COMPLETED'}>
                 <summary>
+                  <svg
+                    className={styles.disclosureIndicator}
+                    aria-hidden="true"
+                    viewBox="0 0 16 16"
+                  >
+                    <path d="m6 3 5 5-5 5" />
+                  </svg>
                   <h2>Completed ({completed.length})</h2>
                 </summary>
                 <ul className={styles.rows}>{completed.map(renderRow)}</ul>

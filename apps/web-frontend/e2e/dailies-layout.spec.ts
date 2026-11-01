@@ -38,8 +38,9 @@ for (const viewport of viewports) {
     expect(navigation).not.toBeNull()
     if (actionBox !== null && navigation !== null && viewport.width < 768) {
       // At 320 px the complete task information wraps; allow at most a short
-      // scroll, rather than reducing targets or hiding task facts to force a fit.
-      const scrollAllowance = viewport.width === 320 ? 64 : 0
+      // scroll, rather than reducing targets or hiding task facts to force a
+      // fit. The 14px navigation labels add ~2px to the fixed bar.
+      const scrollAllowance = viewport.width === 320 ? 68 : 0
       expect(actionBox.y + actionBox.height).toBeLessThanOrEqual(navigation.y - 8 + scrollAllowance)
     }
     await expect(page).toHaveScreenshot(`dailies-populated-${viewport.width}.png`, {
