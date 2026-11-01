@@ -76,6 +76,8 @@ export function DailiesListPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
+  const focusState = location.state as DailyFocusState | null
+  const focusInfo = focusState?.dailyFocus
 
   const selectedDate = parseDateParam(searchParams.get('date')) ?? todayDateInput()
   const statusFilter = parseStatusParam(searchParams.get('status'))
@@ -95,6 +97,8 @@ export function DailiesListPage() {
     // Every failure state exposes its own Retry control (§3.2); the UI
     // recoveries stay deterministic without query-level retry backoff.
     retry: false,
+    // A saved Daily may not be in a recently viewed date's still-fresh cache.
+    refetchOnMount: focusInfo === undefined ? true : 'always',
   })
   const difficultiesQuery = useQuery({
     queryKey: difficultiesQueryKey,
@@ -131,13 +135,11 @@ export function DailiesListPage() {
   const [focusAnnouncement, setFocusAnnouncement] = useState<string>()
   const titleRefs = useRef(new Map<string, HTMLHeadingElement>())
   const consumedFocusRef = useRef<string | undefined>(undefined)
-  const focusState = location.state as DailyFocusState | null
-  const focusInfo = focusState?.dailyFocus
 
   // After a save, return to the Daily's local date, identify and focus the
   // changed row, and announce success once (spec §5.3).
   useEffect(() => {
-    if (focusInfo === undefined || listQuery.data === undefined) {
+    if (focusInfo === undefined || listQuery.data === undefined || listQuery.isFetching) {
       return
     }
     const key = `${focusInfo.verb}:${focusInfo.dailyId}`
@@ -154,7 +156,14 @@ export function DailiesListPage() {
       `${focusInfo.verb === 'created' ? 'Created' : 'Updated'} Daily "${focusInfo.title}".`,
     )
     void navigate(`${location.pathname}${location.search}`, { replace: true, state: null })
-  }, [focusInfo, listQuery.data, location.pathname, location.search, navigate])
+  }, [
+    focusInfo,
+    listQuery.data,
+    listQuery.isFetching,
+    location.pathname,
+    location.search,
+    navigate,
+  ])
 
   const updateParams = (patch: {
     readonly date?: string
@@ -273,14 +282,7 @@ export function DailiesListPage() {
           </div>
         ) : null}
         {dailies.length === 0 ? (
-          <EmptyState
-            title="No Dailies"
-            action={
-              <Link className={styles.createLink} to="/dailies/new">
-                Create Daily
-              </Link>
-            }
-          >
+          <EmptyState title="No Dailies">
             There are no Dailies for {formatOccurrenceDate(selectedDate)}. Create one to start a
             recurring responsibility.
           </EmptyState>
@@ -308,10 +310,15 @@ export function DailiesListPage() {
 
   return (
     <div className={styles.page}>
-      <PageHeader
-        title="Dailies"
-        description={`Your recurring Dailies for ${formatOccurrenceDate(selectedDate)}.`}
-      />
+      <div className={styles.pageHeader}>
+        <PageHeader
+          title="Dailies"
+          description={`Your recurring Dailies for ${formatOccurrenceDate(selectedDate)}.`}
+        />
+        <Link className={styles.createLink} to="/dailies/new">
+          Create Daily
+        </Link>
+      </div>
       <LocalTabs label="Dailies navigation" tabs={dailyTabs} />
 
       <div className={styles.toolbar}>

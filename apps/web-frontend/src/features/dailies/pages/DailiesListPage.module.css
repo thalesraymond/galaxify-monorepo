@@ -30,6 +30,14 @@
   flex: 0 1 13.5rem;
 }
 
+.pageHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
 .listHeading {
   margin: 0 0 var(--space-4);
   font-size: 1.5rem;
@@ -100,6 +108,7 @@
 
 .createLink {
   display: inline-flex;
+  flex-shrink: 0;
   min-height: 44px;
   align-items: center;
   padding: var(--space-2) var(--space-4);
