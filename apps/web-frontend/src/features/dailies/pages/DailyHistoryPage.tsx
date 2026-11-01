@@ -103,6 +103,7 @@ export function DailyHistoryPage() {
   } else if (groups.length === 0) {
     body = (
       <EmptyState
+        embedded
         title="No Daily history yet"
         action={
           <Link className={styles.createLink} to="/dailies/new">

@@ -104,6 +104,21 @@ function ExpeditionObserver({ onObserved }: { onObserved: () => void }) {
 }
 
 describe('ShipStatusPanel composite', () => {
+  it('keeps concise guidance beside Repair and discloses detailed mechanics on demand', async () => {
+    const user = userEvent.setup()
+    await mountPanel('damaged-ship')
+
+    expect(screen.getByRole('button', { name: 'Repair Ship' })).toHaveAccessibleDescription(
+      'Spend materials; restoration varies.',
+    )
+    const summary = screen.getByText('How repair works')
+    expect(screen.getByText(/Repairing spends materials/)).not.toBeVisible()
+    await user.click(summary)
+    expect(screen.getByText(/Repairing spends materials/)).toBeVisible()
+    await user.click(summary)
+    expect(screen.getByText(/Repairing spends materials/)).not.toBeVisible()
+  })
+
   it('renders the Ship status without route chrome', async () => {
     await mountPanel('established-player')
 
@@ -314,6 +329,9 @@ describe('ShipStatusPanel composite', () => {
     ).toBeInTheDocument()
     const retry = screen.getByRole('button', { name: 'Retry' })
     expect(retry).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Repair Ship' })).toHaveAccessibleDescription(
+      expect.stringContaining('We could not reach the Ship service. Try again.'),
+    )
 
     server.server.resetHandlers()
     await user.click(retry)
