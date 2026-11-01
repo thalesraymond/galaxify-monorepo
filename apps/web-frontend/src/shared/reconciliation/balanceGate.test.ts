@@ -43,9 +43,10 @@ it('starts a new generation for every expiry, even for the same delayed key', ()
   expect(listener).toHaveBeenCalledTimes(2)
 
   unregisterBalanceGateKey('daily:one:award')
-  expect(getBalanceGateExpiry()).toEqual({ epoch: undefined, generation: 0 })
-  expect(getBalanceGateExpirySnapshot()).toBe('|0')
+  expect(getBalanceGateExpiry()).toEqual({ epoch: undefined, generation: 2 })
+  expect(getBalanceGateExpirySnapshot()).toBe('|2')
 
   clearDownstreamObservations()
+  expect(getBalanceGateExpiry()).toEqual({ epoch: undefined, generation: 0 })
   unsubscribe()
 })

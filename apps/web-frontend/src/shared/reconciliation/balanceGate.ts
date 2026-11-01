@@ -29,8 +29,9 @@ export function registerBalanceGateKey(key: string): void {
 export function unregisterBalanceGateKey(key: string): void {
   if (!keys.delete(key)) return
   if (keys.size === 0) {
+    // Generations stay monotonic until the session clears: a later expiry
+    // must never reuse an approval from an earlier no-key interval.
     expiryEpoch = undefined
-    expiryGeneration = 0
     publishExpiry()
   }
   publishKeys()

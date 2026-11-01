@@ -365,10 +365,14 @@ it('requires a fresh read after a retry expires while no gate surface is mounted
   )
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
   await advanceFakeTime(1_000)
-  fail = true
+  // Keep observation reads successful through the second expiry so the Ship
+  // query still holds a fresh, successful pre-expiry snapshot.
   await advanceFakeTime(9_000)
   expect(screen.getByText('Update delayed')).toBeInTheDocument()
 
+  // Fail only the gate's read after the new expiry. The old approval must not
+  // release the gate from the still-successful cache.
+  fail = true
   fireEvent.click(screen.getByRole('link', { name: 'Ship' }))
   await advanceUntil(
     () => screen.queryByRole('heading', { level: 1, name: 'Ship' }) !== null,
@@ -391,4 +395,57 @@ it('requires a fresh read after a retry expires while no gate surface is mounted
     }),
   )
   await advanceUntil(() => !repair.hasAttribute('disabled'), 'second-expiry fresh read')
+})
+
+it('does not reuse an approval after the last key settles and a later expiry reuses a generation number', async () => {
+  await startDaily()
+  await advanceFakeTime(9_000)
+  await advanceUntil(
+    () => !screen.getByRole('button', { name: 'Repair Ship' }).hasAttribute('disabled'),
+    'first expiry approval',
+  )
+
+  fireEvent.click(screen.getByRole('link', { name: 'Dailies' }))
+  await advanceUntil(
+    () => screen.queryByRole('heading', { level: 1, name: 'Dailies' }) !== null,
+    'dailies route',
+  )
+
+  // Retry and settle the first award so the registry has no keys left.
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+  balance = 290
+  await advanceUntil(() => screen.queryByText('Update delayed') === null, 'first award settled')
+
+  // A later Daily expires after the no-key interval. Generations must stay
+  // monotonic for the session, not restart at one.
+  fireEvent.click(screen.getByRole('button', { name: 'Complete Stretch the solar sails' }))
+  await advanceUntil(
+    () => screen.queryByRole('button', { name: 'Complete Stretch the solar sails' }) === null,
+    'second completion',
+  )
+  await advanceFakeTime(9_000)
+  expect(screen.getByText('Update delayed')).toBeInTheDocument()
+
+  fail = true
+  fireEvent.click(screen.getByRole('link', { name: 'Ship' }))
+  await advanceUntil(
+    () => screen.queryByRole('heading', { level: 1, name: 'Ship' }) !== null,
+    'ship route',
+  )
+  const repair = screen.getByRole('button', { name: 'Repair Ship' })
+  expect(repair).toBeDisabled()
+  await advanceUntil(
+    () =>
+      screen.queryAllByText('The Ship balance could not be refreshed. Retry before using it.')
+        .length > 0,
+    'new-generation read failure',
+  )
+
+  fail = false
+  fireEvent.click(
+    within(screen.getByRole('region', { name: 'Materials' })).getByRole('button', {
+      name: 'Retry',
+    }),
+  )
+  await advanceUntil(() => !repair.hasAttribute('disabled'), 'new-generation fresh read')
 })
