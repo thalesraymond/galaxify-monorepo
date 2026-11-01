@@ -8,3 +8,15 @@
 .empty p {
   margin: 0 auto var(--space-3);
 }
+
+.embedded {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  text-align: start;
+}
+
+.embedded h2,
+.embedded p {
+  margin-inline: 0;
+}
