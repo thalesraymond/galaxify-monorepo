@@ -59,6 +59,9 @@ This wiki complements, and does not replace, [`docs/adr/`](../adr/) and
 - [Split UI settlement assertions](problems/split-ui-settlement-assertions.md) —
   On 2026-11-01, a coverage-only flake showed focus and `aria-current` settling
   in separate commits; wait for related UI facts together.
+- [Reconciliation approval generations](problems/reconciliation-approval-generations.md) —
+  On 2026-11-01, #227 showed that gate approvals need monotonic expiry
+  generations and session-owned reads, not delayed-key sets or view-scoped reads.
 
 ## Subsystems
 

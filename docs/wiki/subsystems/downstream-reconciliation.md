@@ -47,3 +47,12 @@ and [module-level subscriptions](../problems/module-level-subscription-never-pau
   reward, fresh facts are published but confirmation is never claimed. The
   local `useProbeSchedule` / `useShipReconciliation` scheduler was removed at
   that SHA.
+- As of `galaxify-monorepo@a95db7b` (2026-11-01), balance-dependent Repair and
+  Launch gates use `shared/reconciliation/balanceGate.ts` (session key
+  registry plus a monotonic expiry generation) and
+  `features/ship/components/useShipBalanceGate.ts` (visible observer,
+  session-owned one-shot fresh read, 5 s bound). The Daily adapter registers
+  each pending award key and calls `markBalanceGateExpired()` on every
+  transition into `delayed`. The gate releases only after a successful
+  authoritative Ship read following that expiry; failures show stale feedback
+  and a gate Retry. See [approval generations](../problems/reconciliation-approval-generations.md).
