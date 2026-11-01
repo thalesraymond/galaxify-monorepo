@@ -86,6 +86,8 @@ demonstrated problem that URL, query, context, or local state cannot solve.
   Retry.
 - Legitimate empty collections explain the state and offer the relevant next
   action.
+- Empty states embedded in a content surface reuse its spacing and edges;
+  standalone empty states retain their own frame.
 - An asynchronously missing prerequisite is `Preparing…`, not empty or failed.
 - Bounded downstream reconciliation uses `Updating…`; expiry uses
   `Update delayed` and a local Retry.
@@ -266,6 +268,8 @@ accessible gauge. Explain that repair spends up to the deficit/available balance
 and each material restores a variable amount. Repair is one direct pessimistic
 action without a confirmation modal. Full-hull and zero-material states explain
 why it is unavailable and point to Dailies where relevant.
+Keep concise repair guidance beside the action; offer the detailed spending
+bounds and variable restoration rules in a labelled, keyboard-accessible disclosure.
 
 ### 5.6 Expedition overview
 

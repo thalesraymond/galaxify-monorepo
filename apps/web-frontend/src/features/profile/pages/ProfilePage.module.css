@@ -1,6 +1,7 @@
 .page {
   display: grid;
   gap: var(--space-6);
+  max-width: 30rem;
 }
 
 .identity {
@@ -30,7 +31,6 @@
 .form {
   display: grid;
   gap: var(--space-4);
-  max-width: 22rem;
 }
 
 .dialogActions {

@@ -157,6 +157,7 @@ export function DashboardDailiesPanel() {
         ) : null}
         {dailies.length === 0 ? (
           <EmptyState
+            embedded
             title="No Dailies for today"
             action={
               <Link className={styles.createLink} to="/dailies/new">
@@ -171,7 +172,9 @@ export function DashboardDailiesPanel() {
           <div className={styles.list} aria-busy={listQuery.isFetching || undefined}>
             {pending.length > 0 ? (
               <section aria-labelledby="dashboard-pending-heading" className={styles.section}>
-                <h3 id="dashboard-pending-heading">Pending</h3>
+                <h3 id="dashboard-pending-heading" className={styles.sectionHeading}>
+                  Pending
+                </h3>
                 <ul className={styles.rows}>{pending.map(renderRow)}</ul>
               </section>
             ) : null}

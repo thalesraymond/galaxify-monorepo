@@ -8,6 +8,7 @@ import { useApiTransport } from '@/shared/api/TransportContext'
 import {
   Button,
   ContentSurface,
+  Disclosure,
   FormError,
   Gauge,
   LiveRegion,
@@ -152,7 +153,7 @@ export function ShipStatusPanel() {
       ? 'repair-outcome'
       : repairBlocked !== undefined
         ? 'repair-guidance'
-        : 'repair-mechanic'
+        : 'repair-summary'
 
   return (
     <ContentSurface tone="raised" aria-labelledby="ship-status-heading" className={styles.panel}>
@@ -195,11 +196,6 @@ export function ShipStatusPanel() {
           </div>
         ) : null}
 
-        <p id="repair-mechanic" className={styles.copy}>
-          Repairing spends materials up to the smaller of the missing hull and your balance. Each
-          material restores a variable amount of hull.
-        </p>
-
         <div className={styles.repair}>
           {repairBlocked !== undefined ? (
             <p id="repair-guidance" className={styles.copy}>
@@ -208,7 +204,11 @@ export function ShipStatusPanel() {
                 Open Dailies
               </Link>
             </p>
-          ) : null}
+          ) : (
+            <p id="repair-summary" className={styles.copy}>
+              Spend materials; restoration varies.
+            </p>
+          )}
           <Button
             ref={repairButtonRef}
             loading={repairMutation.isPending}
@@ -221,13 +221,18 @@ export function ShipStatusPanel() {
           >
             Repair Ship
           </Button>
+          {repairOutcome.kind !== 'none' ? (
+            <div ref={outcomeRegionRef} id="repair-outcome" className={styles.outcome}>
+              <RepairOutcomeMessage outcome={repairOutcome} onRetry={retryRepair} />
+            </div>
+          ) : null}
+          <Disclosure summary="How repair works">
+            <p className={styles.copy}>
+              Repairing spends materials up to the smaller of the missing hull and your balance.
+              Each material restores a variable amount of hull.
+            </p>
+          </Disclosure>
         </div>
-
-        {repairOutcome.kind !== 'none' ? (
-          <div ref={outcomeRegionRef} id="repair-outcome" className={styles.outcome}>
-            <RepairOutcomeMessage outcome={repairOutcome} onRetry={retryRepair} />
-          </div>
-        ) : null}
       </section>
 
       <p className={styles.secondary}>
