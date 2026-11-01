@@ -186,6 +186,32 @@ describe('ShipStatusPanel composite', () => {
     expect(screen.queryByText('Update delayed')).not.toBeInTheDocument()
   })
 
+  it('observes current balances after a concurrent award and publishes the fresh quote', async () => {
+    enableFakeTimers(FIXED_MOCK_EPOCH_MS)
+    server.server.resetHandlers()
+    server.reset('damaged-ship')
+    const transport = await createPanelTransport()
+    const queryClient = createQueryClient()
+    mountPanelTree(queryClient, transport)
+    await waitForUi(() => screen.queryByRole('button', { name: 'Repair Ship' }) !== null)
+    server.server.use(
+      http.get('/api/ship/ships/me', () =>
+        HttpResponse.json(createDamagedShip({ hull_health: 100, materials_balance: 80 })),
+      ),
+      http.get('/api/expedition/expeditions/quote', () =>
+        HttpResponse.json(createExpeditionQuote({ materials_invested: 1, projected_balance: 79 })),
+      ),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Repair Ship' }))
+    await waitForUi(() => screen.queryByText('The Ship was repaired.') !== null)
+    await waitForUi(() => screen.queryByText('80') !== null)
+    await waitForUi(() => screen.queryByText('Updating…') === null)
+    expect(queryClient.getQueryData(['expeditions', 'quote', 1])).toMatchObject({
+      materials_invested: 1,
+      projected_balance: 79,
+    })
+  })
+
   it('shows Updating…, then Update delayed with a local Retry that re-probes', async () => {
     enableFakeTimers(FIXED_MOCK_EPOCH_MS)
     server.server.resetHandlers()

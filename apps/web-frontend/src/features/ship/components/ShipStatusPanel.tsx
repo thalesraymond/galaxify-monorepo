@@ -50,18 +50,18 @@ export function ShipStatusPanel() {
   })
 
   const { reconciliation, beginReconciliation, retryReconciliation } =
-    useShipRepairReconciliation(transport)
+    useShipRepairReconciliation(queryClient, transport)
 
   const repairMutation = useMutation({
     mutationFn: () => repairShipAndCache(queryClient, transport),
-    onSuccess: (ship) => {
+    onSuccess: () => {
       // The Expedition service caches Ship state privately; invalidate its
       // queries so visible downstream data reconciles (`web-frontend.md` §3.4).
       void queryClient.invalidateQueries({ queryKey: ['expeditions'] })
       setRepairOutcome({ kind: 'none' })
       setAnnouncement('The Ship was repaired.')
       setRepairSucceededAt((round) => round + 1)
-      beginReconciliation(ship.materials_balance)
+      beginReconciliation()
     },
     onError: (error: unknown) => {
       setRepairOutcome(classifyRepairError(error))
@@ -187,8 +187,7 @@ export function ShipStatusPanel() {
         {reconciliation.kind === 'delayed' ? (
           <div className={styles.delayed}>
             <p>
-              The repair is saved, but the Expedition service has not caught up with the new balance
-              yet. You can retry now.
+              The repair is saved, but we could not confirm current Expedition readiness. You can retry now.
             </p>
             <Button variant="secondary" onClick={retryReconciliation}>
               Retry
