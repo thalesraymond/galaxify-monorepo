@@ -33,6 +33,9 @@ This wiki complements, and does not replace, [`docs/adr/`](../adr/) and
 - [Stack overlapping layout tickets](decisions/stacked-layout-prs.md) — On
   2026-10-31, six coupled layout PRs were stacked in merge order, each
   refreshing the snapshots the combined tree made stale.
+- [Bounded reconciliation tickets](decisions/bounded-reconciliation-tickets.md) —
+  On 2026-11-01, subsequent prompts were bounded and required regression fixes,
+  locked browser installs, and review of retired callers and helpers.
 
 ## Problems
 
@@ -46,10 +49,15 @@ This wiki complements, and does not replace, [`docs/adr/`](../adr/) and
 - [Module-level subscriptions never pause observations](problems/module-level-subscription-never-pauses-observations.md) —
   A phase-only subscription counted as a visible observer, so pending
   observations never paused while no view displayed the affected resource.
+- [Playwright lock/install mismatch](problems/playwright-lock-install-mismatch.md) —
+  On 2026-11-01, stale installed Playwright requested different browser revisions;
+  after a locked install, host WebKit libraries blocked full verification.
 
 ## Subsystems
 
-_None yet._
+- [Downstream reconciliation](subsystems/downstream-reconciliation.md) —
+  On 2026-11-01, navigation pointers mapped the coordinator, public hook,
+  domain adapters, and lifecycle tests at the reviewed SHA.
 
 ## Preferences
 

@@ -64,3 +64,17 @@ the Ship API readiness probe was referenced only by its dedicated tests. Removed
 the obsolete probe and those tests; the Ship API, query, and panel tests, full
 unit suite, formatting, typecheck, lint, and production build passed. Full browser
 verification remains for CI because Firefox and WebKit are unavailable locally.
+
+## [2026-11-01] record | Locked Playwright verification and reconciliation navigation
+
+At galaxify-monorepo@dfb2577db9d07c3f3dd0cf6340c3f0ff8df6923d, a locked
+install corrected the stale Playwright version. Full verification reached the
+cross-browser gate: Firefox passed, but WebKit and mobile WebKit could not
+launch because host libraries were missing. See the
+[problem note](problems/playwright-lock-install-mismatch.md),
+[subsystem map](subsystems/downstream-reconciliation.md), and
+[subsequent ticket decision](decisions/bounded-reconciliation-tickets.md).
+This supersedes the earlier assumption that Firefox and WebKit were unavailable:
+Firefox ran successfully, and the WebKit failure reported host libraries.
+Issue #224 release was blocked by the implementer's push restriction; no PR
+was created and no merge was performed in this task.
