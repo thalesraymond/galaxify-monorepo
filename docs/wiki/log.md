@@ -56,3 +56,11 @@ that resuming a hidden tab can incur up to 250 ms of visibility polling before
 active time accrues, and singleton observations must be cleared before fake
 timers are restored to isolate tests. Completion and verification remain subject
 to review and CI.
+
+## [2026-11-01] cleanup | Remove unused Ship readiness probe
+
+Review of galaxify-monorepo@89969b59acbbaec96f431b84280e50e07d98dcc2 found
+the Ship API readiness probe was referenced only by its dedicated tests. Removed
+the obsolete probe and those tests; the Ship API, query, and panel tests, full
+unit suite, formatting, typecheck, lint, and production build passed. Full browser
+verification remains for CI because Firefox and WebKit are unavailable locally.
