@@ -3,7 +3,11 @@ process.env.TZ = 'UTC'
 import { act, fireEvent, screen } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { QueryClient } from '@tanstack/react-query'
 
+import { zExpeditionLaunchBody } from '@/api/generated/expedition/zod.gen'
+import { createQueryClient } from '@/app/queryClient'
+import { shipQueryKey } from '@/features/ship'
 import {
   FIXED_MOCK_EPOCH_MS,
   ManualMockScheduler,
@@ -68,9 +72,9 @@ async function renderOverview(): Promise<void> {
  * (the resolve-derived poll, countdown ticks, stale-refresh) are scheduled at
  * mount need fake timers from the very first render.
  */
-async function renderOverviewFake(): Promise<void> {
+async function renderOverviewFake(queryClient?: QueryClient): Promise<void> {
   enableProbeTimers()
-  renderExpeditionRoute('/expeditions')
+  renderExpeditionRoute('/expeditions', queryClient)
   await advanceUntil(
     () => screen.queryByRole('heading', { level: 1, name: 'Expeditions' }) !== null,
     'the Expeditions page heading',
@@ -83,20 +87,38 @@ function changeInvestment(value: string): void {
 
 describe('Expeditions overview — launch form', () => {
   it('compares a fast deduction with the balance from before submitting the launch', async () => {
-    let balance = 250
+    const queryClient = createQueryClient()
+    let launched = false
+    let releaseLaunch = () => {}
+    const responseGate = new Promise<void>((resolve) => {
+      releaseLaunch = resolve
+    })
     server.server.use(
-      http.get('/api/ship/ships/me', () =>
-        HttpResponse.json(createHealthyShip({ materials_balance: balance })),
-      ),
-      http.post('/api/expedition/expeditions/launch', () => {
-        balance = 210
+      http.post('/api/expedition/expeditions/launch', async ({ request }) => {
+        const token = /^Bearer (.+)$/u.exec(request.headers.get('Authorization') ?? '')?.[1]
+        const body = zExpeditionLaunchBody.parse(await request.json())
+        const expedition = server.backend.launchExpedition(token, {
+          materials_invested: Number(body.materials_invested),
+        })
+        launched = true
+        await responseGate
+        return HttpResponse.json(expedition, { status: 201 })
       }),
     )
-    await renderOverviewFake()
+    await renderOverviewFake(queryClient)
     await advanceUntil(() => screen.queryByText('You have 250 materials') !== null, 'balance')
     changeInvestment('40')
     await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'quote')
     fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
+    await advanceUntil(() => launched, 'held launch response')
+    scheduler.advance(2_001)
+    act(() => {
+      queryClient.setQueryData(shipQueryKey, {
+        kind: 'ready',
+        ship: createHealthyShip({ materials_balance: 210 }),
+      })
+      releaseLaunch()
+    })
     await advanceUntil(() => screen.queryByText(/Available materials: 210/) !== null, 'deduction')
     await advanceFakeTime(200)
     expect(screen.queryByText('Updating…')).not.toBeInTheDocument()
@@ -104,6 +126,7 @@ describe('Expeditions overview — launch form', () => {
   })
 
   it('does not confirm a deduction from retained data after Ship refresh fails', async () => {
+    const queryClient = createQueryClient()
     let fail = false
     server.server.use(
       http.get('/api/ship/ships/me', () =>
@@ -113,14 +136,26 @@ describe('Expeditions overview — launch form', () => {
         fail = true
       }),
     )
-    await renderOverviewFake()
+    await renderOverviewFake(queryClient)
     await advanceUntil(() => screen.queryByText('You have 250 materials') !== null, 'balance')
     changeInvestment('40')
     await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'quote')
     fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
     await advanceUntil(() => screen.queryByText('Expedition in flight') !== null, 'launch')
+    act(() => {
+      queryClient.setQueryData(shipQueryKey, {
+        kind: 'ready',
+        ship: createHealthyShip({ materials_balance: 200 }),
+      })
+    })
+    await advanceUntil(
+      () => screen.queryByText(/Available materials: 200/) !== null,
+      'retained balance',
+    )
+    await advanceFakeTime(2_000)
+    expect(screen.getByText('Updating…')).toBeInTheDocument()
     await advanceFakeTime(9_000)
-    expect(screen.getByText(/Available materials: 250/)).toBeInTheDocument()
+    expect(screen.getByText(/Available materials: 200/)).toBeInTheDocument()
     expect(screen.getByText('Update delayed')).toBeInTheDocument()
   })
   it('keeps the original threshold across navigation, delayed Retry, awards and spending', async () => {
