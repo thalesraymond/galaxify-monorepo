@@ -21,7 +21,7 @@ import {
  * resolution, so `renderAppAt`'s lazy route boundaries never mount when fake
  * timers are active. A few journeys NEED fake timers from mount — the bounded
  * resolution poll (`refetchInterval` derived from resolve_at), the countdown
- * tick loop, stale-refresh through a failed poll, and the result-lag probe
+ * tick loop, stale-refresh through a failed poll, and the result-lag reconciliation
  * schedule are all scheduled at mount, so their timers must be fake from the
  * very first render. Everything else uses the canonical `renderAppAt` with
  * Date-only mocking and real timers.

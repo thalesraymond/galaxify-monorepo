@@ -1,8 +1,9 @@
-import { useEffect, useId } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { Link } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useApiTransport } from '@/shared/api/TransportContext'
+import { getDownstreamSessionGeneration } from '@/shared/reconciliation'
 import { ContentSurface, Skeleton, UnavailableState } from '@/shared/ui'
 
 import { currentExpeditionQueryKey, getCurrentExpedition } from '../api/expeditionApi'
@@ -21,6 +22,7 @@ import styles from './DashboardExpeditionPanel.module.css'
  * Provisioning, failures, and stale states replace only this panel.
  */
 export function DashboardExpeditionPanel() {
+  const [sessionGeneration] = useState(getDownstreamSessionGeneration)
   const transport = useApiTransport()
   const queryClient = useQueryClient()
   const headingId = useId()
@@ -32,10 +34,13 @@ export function DashboardExpeditionPanel() {
   const currentStale = currentQuery.isRefetchError
 
   useEffect(() => {
-    if (currentQuery.data?.kind === 'current') {
+    if (
+      sessionGeneration === getDownstreamSessionGeneration() &&
+      currentQuery.data?.kind === 'current'
+    ) {
       registerExpeditionReward(currentQuery.data.expedition, queryClient, transport)
     }
-  }, [currentQuery.data, queryClient, transport])
+  }, [currentQuery.data, queryClient, transport, sessionGeneration])
 
   if (currentQuery.isPending) {
     return (

@@ -76,6 +76,12 @@ type ObservationEntry = {
 }
 
 export class DownstreamReconciliation {
+  private generation = 0
+
+  /** Monotonic Player-session id, bumped by every clear(). */
+  public get sessionGeneration(): number {
+    return this.generation
+  }
   private readonly entries = new Map<string, ObservationEntry>()
   /**
    * Visible observers live outside the rounds: a session clear retires every
@@ -222,6 +228,7 @@ export class DownstreamReconciliation {
    * A response that settles afterwards cannot publish or restore anything.
    */
   public clear(): void {
+    this.generation += 1
     // Domain side state goes first: a retired round must not read as a
     // settled expectation to an adapter that is still subscribed to it.
     this.notifyClear()
@@ -436,6 +443,10 @@ export class DownstreamReconciliation {
 
 /** The Player-session store shared by the module's public functions and hook. */
 export const downstreamReconciliation = new DownstreamReconciliation()
+
+export function getDownstreamSessionGeneration(): number {
+  return downstreamReconciliation.sessionGeneration
+}
 
 /** Registers an expected change on the session store. */
 export function registerDownstreamObservation<Facts>(request: DownstreamObservation<Facts>): void {

@@ -1,8 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { DownstreamReconciliation } from './downstreamReconciliation'
+import {
+  DownstreamReconciliation,
+  clearDownstreamObservations,
+  getDownstreamSessionGeneration,
+} from './downstreamReconciliation'
 
 const KEY = 'test:expected-change'
+
+it('invalidates the session generation on clear', () => {
+  const generation = getDownstreamSessionGeneration()
+  clearDownstreamObservations()
+  expect(getDownstreamSessionGeneration()).toBe(generation + 1)
+})
 
 type ReadCall = {
   readonly signal: AbortSignal

@@ -163,10 +163,10 @@ export function createHealthyShip(overrides: Partial<Ship> = {}): Ship {
 }
 
 /**
- * An Expedition quote anchored to the fixed epoch. The probe invests the
+ * An Expedition quote anchored to the fixed epoch. The readiness check invests the
  * minimum `materials_invested: 1` (OpenAPI contract), so the default
  * `projected_balance` is `createDamagedShip().materials_balance - 1` (119)
- * and probes reading a freshly loaded Ship succeed.
+ * and reads of a freshly loaded Ship succeed.
  *
  * `normalized_investment` uses the OpenAPI formula
  * `materials_invested / (materials_invested + 10)` = `1 / (1 + 10)` = `1/11`.

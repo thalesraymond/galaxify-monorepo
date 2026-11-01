@@ -67,7 +67,7 @@ async function renderDashboard(
 }
 
 describe('Dashboard page', () => {
-  it('refreshes the adjacent Ship panel when a later Daily probe observes its reward', async () => {
+  it('refreshes the adjacent Ship panel when a later Daily reconciliation read observes its reward', async () => {
     await renderDashboard()
     expect(await screen.findByText('250')).toBeInTheDocument()
     expect(

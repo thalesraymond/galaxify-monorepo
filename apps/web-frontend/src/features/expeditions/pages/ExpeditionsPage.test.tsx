@@ -47,7 +47,7 @@ beforeEach(async () => {
   server.server.listen({ onUnhandledRequest: onUnhandledMockRequest })
   window.localStorage.clear()
   // Mock only Date (not timers): lazy routes and RTL waitFor keep working,
-  // while counts and probes stay anchored at the fixed epoch.
+  // while counts and reconciliation reads stay anchored at the fixed epoch.
   vi.setSystemTime(new Date(FIXED_MOCK_EPOCH_MS))
   setVisibility(true)
   await seedAuthenticatedSession()
@@ -63,8 +63,8 @@ afterEach(() => {
   server.server.close()
 })
 
-/** Switches to full fake timers (anchored at the fixed epoch) to drive probes. */
-function enableProbeTimers(): void {
+/** Switches to full fake timers (anchored at the fixed epoch) to drive reconciliation reads. */
+function enableReconciliationTimers(): void {
   enableFakeTimers(FIXED_MOCK_EPOCH_MS)
 }
 
@@ -79,7 +79,7 @@ async function renderOverview(): Promise<void> {
  * mount need fake timers from the very first render.
  */
 async function renderOverviewFake(queryClient?: QueryClient): Promise<void> {
-  enableProbeTimers()
+  enableReconciliationTimers()
   renderExpeditionRoute('/expeditions', queryClient)
   await advanceUntil(
     () => screen.queryByRole('heading', { level: 1, name: 'Expeditions' }) !== null,
@@ -314,7 +314,7 @@ describe('Expeditions overview — launch form', () => {
     await screen.findByText('You have 250 materials')
     changeInvestment('40')
     await screen.findByText('Ready to launch.')
-    enableProbeTimers()
+    enableReconciliationTimers()
 
     fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
 
@@ -335,7 +335,7 @@ describe('Expeditions overview — launch form', () => {
       '/expeditions/history',
     )
 
-    // The immediate and 1s/2s probes see the untouched balance: Updating… stays
+    // The immediate and 1s/2s reads see the untouched balance: Updating… stays
     // adjacent to the materials value (§3.4).
     expect(screen.getByText('Updating…')).toBeInTheDocument()
     await advanceFakeTime(3_100)
@@ -343,7 +343,7 @@ describe('Expeditions overview — launch form', () => {
     expect(screen.getByText(/Available materials: 250/)).toBeInTheDocument()
 
     // The mock applies the deduction after its propagation window; the next
-    // probe observes it and the sync stops.
+    // read observes it and the sync stops.
     scheduler.advance(2_001)
     await advanceUntil(
       () => screen.queryByText(/Available materials: 210/) !== null,
@@ -352,12 +352,12 @@ describe('Expeditions overview — launch form', () => {
     expect(screen.queryByText('Updating…')).not.toBeInTheDocument()
   })
 
-  it('pauses the probe schedule while hidden and resumes without burning budget', async () => {
+  it('pauses reconciliation reads while hidden and resumes without burning budget', async () => {
     await renderOverview()
     await screen.findByText('You have 250 materials')
     changeInvestment('40')
     await screen.findByText('Ready to launch.')
-    enableProbeTimers()
+    enableReconciliationTimers()
 
     fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
     await advanceUntil(
@@ -374,7 +374,7 @@ describe('Expeditions overview — launch form', () => {
     expect(screen.queryByText('Update delayed')).not.toBeInTheDocument()
     expect(screen.getByText(/Available materials: 250/)).toBeInTheDocument()
 
-    // Visible again with the deduction available: the first mark probe lands.
+    // Visible again with the deduction available: the first marked read lands.
     scheduler.advance(2_001)
     setVisibility(true)
     await advanceUntil(
@@ -391,7 +391,7 @@ describe('Expeditions overview — launch form', () => {
     await screen.findByText('You have 250 materials')
     changeInvestment('40')
     await screen.findByText('Ready to launch.')
-    enableProbeTimers()
+    enableReconciliationTimers()
 
     fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
     await advanceUntil(
@@ -433,7 +433,7 @@ describe('Expeditions overview — launch form', () => {
     await screen.findByText('You have 250 materials')
     changeInvestment('40')
     await screen.findByText('Ready to launch.')
-    enableProbeTimers()
+    enableReconciliationTimers()
 
     fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
 
@@ -472,7 +472,7 @@ describe('Expeditions overview — launch form', () => {
     await screen.findByText('You have 250 materials')
     changeInvestment('40')
     await screen.findByText('Ready to launch.')
-    enableProbeTimers()
+    enableReconciliationTimers()
 
     fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
 
@@ -507,7 +507,7 @@ describe('Expeditions overview — launch form', () => {
     await screen.findByText('You have 250 materials')
     changeInvestment('40')
     await screen.findByText('Ready to launch.')
-    enableProbeTimers()
+    enableReconciliationTimers()
 
     fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
 
@@ -529,7 +529,7 @@ describe('Expeditions overview — launch form', () => {
     )
     await renderOverview()
     await screen.findByText('You have 250 materials')
-    enableProbeTimers()
+    enableReconciliationTimers()
     changeInvestment('40')
 
     await advanceUntil(

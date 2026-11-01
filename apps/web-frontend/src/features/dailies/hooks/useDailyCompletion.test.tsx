@@ -6,7 +6,12 @@ import type { Difficulty } from '@/api/generated/daily/types.gen'
 import { ApiTransport } from '@/api/transport'
 import { shipQueryKey, type ShipState } from '@/features/ship'
 import { createDaily, createHealthyShip, FIXED_DAILY_IDS } from '@/mocks/fixtures'
-import { clearDownstreamObservations, useDownstreamObservation } from '@/shared/reconciliation'
+import {
+  clearDownstreamObservations,
+  downstreamReconciliation,
+  getBalanceGateKeys,
+  useDownstreamObservation,
+} from '@/shared/reconciliation'
 
 import { dailyAwardObservationKey } from '../lib/dailyAwardObservation'
 import type { DifficultyRewards } from '../lib/difficulties'
@@ -194,6 +199,44 @@ afterEach(() => {
 })
 
 describe('Daily completion reconciliation', () => {
+  it.each(['success', 'already completed'] as const)(
+    'does not register %s returned after session clear',
+    async (outcome) => {
+      let resolveResponse: (response: Response) => void = () => {}
+      const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveResponse = resolve
+          }),
+      )
+      const queryClient = createQueryClient()
+      confirmShipBalance(queryClient, 250)
+      const view = mountCompletion(new ApiTransport({ fetch }), queryClient)
+      await complete(view, DAILY_ID)
+      act(() => {
+        clearDownstreamObservations()
+        queryClient.clear()
+      })
+      act(() => {
+        resolveResponse(
+          outcome === 'success'
+            ? jsonResponse({
+                ...createDaily(DAILY_ID, { status: 'COMPLETED' }),
+                awarded_materials: 10,
+              })
+            : jsonResponse(
+                { error: { code: 'DAILY_ALREADY_COMPLETED', message: 'Already completed' } },
+                409,
+              ),
+        )
+      })
+      await settle()
+      expect(view.current?.reconciliations.size).toBe(0)
+      expect(downstreamReconciliation.getPhase(dailyAwardObservationKey(DAILY_ID))).toBe('idle')
+      expect(getBalanceGateKeys()).toHaveLength(0)
+      expect(queryClient.getQueryData(shipQueryKey)).toBeUndefined()
+    },
+  )
   it('settles as ready when the first fresh read already shows the award', async () => {
     const queryClient = createQueryClient()
     confirmShipBalance(queryClient, 250)

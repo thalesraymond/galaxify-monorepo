@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { getShip, shipQueryKey } from '@/features/ship'
 import { useApiTransport } from '@/shared/api/TransportContext'
-import { useDownstreamObservation } from '@/shared/reconciliation'
+import { getDownstreamSessionGeneration, useDownstreamObservation } from '@/shared/reconciliation'
 import { Skeleton, UnavailableState } from '@/shared/ui'
 
 import {
@@ -38,6 +38,7 @@ function currentPollInterval(data: CurrentExpedition | undefined): number | fals
  * and at resolution (§5.6, §3.4) and stale-refresh labeling (§3.2).
  */
 export function ExpeditionOverview() {
+  const [sessionGeneration] = useState(getDownstreamSessionGeneration)
   const transport = useApiTransport()
   const queryClient = useQueryClient()
   const currentQuery = useQuery({
@@ -72,10 +73,13 @@ export function ExpeditionOverview() {
   }, [currentQuery.data, shipQuery.data])
 
   useEffect(() => {
-    if (currentQuery.data?.kind === 'current') {
+    if (
+      sessionGeneration === getDownstreamSessionGeneration() &&
+      currentQuery.data?.kind === 'current'
+    ) {
       registerExpeditionReward(currentQuery.data.expedition, queryClient, transport)
     }
-  }, [currentQuery.data, queryClient, transport])
+  }, [currentQuery.data, queryClient, transport, sessionGeneration])
 
   const currentStale = currentQuery.isRefetchError
 
@@ -83,11 +87,11 @@ export function ExpeditionOverview() {
   const inFlight =
     currentQuery.data?.kind === 'current' && currentQuery.data.expedition.status === 'IN_FLIGHT'
   const expeditionId = currentQuery.data?.kind === 'current' ? currentQuery.data.expedition.id : ''
-  const deductionProbe = useDownstreamObservation(launchDeductionKey(expeditionId), inFlight)
+  const deductionObservation = useDownstreamObservation(launchDeductionKey(expeditionId), inFlight)
   const deductionSync: MaterialsSync = {
     balance,
-    phase: deductionProbe.phase,
-    onRetry: deductionProbe.retry,
+    phase: deductionObservation.phase,
+    onRetry: deductionObservation.retry,
   }
 
   if (currentQuery.isPending) {

@@ -11,7 +11,7 @@ export type MaterialsSync = {
 /**
  * Shows the authoritative Ship materials balance with the bounded
  * reconciliation status adjacent to the affected value (§3.4): an `Updating…`
- * badge while probes run, or `Update delayed` plus a local Retry on expiry.
+ * badge while observations run, or `Update delayed` plus a local Retry on expiry.
  */
 export function MaterialsBalance({ sync }: { sync: MaterialsSync }) {
   return (

@@ -3,6 +3,7 @@ export {
   disposeDownstreamReconciliation,
   downstreamObservationPhase,
   downstreamReconciliation,
+  getDownstreamSessionGeneration,
   onClearDownstreamObservations,
   registerDownstreamObservation,
 } from './downstreamReconciliation'

@@ -10,18 +10,11 @@ import {
 import type { Expedition } from '../api/expeditionApi'
 
 type LaunchDeduction = {
-  readonly expeditionId: string
-  readonly invested: number
   readonly baseline: number | undefined
   readonly expectedBalance: number | undefined
 }
 
 const expectations = new Map<string, LaunchDeduction>()
-let sessionGeneration = 0
-
-export function launchDeductionSessionGeneration(): number {
-  return sessionGeneration
-}
 
 export function launchDeductionKey(expeditionId: string): string {
   return `expedition:${expeditionId}:launch-deduction`
@@ -36,8 +29,6 @@ export function registerLaunchDeduction(
   const key = launchDeductionKey(expedition.id)
   if (expectations.has(key)) return
   const expectation: LaunchDeduction = {
-    expeditionId: expedition.id,
-    invested: expedition.materials_invested,
     baseline,
     expectedBalance: baseline === undefined ? undefined : baseline - expedition.materials_invested,
   }
@@ -55,5 +46,4 @@ export function registerLaunchDeduction(
 
 onClearDownstreamObservations(() => {
   expectations.clear()
-  sessionGeneration += 1
 })

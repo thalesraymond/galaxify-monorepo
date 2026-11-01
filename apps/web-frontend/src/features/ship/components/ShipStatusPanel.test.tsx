@@ -19,6 +19,7 @@ import {
 import { TransportProvider } from '@/shared/api/TransportContext'
 import {
   clearDownstreamObservations,
+  downstreamReconciliation,
   registerBalanceGateKey,
   registerDownstreamObservation,
 } from '@/shared/reconciliation'
@@ -112,6 +113,81 @@ function ExpeditionObserver({ onObserved }: { onObserved: () => void }) {
 }
 
 describe('ShipStatusPanel composite', () => {
+  it('drops a repair response received after the session clears', async () => {
+    const user = userEvent.setup()
+    server.reset('damaged-ship')
+    const queryClient = createQueryClient()
+    const transport = await createPanelTransport()
+    const view = mountPanelTree(queryClient, transport)
+    await screen.findByRole('heading', { level: 2, name: 'Ship status' })
+    let release: () => void = () => {}
+    let received: () => void = () => {}
+    const started = new Promise<void>((resolve) => {
+      received = resolve
+    })
+    server.server.use(
+      http.post('/api/ship/ships/repair', async () => {
+        received()
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+        return HttpResponse.json(createDamagedShip({ hull_health: 100 }))
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Repair Ship' }))
+    await started
+    act(() => {
+      view.unmount()
+      clearDownstreamObservations()
+      queryClient.clear()
+    })
+    await act(async () => {
+      release()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    expect(queryClient.getQueryData(shipQueryKey)).toBeUndefined()
+    expect(downstreamReconciliation.getPhase('ship:repair:readiness')).toBe('idle')
+    expect(screen.queryByText('The Ship was repaired.')).not.toBeInTheDocument()
+  })
+  it('drops a repair failure received after the session clears', async () => {
+    const user = userEvent.setup()
+    server.reset('damaged-ship')
+    const queryClient = createQueryClient()
+    const transport = await createPanelTransport()
+    mountPanelTree(queryClient, transport)
+    await screen.findByRole('heading', { level: 2, name: 'Ship status' })
+    let release: () => void = () => {}
+    let received: () => void = () => {}
+    const started = new Promise<void>((resolve) => {
+      received = resolve
+    })
+    server.server.use(
+      http.post('/api/ship/ships/repair', async () => {
+        received()
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+        return HttpResponse.json(
+          { error: { code: 'INTERNAL_ERROR', message: 'Repair failed.' } },
+          { status: 500 },
+        )
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Repair Ship' }))
+    await started
+    act(() => {
+      clearDownstreamObservations()
+    })
+    await act(async () => {
+      release()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    expect(
+      screen.queryByText('We could not reach the Ship service. Try again.'),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('blocks repair while a balance observation is updating', async () => {
     await mountPanel()
     act(() => {
@@ -182,12 +258,12 @@ describe('ShipStatusPanel composite', () => {
     expect(screen.queryByText('Stale')).not.toBeInTheDocument()
   })
 
-  it('shows Updating… after a repair and settles when the next probe succeeds', async () => {
+  it('shows Updating… after a repair and settles when the next read succeeds', async () => {
     enableFakeTimers(FIXED_MOCK_EPOCH_MS)
     server.server.resetHandlers()
     server.reset('damaged-ship')
     // The Expedition service has not caught up yet: its quote still shows the
-    // pre-repair balance, so the immediate probe fails and Updating… persists.
+    // pre-repair balance, so the immediate read fails and Updating… persists.
     server.server.use(
       http.get('/api/expedition/expeditions/quote', () =>
         HttpResponse.json(createExpeditionQuote(), { status: 200 }),
@@ -203,7 +279,7 @@ describe('ShipStatusPanel composite', () => {
     expect(screen.getByText('62')).toBeInTheDocument()
     expect(screen.getByText('Updating…')).toBeInTheDocument()
 
-    // The ~1 s probe sees the new balance once the service has caught up.
+    // The ~1 s read sees the new balance once the service has caught up.
     server.server.resetHandlers()
     await advanceFake(1_000)
     await waitForUi(() => screen.queryByText('Updating…') === null)
@@ -333,19 +409,19 @@ describe('ShipStatusPanel composite', () => {
     const queryClient = createQueryClient()
     const view = mountPanelTree(queryClient, transport)
     await waitForUi(() => screen.queryByRole('button', { name: 'Repair Ship' }) !== null)
-    let probes = 0
+    let reads = 0
     server.server.use(
       http.get('/api/expedition/expeditions/quote', () => {
-        probes += 1
+        reads += 1
         return HttpResponse.json(createExpeditionQuote())
       }),
     )
     fireEvent.click(screen.getByRole('button', { name: 'Repair Ship' }))
-    await waitForUi(() => probes > 0)
+    await waitForUi(() => reads > 0)
     view.unmount()
-    const beforeNavigation = probes
+    const beforeNavigation = reads
     await advanceFake(10_000)
-    expect(probes).toBe(beforeNavigation)
+    expect(reads).toBe(beforeNavigation)
     server.server.resetHandlers()
     mountPanelTree(queryClient, transport)
     await waitForUi(() => screen.queryByText('Updating…') !== null)
@@ -395,7 +471,7 @@ describe('ShipStatusPanel composite', () => {
       mountPanelTree(queryClient, transport)
       await waitForUi(() => screen.queryByRole('button', { name: 'Repair Ship' }) !== null)
       let repairs = 0
-      let probes = 0
+      let reads = 0
       let release!: () => void
       server.server.use(
         http.post('/api/ship/ships/repair', () => {
@@ -406,8 +482,8 @@ describe('ShipStatusPanel composite', () => {
           HttpResponse.json(createDamagedShip({ hull_health: 90, materials_balance: 62 })),
         ),
         http.get('/api/expedition/expeditions/quote', async () => {
-          probes += 1
-          if (phase === 'updating' && probes === 1) {
+          reads += 1
+          if (phase === 'updating' && reads === 1) {
             await new Promise<void>((resolve) => {
               release = resolve
             })
@@ -417,14 +493,14 @@ describe('ShipStatusPanel composite', () => {
         }),
       )
       fireEvent.click(screen.getByRole('button', { name: 'Repair Ship' }))
-      await waitForUi(() => probes > 0)
+      await waitForUi(() => reads > 0)
       if (phase === 'delayed') {
         for (const ms of [1_000, 1_000, 2_000, 4_000, 1_000]) await advanceFake(ms)
       }
       expect(screen.queryByText('Update delayed') !== null).toBe(phase === 'delayed')
-      const beforeSecond = probes
+      const beforeSecond = reads
       fireEvent.click(screen.getByRole('button', { name: 'Repair Ship' }))
-      await waitForUi(() => repairs === 2 && probes > beforeSecond)
+      await waitForUi(() => repairs === 2 && reads > beforeSecond)
       expect(screen.getByText('Updating…')).toBeInTheDocument()
       if (phase === 'updating') {
         await act(async () => {
@@ -446,12 +522,12 @@ describe('ShipStatusPanel composite', () => {
     },
   )
 
-  it('shows Updating…, then Update delayed with a local Retry that re-probes', async () => {
+  it('shows Updating…, then Update delayed with a local Retry that re-reads', async () => {
     enableFakeTimers(FIXED_MOCK_EPOCH_MS)
     server.server.resetHandlers()
     server.reset('damaged-ship')
     // The Expedition service never catches up: its quote stays on the
-    // pre-repair balance, so every probe fails.
+    // pre-repair balance, so every read fails.
     server.server.use(
       http.get('/api/expedition/expeditions/quote', () =>
         HttpResponse.json(createExpeditionQuote(), { status: 200 }),
@@ -464,8 +540,8 @@ describe('ShipStatusPanel composite', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Repair Ship' }))
     await waitForUi(() => screen.queryByText('Updating…') !== null)
 
-    // Probes run at ~0, 1, 2, 4, and 8 s; all fail because the quote is stale.
-    // The final advance also covers the fake-timer delivery of the ~8 s probe.
+    // Reads run at ~0, 1, 2, 4, and 8 s; all fail because the quote is stale.
+    // The final advance also covers the fake-timer delivery of the ~8 s read.
     await advanceFake(1_000)
     await advanceFake(1_000)
     await advanceFake(2_000)
@@ -478,7 +554,7 @@ describe('ShipStatusPanel composite', () => {
     server.server.resetHandlers()
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
 
-    // Retry restarts the schedule; the immediate probe now succeeds.
+    // Retry restarts the schedule; the immediate read now succeeds.
     await waitForUi(
       () =>
         screen.queryByText('Updating…') === null && screen.queryByText('Update delayed') === null,
@@ -489,10 +565,10 @@ describe('ShipStatusPanel composite', () => {
     enableFakeTimers(FIXED_MOCK_EPOCH_MS)
     server.server.resetHandlers()
     server.reset('damaged-ship')
-    let probes = 0
+    let reads = 0
     server.server.use(
       http.get('/api/expedition/expeditions/quote', () => {
-        probes += 1
+        reads += 1
         return HttpResponse.json(createExpeditionQuote(), { status: 200 })
       }),
     )
@@ -505,16 +581,16 @@ describe('ShipStatusPanel composite', () => {
     expect(screen.getByText('Updating…')).toBeInTheDocument()
 
     installVisibility(false)
-    const beforeHidden = probes
+    const beforeHidden = reads
     await advanceFake(10_000)
-    // No probe ran while hidden, so the reconciliation is still updating.
-    expect(probes).toBe(beforeHidden)
+    // No read ran while hidden, so the reconciliation is still updating.
+    expect(reads).toBe(beforeHidden)
     expect(screen.getByText('Updating…')).toBeInTheDocument()
 
     installVisibility(true)
     server.server.use(
       http.get('/api/expedition/expeditions/quote', () => {
-        probes += 1
+        reads += 1
         return HttpResponse.json(
           createExpeditionQuote({ materials_invested: 1, projected_balance: 61 }),
         )
@@ -522,7 +598,7 @@ describe('ShipStatusPanel composite', () => {
     )
     await advanceFake(1_300)
     await waitForUi(() => screen.queryByText('Updating…') === null)
-    expect(probes).toBeGreaterThan(beforeHidden)
+    expect(reads).toBeGreaterThan(beforeHidden)
     expect(screen.queryByText('Update delayed')).not.toBeInTheDocument()
   })
 
