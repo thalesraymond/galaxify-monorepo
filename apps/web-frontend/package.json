@@ -24,7 +24,7 @@
     "test:e2e": "playwright test e2e/smoke.spec.ts",
     "test:e2e:mock": "playwright test e2e/mock-smoke.spec.ts e2e/auth.spec.ts e2e/session-outage.spec.ts e2e/dailies-create-entry.spec.ts",
     "test:cross-browser": "playwright test e2e/cross-browser.spec.ts",
-    "test:visual": "playwright test e2e/visual.spec.ts e2e/dailies-layout.spec.ts e2e/navigation-disclosures.spec.ts",
+    "test:visual": "playwright test e2e/visual.spec.ts e2e/dailies-layout.spec.ts e2e/navigation-disclosures.spec.ts e2e/route-widths.spec.ts",
     "test:a11y": "playwright test e2e/a11y.spec.ts e2e/a11y-checklist.spec.ts e2e/support-panels.spec.ts",
     "perf": "node scripts/run-lhci.mjs",
     "perf:dashboard": "node scripts/run-dashboard-lighthouse.mjs",
