@@ -1,6 +1,9 @@
 import { zShipGetMeResponse, zShipRepairResponse } from '@/api/generated/ship/zod.gen'
 import { isApiHttpError, type ApiHttpError, type ApiTransport } from '@/api/transport'
-import { onClearDownstreamObservations } from '@/shared/reconciliation'
+import {
+  getDownstreamSessionGeneration,
+  onClearDownstreamObservations,
+} from '@/shared/reconciliation'
 
 export const shipQueryKey = ['ship'] as const
 
@@ -44,18 +47,28 @@ onClearDownstreamObservations(() => {
 })
 
 export async function getShip(transport: ApiTransport, signal?: AbortSignal): Promise<ShipState> {
+  const sessionGeneration = getDownstreamSessionGeneration()
+  const commandRevision = getShipCommandRevision()
+  const assertStillCurrent = (): void => {
+    if (
+      sessionGeneration !== getDownstreamSessionGeneration() ||
+      commandRevision !== getShipCommandRevision()
+    ) {
+      throw new Error('Ship read belongs to a retired session or was superseded by a command.')
+    }
+  }
   try {
-    return markFetched({
-      kind: 'ready',
-      ship: await transport.request({
-        service: 'ship',
-        path: '/ships/me',
-        response: zShipGetMeResponse,
-        signal,
-      }),
+    const ship = await transport.request({
+      service: 'ship',
+      path: '/ships/me',
+      response: zShipGetMeResponse,
+      signal,
     })
+    assertStillCurrent()
+    return markFetched({ kind: 'ready', ship })
   } catch (error: unknown) {
     if (isApiHttpError(error, 'SHIP_NOT_FOUND')) {
+      assertStillCurrent()
       return markFetched({ kind: 'provisioning', error })
     }
     throw error

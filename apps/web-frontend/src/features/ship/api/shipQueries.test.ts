@@ -220,20 +220,53 @@ it('rejects an older read that resolves after a newer command publish', async ()
   response.resolve(jsonResponse(createDamagedShip({ materials_balance: 250 })))
   const error = await observation
   expect(error).toBeInstanceOf(Error)
-  expect(error).toMatchObject({
-    message: expect.stringMatching(/superseded by a command publish/i),
-  })
+  if (!(error instanceof Error)) throw new Error('Expected a rejected Ship read')
+  expect(error.message).toMatch(/retired session or was superseded/i)
   expect(queryClient.getQueryData(shipQueryKey)).toEqual(published)
+  expect(getShipFetchMark().state).toEqual(published)
 })
 
-it('clears the Ship fetch marker at the session boundary', () => {
-  const published = { kind: 'ready', ship: createDamagedShip() } satisfies ShipState
-  markShipPublished(published)
-  const before = getShipFetchMark().generation
+it('does not retain a late read after the session boundary', async () => {
+  const response = deferred<Response>()
+  const fetch = vi.fn<typeof globalThis.fetch>().mockReturnValueOnce(response.promise)
+  const observation = observeShip(queryClient, new ApiTransport({ fetch })).catch(
+    (error: unknown) => error,
+  )
+  await vi.waitFor(() => {
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
 
   clearDownstreamObservations()
+  response.resolve(jsonResponse(createDamagedShip({ materials_balance: 77 })))
 
-  const after = getShipFetchMark()
-  expect(after.state).toBeUndefined()
-  expect(after.generation).toBeGreaterThan(before)
+  const error = await observation
+  expect(error).toBeInstanceOf(Error)
+  expect(getShipFetchMark().state).toBeUndefined()
+})
+
+it('rejects every joined read when a command publishes during the fetch', async () => {
+  const response = deferred<Response>()
+  const started = deferred<AbortSignal | null | undefined>()
+  const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation((_input, init) => {
+    started.resolve(init?.signal)
+    return response.promise
+  })
+  const transport = new ApiTransport({ fetch })
+  const first = observeShip(queryClient, transport).catch((error: unknown) => error)
+  const second = observeShip(queryClient, transport).catch((error: unknown) => error)
+  await started.promise
+  expect(fetch).toHaveBeenCalledTimes(1)
+
+  const repaired = createDamagedShip({ hull_health: 100, materials_balance: 62 })
+  const published = { kind: 'ready', ship: repaired } satisfies ShipState
+  queryClient.setQueryData(shipQueryKey, published)
+  markShipPublished(published)
+
+  response.resolve(jsonResponse(createDamagedShip({ materials_balance: 250 })))
+  const results = await Promise.all([first, second])
+  for (const result of results) {
+    expect(result).toBeInstanceOf(Error)
+  }
+  expect(queryClient.getQueryData(shipQueryKey)).toEqual(published)
+  expect(getShipFetchMark().state).toEqual(published)
 })

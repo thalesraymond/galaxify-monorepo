@@ -69,6 +69,11 @@ export async function observeShip(
   // rejecting. A real fetch advances the marker; if a newer read with different
   // facts landed first, this result must not overwrite it. TanStack structural
   // sharing may store an equal, but not identical, object.
+  // A joined read does not execute this call's queryFn, so re-check the
+  // command revision before returning; a command publish always wins.
+  if (getShipCommandRevision() !== commandRevision) {
+    throw new Error('Ship read was superseded by a command publish.')
+  }
   const after = getShipFetchMark()
   if (after.generation === before || JSON.stringify(after.state) !== JSON.stringify(data)) {
     throw new Error('Ship read did not produce a fresh authoritative result.')
