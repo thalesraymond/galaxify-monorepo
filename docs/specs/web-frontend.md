@@ -230,7 +230,11 @@ failures replace only affected panels.
 status are URL search state. Offer previous/next day, Today, accessible date
 picker, and All/Pending/Completed filters. Missed outcomes belong in History.
 Keep Create Daily beside the page heading in every list state, including empty
-filters, loading, preparing, unavailable, and stale results.
+filters, loading, preparing, unavailable, and stale results. On narrow screens,
+group date navigation deliberately and keep page chrome compact so a
+representative pending Daily's Complete action is reachable in the initial
+viewport where the content allows, without shrinking targets or hiding task
+facts.
 
 Creation and editing are dedicated pages at all widths. Fields are title,
 optional description, and difficulty. The creation request silently includes
