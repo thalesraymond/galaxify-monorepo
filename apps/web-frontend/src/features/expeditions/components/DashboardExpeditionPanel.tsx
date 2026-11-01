@@ -1,11 +1,13 @@
-import { useId } from 'react'
+import { useEffect, useId } from 'react'
 import { Link } from 'react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useApiTransport } from '@/shared/api/TransportContext'
 import { ContentSurface, Skeleton, UnavailableState } from '@/shared/ui'
 
 import { currentExpeditionQueryKey, getCurrentExpedition } from '../api/expeditionApi'
+import { registerExpeditionReward } from '../lib/expeditionRewardObservation'
+import { PendingExpeditionRewards } from './ExpeditionRewardSync'
 import { ExpeditionProgress } from './ExpeditionProgress'
 import { PreparingPanel } from './ResultPanel'
 import { StaleNotice } from './StaleNotice'
@@ -20,6 +22,7 @@ import styles from './DashboardExpeditionPanel.module.css'
  */
 export function DashboardExpeditionPanel() {
   const transport = useApiTransport()
+  const queryClient = useQueryClient()
   const headingId = useId()
   const currentQuery = useQuery({
     queryKey: currentExpeditionQueryKey,
@@ -28,33 +31,48 @@ export function DashboardExpeditionPanel() {
   })
   const currentStale = currentQuery.isRefetchError
 
+  useEffect(() => {
+    if (currentQuery.data?.kind === 'current') {
+      registerExpeditionReward(currentQuery.data.expedition, queryClient, transport)
+    }
+  }, [currentQuery.data, queryClient, transport])
+
   if (currentQuery.isPending) {
     return (
-      <ContentSurface tone="raised" className={styles.loading} aria-busy="true">
-        <Skeleton lines={3} />
-      </ContentSurface>
+      <>
+        <ContentSurface tone="raised" className={styles.loading} aria-busy="true">
+          <Skeleton lines={3} />
+        </ContentSurface>
+        <PendingExpeditionRewards />
+      </>
     )
   }
   if (currentQuery.isError && currentQuery.data === undefined) {
     return (
-      <UnavailableState
-        title="Expeditions are unavailable"
-        description="We could not check your Expedition. Try again."
-        onRetry={() => {
-          void currentQuery.refetch()
-        }}
-      />
+      <>
+        <UnavailableState
+          title="Expeditions are unavailable"
+          description="We could not check your Expedition. Try again."
+          onRetry={() => {
+            void currentQuery.refetch()
+          }}
+        />
+        <PendingExpeditionRewards />
+      </>
     )
   }
 
   const current = currentQuery.data
   if (current.kind === 'not_ready') {
     return (
-      <PreparingPanel
-        onRetry={() => {
-          void currentQuery.refetch()
-        }}
-      />
+      <>
+        <PreparingPanel
+          onRetry={() => {
+            void currentQuery.refetch()
+          }}
+        />
+        <PendingExpeditionRewards />
+      </>
     )
   }
   if (current.kind === 'current') {
@@ -69,6 +87,7 @@ export function DashboardExpeditionPanel() {
             />
           ) : null}
           <ExpeditionProgress expedition={current.expedition} showLinks balanceSync={undefined} />
+          <PendingExpeditionRewards />
         </div>
       )
     }
@@ -77,6 +96,7 @@ export function DashboardExpeditionPanel() {
       <ContentSurface tone="raised" aria-labelledby={headingId}>
         <h2 id={headingId}>Expedition resolved</h2>
         <p>Your latest Expedition has resolved. View its result and launch a new one.</p>
+        <PendingExpeditionRewards />
         <nav className={styles.links} aria-label="Expedition links">
           <Link to="/expeditions">Go to Expeditions</Link>
         </nav>
@@ -96,6 +116,7 @@ export function DashboardExpeditionPanel() {
         />
       ) : null}
       <p>Invest materials in an Expedition to earn rewards on success.</p>
+      <PendingExpeditionRewards />
       <nav className={styles.links} aria-label="Expedition links">
         <Link to="/expeditions">Launch an Expedition</Link>
         <Link to="/expeditions/history">View history</Link>

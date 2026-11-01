@@ -97,10 +97,12 @@ describe('/dailies/new', () => {
 
     // Returns to /dailies with the changed row identified and focused.
     const row = await screen.findByRole('heading', { level: 3, name: 'Check the star charts' })
+    // Focus and the current-row marker settle in separate commits under load;
+    // wait for both instead of racing the attribute immediately after focus.
     await vi.waitFor(() => {
       expect(row).toHaveFocus()
+      expect(row).toHaveAttribute('aria-current', 'true')
     })
-    expect(row).toHaveAttribute('aria-current', 'true')
     expect(screen.getByText('Created Daily "Check the star charts".')).toBeInTheDocument()
   })
 

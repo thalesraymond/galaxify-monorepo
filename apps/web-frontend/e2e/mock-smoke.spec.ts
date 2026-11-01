@@ -1,15 +1,5 @@
 import { expect, test } from '@playwright/test'
 
-type MockRuntime = {
-  readonly scenario: string
-}
-
-declare global {
-  interface Window {
-    __galaxifyMock?: MockRuntime
-  }
-}
-
 test.describe('mock mode (MSW)', () => {
   test('serves the default scenario over relative /api paths and fails unhandled requests', async ({
     page,

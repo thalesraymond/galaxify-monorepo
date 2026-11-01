@@ -1,10 +1,11 @@
 import { expect, type Page } from '@playwright/test'
+import type { MockBackend } from '../src/mocks/backend'
 
 export const SESSION_REFRESH_STORAGE_KEY = 'galaxify.session.refresh.v1'
 
 declare global {
   interface Window {
-    __galaxifyMock?: { readonly scenario: string }
+    __galaxifyMock?: { readonly backend: MockBackend; readonly scenario: string }
   }
 }
 

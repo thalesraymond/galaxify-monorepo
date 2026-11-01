@@ -1,6 +1,6 @@
-import { useId } from 'react'
+import { useEffect, useId } from 'react'
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { Button, ContentSurface, Skeleton, StatusBadge, UnavailableState } from '@/shared/ui'
 import { useApiTransport } from '@/shared/api/TransportContext'
@@ -9,6 +9,8 @@ import type { DownstreamObservationPhase } from '@/shared/reconciliation'
 
 import type { Expedition } from '../api/expeditionApi'
 import { expeditionDetailQueryKeyFor, getExpeditionById } from '../api/expeditionApi'
+import { registerExpeditionReward } from '../lib/expeditionRewardObservation'
+import { ExpeditionRewardSync } from './ExpeditionRewardSync'
 import { formatAbsoluteTime, formatMaterialReward } from './format'
 import { useCelebration } from './useCelebration'
 import {
@@ -33,11 +35,14 @@ import styles from './expeditionPanels.module.css'
 export function ResultPanel({
   expeditionId,
   celebrate,
+  showRewardSync = true,
 }: {
   expeditionId: string
   celebrate: boolean
+  showRewardSync?: boolean
 }) {
   const transport = useApiTransport()
+  const queryClient = useQueryClient()
   const query = useQuery({
     queryKey: expeditionDetailQueryKeyFor(expeditionId),
     queryFn: ({ signal }) => getExpeditionById(transport, expeditionId, signal),
@@ -46,6 +51,9 @@ export function ResultPanel({
   const headingId = useId()
 
   const expedition = query.data
+  useEffect(() => {
+    if (expedition !== undefined) registerExpeditionReward(expedition, queryClient, transport)
+  }, [expedition, queryClient, transport])
   const resultMissing = isExpeditionResultMissing(expedition)
   const resultObservation = useExpeditionResultReconciliation(expeditionId, expedition)
 
@@ -110,6 +118,7 @@ export function ResultPanel({
         <h2 id={headingId}>Expedition resolved</h2>
       </div>
       <p className={styles.reward}>{formatMaterialReward(result.material_reward.materials)}</p>
+      {showRewardSync ? <ExpeditionRewardSync expeditionId={expeditionId} /> : null}
       <ExpeditionTimeline expedition={expedition} />
     </ContentSurface>
   )

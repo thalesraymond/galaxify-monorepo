@@ -1,6 +1,5 @@
 import { expect, type Page } from '@playwright/test'
 
-import type { Expedition } from '../src/api/generated/expedition/types.gen'
 import { seedAuthenticated } from './session'
 
 /** The real route and Retry, with only the service's delayed result controlled. */
@@ -9,9 +8,9 @@ export async function expectResultObservationSurvivesNavigation(page: Page): Pro
   await page.goto('/expeditions/history')
   await expect(page.getByRole('heading', { name: 'Expedition history' })).toBeVisible()
   await page.evaluate(() => {
-    const { backend } = window.__galaxifyMock as unknown as {
-      backend: { getExpedition: (token: string | undefined, id: string) => Expedition }
-    }
+    const runtime = window.__galaxifyMock
+    if (runtime === undefined) throw new Error('Mock runtime is unavailable')
+    const { backend } = runtime
     const getExpedition = backend.getExpedition.bind(backend)
     let available = false
     window.addEventListener('test:result-available', () => {

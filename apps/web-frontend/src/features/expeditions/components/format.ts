@@ -52,5 +52,5 @@ export function formatResolveWindow(windowSeconds: bigint | undefined): string {
 
 /** Typed expedition reward copy: `+80 materials` or `0 materials`. */
 export function formatMaterialReward(materials: number): string {
-  return materials > 0 ? `+${materials} materials` : '0 materials'
+  return `${materials > 0 ? '+' : ''}${materials} materials`
 }

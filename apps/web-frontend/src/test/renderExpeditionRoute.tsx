@@ -4,7 +4,9 @@ import { createMemoryRouter, type RouteObject } from 'react-router'
 
 import { AppProviders } from '@/app/providers'
 import { AppShell } from '@/app/shell/AppShell'
-import { RequireAuth } from '@/features/auth'
+import { DashboardPage } from '@/app/pages/DashboardPage'
+import { RequireAuth, type SessionRuntime } from '@/features/auth'
+import { ShipPage } from '@/app/pages/ShipPage'
 import {
   ExpeditionDetailPage,
   ExpeditionHistoryPage,
@@ -35,6 +37,8 @@ const expeditionRouteTree: RouteObject[] = [
         element: <AppShell />,
         children: [
           { path: '/expeditions', element: <ExpeditionsPage /> },
+          { path: '/dashboard', element: <DashboardPage /> },
+          { path: '/ship', element: <ShipPage /> },
           { path: '/expeditions/history', element: <ExpeditionHistoryPage /> },
           { path: '/expeditions/:expeditionId', element: <ExpeditionDetailPage /> },
         ],
@@ -44,7 +48,13 @@ const expeditionRouteTree: RouteObject[] = [
 ]
 
 /** Renders the expedition subtree with fake timers already enabled. */
-export function renderExpeditionRoute(path: string, queryClient?: QueryClient) {
+export function renderExpeditionRoute(
+  path: string,
+  queryClient?: QueryClient,
+  sessionRuntime?: SessionRuntime,
+) {
   const router = createMemoryRouter(expeditionRouteTree, { initialEntries: [path] })
-  return render(<AppProviders router={router} queryClient={queryClient} />)
+  return render(
+    <AppProviders router={router} queryClient={queryClient} sessionRuntime={sessionRuntime} />,
+  )
 }
