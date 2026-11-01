@@ -15,6 +15,9 @@ import {
   onUnhandledMockRequest,
 } from '@/mocks'
 import { SESSION_REFRESH_STORAGE_KEY } from '@/features/auth'
+import { createQueryClient } from '@/app/queryClient'
+import { downstreamReconciliation, getBalanceGateKeys } from '@/shared/reconciliation'
+import { expeditionDetailQueryKeyFor } from '../api/expeditionApi'
 import { renderAppAt } from '@/test/renderApp'
 import { renderExpeditionRoute } from '@/test/renderExpeditionRoute'
 import { advanceFakeTime, advanceUntil, seedAuthenticatedSession } from '@/test/expeditionTestUtils'
@@ -337,6 +340,39 @@ function expeditionWithoutResult(id: string): Expedition {
  */
 describe('Expedition detail — result observation lifecycle', () => {
   const id = RESOLVED_ID
+
+  it('discards a detail response held across logout', async () => {
+    let requested = false
+    let release: () => void = () => {}
+    server.server.use(
+      http.get(`/api/expedition/expeditions/${id}`, async () => {
+        requested = true
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+        return HttpResponse.json(createResolvedExpedition(id))
+      }),
+    )
+    enableProbeTimers()
+    const client = createQueryClient()
+    renderExpeditionRoute(`/expeditions/${id}`, client)
+    await advanceUntil(() => requested, 'the detail request')
+    fireEvent.click(screen.getByRole('button', { name: 'Account' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Log out' }))
+    await advanceUntil(
+      () => window.localStorage.getItem(SESSION_REFRESH_STORAGE_KEY) === null,
+      'logout',
+    )
+    await act(async () => {
+      release()
+      await Promise.resolve()
+    })
+    await advanceFakeTime(100)
+    expect(client.getQueryData(expeditionDetailQueryKeyFor(id))).toBeUndefined()
+    expect(downstreamReconciliation.getPhase(`expedition:${id}:reward`)).toBe('idle')
+    expect(downstreamReconciliation.getPhase(`expedition:${id}:result`)).toBe('idle')
+    expect(getBalanceGateKeys()).toHaveLength(0)
+  })
 
   it('survives navigation and resumes the remaining budget with no reads while away', async () => {
     let resultAvailable = false

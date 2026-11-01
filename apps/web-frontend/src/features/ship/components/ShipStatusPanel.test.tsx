@@ -19,6 +19,7 @@ import {
 import { TransportProvider } from '@/shared/api/TransportContext'
 import {
   clearDownstreamObservations,
+  downstreamReconciliation,
   registerBalanceGateKey,
   registerDownstreamObservation,
 } from '@/shared/reconciliation'
@@ -112,6 +113,42 @@ function ExpeditionObserver({ onObserved }: { onObserved: () => void }) {
 }
 
 describe('ShipStatusPanel composite', () => {
+  it('drops a repair response received after the session clears', async () => {
+    const user = userEvent.setup()
+    server.reset('damaged-ship')
+    const queryClient = createQueryClient()
+    const transport = await createPanelTransport()
+    const view = mountPanelTree(queryClient, transport)
+    await screen.findByRole('heading', { level: 2, name: 'Ship status' })
+    let release: () => void = () => {}
+    let received: () => void = () => {}
+    const started = new Promise<void>((resolve) => {
+      received = resolve
+    })
+    server.server.use(
+      http.post('/api/ship/ships/repair', async () => {
+        received()
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+        return HttpResponse.json(createDamagedShip({ hull_health: 100 }))
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Repair Ship' }))
+    await started
+    act(() => {
+      view.unmount()
+      clearDownstreamObservations()
+      queryClient.clear()
+    })
+    await act(async () => {
+      release()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    expect(queryClient.getQueryData(shipQueryKey)).toBeUndefined()
+    expect(downstreamReconciliation.getPhase('ship:repair:readiness')).toBe('idle')
+    expect(screen.queryByText('The Ship was repaired.')).not.toBeInTheDocument()
+  })
   it('blocks repair while a balance observation is updating', async () => {
     await mountPanel()
     act(() => {

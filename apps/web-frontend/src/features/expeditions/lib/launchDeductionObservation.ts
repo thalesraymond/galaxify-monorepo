@@ -17,11 +17,6 @@ type LaunchDeduction = {
 }
 
 const expectations = new Map<string, LaunchDeduction>()
-let sessionGeneration = 0
-
-export function launchDeductionSessionGeneration(): number {
-  return sessionGeneration
-}
 
 export function launchDeductionKey(expeditionId: string): string {
   return `expedition:${expeditionId}:launch-deduction`
@@ -55,5 +50,4 @@ export function registerLaunchDeduction(
 
 onClearDownstreamObservations(() => {
   expectations.clear()
-  sessionGeneration += 1
 })

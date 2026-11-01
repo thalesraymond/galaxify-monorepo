@@ -40,7 +40,9 @@ let attemptedGeneration: number | undefined
 let failedGeneration: number | undefined
 let activeReadId = 0
 let activeController: AbortController | undefined
+let activeQueryClient: ReturnType<typeof useQueryClient> | undefined
 let activeTimer: ReturnType<typeof setTimeout> | undefined
+let stopActiveAvailability: (() => void) | undefined
 let freshnessSnapshot = ''
 const freshnessListeners = new Set<() => void>()
 
@@ -66,14 +68,42 @@ function getFreshnessSnapshot(): string {
   return freshnessSnapshot
 }
 
+function canReadGate(): boolean {
+  return document.visibilityState !== 'hidden' && navigator.onLine
+}
+
+function subscribeToAvailability(listener: () => void): () => void {
+  const changed = (): void => {
+    if (!canReadGate() && activeController !== undefined) {
+      const client = activeQueryClient
+      abortActiveRead()
+      void client?.cancelQueries({ queryKey: shipQueryKey, exact: true })
+      attemptedGeneration = undefined
+      publishFreshness()
+    }
+    listener()
+  }
+  document.addEventListener('visibilitychange', changed)
+  window.addEventListener('online', changed)
+  window.addEventListener('offline', changed)
+  return () => {
+    document.removeEventListener('visibilitychange', changed)
+    window.removeEventListener('online', changed)
+    window.removeEventListener('offline', changed)
+  }
+}
+
 function abortActiveRead(): void {
   activeReadId += 1
+  stopActiveAvailability?.()
+  stopActiveAvailability = undefined
   if (activeTimer !== undefined) {
     clearTimeout(activeTimer)
     activeTimer = undefined
   }
   activeController?.abort()
   activeController = undefined
+  activeQueryClient = undefined
 }
 
 function resetAttempts(): void {
@@ -151,6 +181,7 @@ export function useShipBalanceGate(): ShipBalanceGate {
   )
   // Subscribes the render to the shared read/approval bookkeeping.
   useSyncExternalStore(subscribeToFreshness, getFreshnessSnapshot, getFreshnessSnapshot)
+  const available = useSyncExternalStore(subscribeToAvailability, canReadGate, canReadGate)
 
   const ship = useQuery({
     queryKey: shipQueryKey,
@@ -201,6 +232,7 @@ export function useShipBalanceGate(): ShipBalanceGate {
       updating ||
       expiryEpoch === undefined ||
       expiryGeneration === 0 ||
+      !available ||
       attemptedGeneration === expiryGeneration
     ) {
       return
@@ -214,11 +246,16 @@ export function useShipBalanceGate(): ShipBalanceGate {
     publishFreshness()
     const controller = new AbortController()
     activeController = controller
+    activeQueryClient = queryClient
+    stopActiveAvailability = subscribeToAvailability(() => {})
     activeTimer = setTimeout(() => {
       if (readId !== activeReadId) return
       activeReadId += 1
       activeController = undefined
+      activeQueryClient = undefined
       activeTimer = undefined
+      stopActiveAvailability?.()
+      stopActiveAvailability = undefined
       controller.abort()
       failedGeneration = readGeneration
       publishFreshness()
@@ -232,6 +269,9 @@ export function useShipBalanceGate(): ShipBalanceGate {
           activeTimer = undefined
         }
         activeController = undefined
+        activeQueryClient = undefined
+        stopActiveAvailability?.()
+        stopActiveAvailability = undefined
         if (getBalanceGateExpiry().generation !== readGeneration) return
         if (result.kind === 'ready') {
           // The read started after expiry even when the clock has millisecond
@@ -251,6 +291,9 @@ export function useShipBalanceGate(): ShipBalanceGate {
           activeTimer = undefined
         }
         activeController = undefined
+        activeQueryClient = undefined
+        stopActiveAvailability?.()
+        stopActiveAvailability = undefined
         if (getBalanceGateExpiry().generation !== readGeneration) return
         failedGeneration = readGeneration
         publishFreshness()
@@ -264,6 +307,7 @@ export function useShipBalanceGate(): ShipBalanceGate {
     queryClient,
     transport,
     retryToken,
+    available,
   ])
 
   const balance = ship.data?.kind === 'ready' ? ship.data.ship.materials_balance : undefined

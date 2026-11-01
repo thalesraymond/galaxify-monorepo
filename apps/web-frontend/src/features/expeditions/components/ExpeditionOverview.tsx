@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { getShip, shipQueryKey } from '@/features/ship'
 import { useApiTransport } from '@/shared/api/TransportContext'
-import { useDownstreamObservation } from '@/shared/reconciliation'
+import { getDownstreamSessionGeneration, useDownstreamObservation } from '@/shared/reconciliation'
 import { Skeleton, UnavailableState } from '@/shared/ui'
 
 import {
@@ -38,6 +38,7 @@ function currentPollInterval(data: CurrentExpedition | undefined): number | fals
  * and at resolution (§5.6, §3.4) and stale-refresh labeling (§3.2).
  */
 export function ExpeditionOverview() {
+  const [sessionGeneration] = useState(getDownstreamSessionGeneration)
   const transport = useApiTransport()
   const queryClient = useQueryClient()
   const currentQuery = useQuery({
@@ -72,10 +73,13 @@ export function ExpeditionOverview() {
   }, [currentQuery.data, shipQuery.data])
 
   useEffect(() => {
-    if (currentQuery.data?.kind === 'current') {
+    if (
+      sessionGeneration === getDownstreamSessionGeneration() &&
+      currentQuery.data?.kind === 'current'
+    ) {
       registerExpeditionReward(currentQuery.data.expedition, queryClient, transport)
     }
-  }, [currentQuery.data, queryClient, transport])
+  }, [currentQuery.data, queryClient, transport, sessionGeneration])
 
   const currentStale = currentQuery.isRefetchError
 
@@ -140,6 +144,7 @@ export function ExpeditionOverview() {
     return (
       <>
         <ResultPanel
+          sessionGeneration={sessionGeneration}
           expeditionId={current.expedition.id}
           celebrate={false}
           showRewardSync={false}
@@ -159,7 +164,9 @@ export function ExpeditionOverview() {
           }}
         />
       ) : null}
-      {resolved !== undefined ? <ResultPanel expeditionId={resolved.id} celebrate /> : null}
+      {resolved !== undefined ? (
+        <ResultPanel expeditionId={resolved.id} celebrate sessionGeneration={sessionGeneration} />
+      ) : null}
       <PendingExpeditionRewards excludeId={resolved?.id} />
       <LaunchForm balance={balance} />
     </div>

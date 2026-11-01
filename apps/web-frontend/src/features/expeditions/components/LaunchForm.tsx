@@ -5,6 +5,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { isApiHttpError, isApiTransportError } from '@/api/transport'
 import { shipQueryKey, useShipBalanceGate, type ShipState } from '@/features/ship'
 import { useApiTransport } from '@/shared/api/TransportContext'
+import { getDownstreamSessionGeneration } from '@/shared/reconciliation'
 import {
   Button,
   ContentSurface,
@@ -23,10 +24,7 @@ import {
   type CurrentExpedition,
   type ExpeditionQuote,
 } from '../api/expeditionApi'
-import {
-  launchDeductionSessionGeneration,
-  registerLaunchDeduction,
-} from '../lib/launchDeductionObservation'
+import { registerLaunchDeduction } from '../lib/launchDeductionObservation'
 import { formatAbsoluteTime, formatPercentChance, formatResolveWindow } from './format'
 import styles from './launchForm.module.css'
 
@@ -103,7 +101,7 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
     onMutate: () => {
       const state = queryClient.getQueryState<ShipState>(shipQueryKey)
       return {
-        sessionGeneration: launchDeductionSessionGeneration(),
+        sessionGeneration: getDownstreamSessionGeneration(),
         baseline:
           state?.status === 'success' && state.data?.kind === 'ready'
             ? state.data.ship.materials_balance
@@ -111,7 +109,7 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
       }
     },
     onSuccess: (expedition, _materials, context) => {
-      if (context.sessionGeneration !== launchDeductionSessionGeneration()) return
+      if (context.sessionGeneration !== getDownstreamSessionGeneration()) return
       registerLaunchDeduction(expedition, context.baseline, queryClient, transport)
       queryClient.setQueryData(currentExpeditionQueryKey, { kind: 'current', expedition })
       void queryClient.invalidateQueries({ queryKey: currentExpeditionQueryKey })

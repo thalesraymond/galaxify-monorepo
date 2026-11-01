@@ -6,6 +6,7 @@ import { Link } from 'react-router'
 
 import { isApiHttpError, isApiTransportError } from '@/api/transport'
 import { useApiTransport } from '@/shared/api/TransportContext'
+import { getDownstreamSessionGeneration } from '@/shared/reconciliation'
 import {
   Button,
   ContentSurface,
@@ -58,8 +59,9 @@ export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode }
   )
 
   const repairMutation = useMutation({
-    mutationFn: () => repairShipAndCache(queryClient, transport),
-    onSuccess: () => {
+    mutationFn: (generation: number) => repairShipAndCache(queryClient, transport, generation),
+    onSuccess: (_ship, generation) => {
+      if (generation !== getDownstreamSessionGeneration()) return
       // The Expedition service caches Ship state privately; invalidate its
       // queries so visible downstream data reconciles (`web-frontend.md` §3.4).
       void queryClient.invalidateQueries({ queryKey: ['expeditions'] })
@@ -115,7 +117,7 @@ export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode }
     if (balanceGate.state !== 'open') return
     setRepairOutcome({ kind: 'none' })
     repairButtonRef.current?.focus()
-    repairMutation.mutate()
+    repairMutation.mutate(getDownstreamSessionGeneration())
   }
 
   const shipState = shipQuery.data
@@ -239,7 +241,7 @@ export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode }
             aria-describedby={repairDescribedBy}
             onClick={() => {
               setRepairOutcome({ kind: 'none' })
-              repairMutation.mutate()
+              repairMutation.mutate(getDownstreamSessionGeneration())
             }}
           >
             Repair Ship

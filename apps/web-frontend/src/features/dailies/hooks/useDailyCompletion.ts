@@ -4,7 +4,11 @@ import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import type { Daily, Difficulty } from '@/api/generated/daily/types.gen'
 import { isApiHttpError, type ApiTransport } from '@/api/transport'
 import { shipQueryKey, type ShipState } from '@/features/ship'
-import { downstreamReconciliation, type DownstreamObservationPhase } from '@/shared/reconciliation'
+import {
+  downstreamReconciliation,
+  getDownstreamSessionGeneration,
+  type DownstreamObservationPhase,
+} from '@/shared/reconciliation'
 
 import { completeDaily, dailiesQueryKey, type DailyListFilters } from '../api/dailyApi'
 import {
@@ -128,9 +132,14 @@ export function useDailyCompletion(
   }, [expectations])
 
   const completeMutation = useMutation({
-    mutationFn: ({ dailyId }: { readonly dailyId: string; readonly difficulty: Difficulty }) =>
-      completeDaily(transport, dailyId),
-    onMutate: async ({ dailyId }) => {
+    mutationFn: ({
+      dailyId,
+    }: {
+      readonly dailyId: string
+      readonly difficulty: Difficulty
+      readonly sessionGeneration: number
+    }) => completeDaily(transport, dailyId),
+    onMutate: async ({ dailyId, sessionGeneration }) => {
       // The baseline is read synchronously from the confirmed Ship cache, so
       // the Player's command is never delayed to obtain it.
       const baseline = captureShipBaseline(queryClient)
@@ -139,6 +148,8 @@ export function useDailyCompletion(
       // PENDING filter the completed row belongs in the (hidden) completed
       // section, so it leaves the visible pending list at once.
       await queryClient.cancelQueries({ queryKey: dailiesQueryKey(filters) })
+      if (sessionGeneration !== getDownstreamSessionGeneration())
+        return { previous: undefined, baseline, sessionGeneration }
       const previous = queryClient.getQueryData<Daily[]>(dailiesQueryKey(filters))
       queryClient.setQueryData<Daily[]>(dailiesQueryKey(filters), (current) => {
         if (current === undefined) {
@@ -151,10 +162,11 @@ export function useDailyCompletion(
           daily.id === dailyId ? { ...daily, status: 'COMPLETED' as const } : daily,
         )
       })
-      return { previous, baseline }
+      return { previous, baseline, sessionGeneration }
     },
     onError: (error, variables, context) => {
-      const previous = context?.previous
+      if (context?.sessionGeneration !== getDownstreamSessionGeneration()) return
+      const previous = context.previous
       if (previous !== undefined) {
         queryClient.setQueryData<Daily[]>(dailiesQueryKey(filters), (current) =>
           restoreCompletedRow(current, previous, variables.dailyId),
@@ -168,7 +180,7 @@ export function useDailyCompletion(
         registerDailyAwardObservation(
           variables.dailyId,
           expectedAward,
-          context?.baseline,
+          context.baseline,
           queryClient,
           transport,
         )
@@ -185,6 +197,7 @@ export function useDailyCompletion(
       })
     },
     onSuccess: (completed, _variables, context) => {
+      if (context.sessionGeneration !== getDownstreamSessionGeneration()) return
       setFailures((previousFailures) => {
         const next = new Map(previousFailures)
         next.delete(completed.id)
@@ -205,7 +218,11 @@ export function useDailyCompletion(
 
   const complete = useCallback(
     (dailyId: string, difficulty: Difficulty): void => {
-      completeMutation.mutate({ dailyId, difficulty })
+      completeMutation.mutate({
+        dailyId,
+        difficulty,
+        sessionGeneration: getDownstreamSessionGeneration(),
+      })
     },
     [completeMutation],
   )
