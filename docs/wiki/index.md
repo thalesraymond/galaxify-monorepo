@@ -30,10 +30,15 @@ This wiki complements, and does not replace, [`docs/adr/`](../adr/) and
 
 - [Wiki location](decisions/wiki-location.md) — On 2026-10-31, the agent wiki
   moved to `docs/wiki/` in this repository, not the personal Obsidian vault.
+- [Stack overlapping layout tickets](decisions/stacked-layout-prs.md) — On
+  2026-10-31, six coupled layout PRs were stacked in merge order, each
+  refreshing the snapshots the combined tree made stale.
 
 ## Problems
 
-_None yet._
+- [Parallel Playwright worktrees](problems/parallel-playwright-worktrees.md) —
+  Fixed dev-server ports and shared screenshot baselines make independent
+  parallel lanes test each other or drift after the first merge.
 
 ## Subsystems
 
