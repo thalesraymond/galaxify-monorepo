@@ -282,7 +282,7 @@ export function DailiesListPage() {
           </div>
         ) : null}
         {dailies.length === 0 ? (
-          <EmptyState title="No Dailies">
+          <EmptyState embedded title="No Dailies">
             There are no Dailies for {formatOccurrenceDate(selectedDate)}. Create one to start a
             recurring responsibility.
           </EmptyState>

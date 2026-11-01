@@ -157,6 +157,7 @@ export function DashboardDailiesPanel() {
         ) : null}
         {dailies.length === 0 ? (
           <EmptyState
+            embedded
             title="No Dailies for today"
             action={
               <Link className={styles.createLink} to="/dailies/new">
