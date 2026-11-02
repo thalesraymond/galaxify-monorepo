@@ -34,11 +34,11 @@
     "verify": "npm run format:check && npm run typecheck && npm run lint && npm run test:coverage && npm run test:orchestration && npm run api:check && npm run build && npm run bundle:check && npm run test:e2e && npm run test:e2e:mock && npm run test:cross-browser && npm run test:a11y && npm run test:visual && npm run perf"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.104.5",
+    "@tanstack/react-query": "^5.105.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-hook-form": "^7.90.0",
-    "react-router": "^8.5.0",
+    "react-hook-form": "^7.91.0",
+    "react-router": "^8.5.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -51,7 +51,7 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.8",
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
@@ -60,7 +60,7 @@
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
     "eslint-import-resolver-typescript": "^4.4.5",
-    "eslint-plugin-boundaries": "^7.2.1",
+    "eslint-plugin-boundaries": "^7.4.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-testing-library": "^7.16.2",
@@ -69,7 +69,7 @@
     "msw": "^2.15.0",
     "prettier": "^3.9.10",
     "typescript": "~6.0.3",
-    "typescript-eslint": "^8.72.0",
+    "typescript-eslint": "^8.72.1",
     "vite": "^8.3.5",
     "vitest": "^5.0.0"
   },
