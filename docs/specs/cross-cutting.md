@@ -560,7 +560,7 @@ This spec graduates into the following implementation tickets, all children of
 map #8:
 
 1. **`pkg/events` package** — envelope, Publisher, Subscriber, per-event-type
-   structs, idempotency helper, outbox drain helper.
+   structs, idempotent consumer pipeline (per ADR-0010), outbox drain helper.
 2. **`pkg/auth` package** — Ed25519 keypair generation, JWT signing/verification,
    JWKS fetcher with TTL + force-refresh, HTTP middleware, refresh token store
    interface, password hashing.
