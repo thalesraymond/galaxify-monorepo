@@ -93,7 +93,7 @@ export function DailyRow({
               : `Completed · +${reconciliation.expectedAward} materials`}
           </span>
         )}
-        <Link className={styles.editLink} to={`/dailies/${daily.id}/edit`}>
+        <Link className={styles.editLink} to={`/dailies/${daily.id}/edit`} aria-label={`Edit ${daily.title}`}>
           Edit
         </Link>
         <Button
