@@ -79,8 +79,10 @@ function Prototype() {
   const selectedDate = params.get('date') ?? '2026-01-15'
   const selectedStatus = params.get('status') ?? 'all'
   const historyView = path === '/dailies/history'
-  const formView = path === '/dailies/new' || path.startsWith('/dailies/edit/')
-  const editing = tasks.find((daily) => path === `/dailies/edit/${daily.id}`)
+  const formView = path === '/dailies/new' || /^\/dailies\/[^/]+\/edit$/.test(path)
+  const editing = tasks.find((daily) => path === `/dailies/${daily.id}/edit`)
+  const expeditionHistory = path === '/expeditions/history'
+  const expeditionDetail = /^\/expeditions\/[^/]+$/.test(path) && !expeditionHistory
   const [draft, setDraft] = useState(
     editing
       ? { title: editing.title, description: editing.description, difficulty: editing.difficulty }
@@ -231,7 +233,7 @@ function Prototype() {
         : { title: '', description: '', difficulty: 'Easy' },
     )
     setDirty(false)
-    void navigate(href(daily ? `/dailies/edit/${daily.id}` : '/dailies/new'))
+    void navigate(href(daily ? `/dailies/${daily.id}/edit` : '/dailies/new'))
   }
   function saveDaily(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -280,11 +282,17 @@ function Prototype() {
       ? 'Daily History'
       : path === '/ship'
         ? 'Ship'
-        : path === '/expeditions'
-          ? 'Expeditions'
-          : path === '/dailies'
-            ? 'Dailies'
-            : 'Dashboard'
+        : expeditionHistory
+          ? 'Expedition history'
+          : expeditionDetail
+            ? 'Expedition result'
+            : path === '/expeditions'
+              ? 'Expeditions'
+              : path === '/dailies'
+                ? 'Dailies'
+                  : path === '/dashboard' || path === '/'
+                    ? 'Dashboard'
+                    : 'Prototype unavailable'
   const navigation = (
     <nav aria-label="Primary">
       {routes.map(([route, label]) => (
@@ -300,7 +308,7 @@ function Prototype() {
             setMenuOpen(false)
           }}
           aria-current={
-            path === route || (route === '/dailies' && path.startsWith('/dailies/'))
+            path === route || (route !== '/dashboard' && path.startsWith(`${route}/`))
               ? 'page'
               : undefined
           }
@@ -327,7 +335,11 @@ function Prototype() {
       Galaxify
     </Link>
   )
-  const account = <span className={styles.account}>Player · Rowan</span>
+  const account = (
+    <Link className={styles.account} to={href('/profile')}>
+      Player · Rowan
+    </Link>
+  )
   const dailyCount = scenario === 'empty' ? 0 : tasks.length
   const doneCount =
     scenario === 'empty' ? 0 : tasks.filter((daily) => completed.includes(daily.id)).length
@@ -346,7 +358,7 @@ function Prototype() {
                 ? 'Manage your recurring routine.'
                 : path === '/ship'
                   ? 'Your routine keeps this Ship moving.'
-                  : path === '/expeditions'
+                  : expeditionHistory || expeditionDetail || path === '/expeditions'
                     ? 'Invest materials. Give the journey time.'
                     : `Thursday, January 15 · ${dailyCount - doneCount} Dailies left today.`}
         </p>
@@ -783,6 +795,11 @@ function Prototype() {
           <h2 id="expedition-heading">Expedition</h2>
           <span>{inFlight ? 'In flight' : 'Not launched'}</span>
         </div>
+        {detailed && (
+          <Link className={styles.textLink} to={href('/expeditions/history')}>
+            Expedition history
+          </Link>
+        )}
         {flight ? (
           <>
             <p className={styles.flightTime}>Resolves at 10:00 UTC</p>
@@ -913,12 +930,46 @@ function Prototype() {
         {expeditionContent()}
       </div>
     )
-  else
+  else if (expeditionHistory)
+    work = (
+      <section className={styles.history} aria-labelledby="expedition-history-heading">
+        <h2 id="expedition-history-heading">Past Expeditions</h2>
+        <p>One completed journey in this synthetic sample.</p>
+        <ul className={styles.dailyList}>
+          <li>
+            <div className={styles.dailyText}>
+              <h3>Expedition · January 14</h3>
+              <p>Successful · 40 materials invested · 80 materials returned</p>
+              <Link to={href('/expeditions/sample-success')}>View result</Link>
+            </div>
+          </li>
+        </ul>
+        <Link to={href('/expeditions')}>Plan an Expedition</Link>
+      </section>
+    )
+  else if (path === '/expeditions/sample-success')
+    work = (
+      <section className={styles.history} aria-labelledby="expedition-result-heading">
+        <h2 id="expedition-result-heading">Successful Expedition</h2>
+        <p>January 14 · 40 materials invested · 80 materials returned.</p>
+        <p>This is a synthetic resolved result, not a live Expedition.</p>
+        <Link to={href('/expeditions/history')}>Back to Expedition history</Link>
+      </section>
+    )
+  else if (path === '/expeditions')
     work = (
       <div className={styles.detailWork}>
         {expeditionContent(true)}
         {shipContent(true)}
       </div>
+    )
+  else
+    work = (
+      <section className={styles.placeholder}>
+        <h2>Prototype route not yet modeled</h2>
+        <p>This surface has not been built in the prototype.</p>
+        <Link to={href('/dashboard')}>Back to Dashboard</Link>
+      </section>
     )
   const main = (
     <main id="work" className={styles.main}>
