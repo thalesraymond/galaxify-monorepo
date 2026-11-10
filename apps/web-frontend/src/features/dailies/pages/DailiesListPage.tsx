@@ -225,6 +225,23 @@ export function DailiesListPage() {
       }
     }
 
+  const dailies = listQuery.data
+  // ⚡ Bolt: Memoize the daily list split to avoid O(N) filtering and O(N log N) sorting
+  // on every render, and combine two iterations into a single O(N) pass.
+  const { pending, completed } = useMemo(() => {
+    if (!dailies) return { pending: [], completed: [] }
+    const p: Daily[] = []
+    const c: Daily[] = []
+    for (const d of dailies) {
+      if (d.status === 'PENDING') p.push(d)
+      else if (d.status === 'COMPLETED') c.push(d)
+    }
+    return {
+      pending: p.sort(byLocalDueTime),
+      completed: c.sort(byLocalDueTime),
+    }
+  }, [dailies])
+
   const renderRow = (daily: Daily): ReactNode => (
     <li key={daily.id} className={styles.rowItem}>
       <DailyRow
@@ -267,7 +284,7 @@ export function DailiesListPage() {
         </Button>
       </ContentSurface>
     )
-  } else if (listQuery.data === undefined) {
+  } else if (dailies === undefined) {
     body = (
       <UnavailableState
         title="Dailies are unavailable"
@@ -276,9 +293,6 @@ export function DailiesListPage() {
       />
     )
   } else {
-    const dailies = listQuery.data
-    const pending = dailies.filter((daily) => daily.status === 'PENDING').sort(byLocalDueTime)
-    const completed = dailies.filter((daily) => daily.status === 'COMPLETED').sort(byLocalDueTime)
     body = (
       <>
         {listQuery.isRefetchError ? (
