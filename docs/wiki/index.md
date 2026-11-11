@@ -28,6 +28,9 @@ This wiki complements, and does not replace, [`docs/adr/`](../adr/) and
 
 ## Decisions
 
+- [After hours redesign handoff](decisions/after-hours-redesign-handoff.md) — On
+  2026-11-10, the user approved the redesign spec and seven-ticket handoff;
+  production implementation and merge remain a separate authorization.
 - [Wiki location](decisions/wiki-location.md) — On 2026-10-31, the agent wiki
   moved to `docs/wiki/` in this repository, not the personal Obsidian vault.
 - [Stack overlapping layout tickets](decisions/stacked-layout-prs.md) — On

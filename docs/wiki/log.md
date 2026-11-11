@@ -126,3 +126,13 @@ and fixed a retained-cache publication path in `observeShip`; see
 [`problems/tanstack-revert-retained-cache.md`](problems/tanstack-revert-retained-cache.md).
 Full frontend gate passed in CI in 5m58s. Remaining non-blocking risk: hiding a
 gate surface can abort a Ship read another observation joined; the round retries.
+
+## [2026-11-10] approved | After hours redesign specification and handoff
+
+The driving user approved the full frontend redesign spec and seven-ticket
+implementation breakdown in
+[Approve the redesign specification and implementation handoff](https://github.com/thalesraymond/galaxify-monorepo/issues/276).
+The approved prototype is `dca3e21`; production implementation and merge remain
+separate work. See
+[`decisions/after-hours-redesign-handoff.md`](decisions/after-hours-redesign-handoff.md)
+and [`../specs/frontend-redesign.md`](../specs/frontend-redesign.md).
