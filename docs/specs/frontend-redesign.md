@@ -227,6 +227,11 @@ label fully specified work `ready-for-agent` even when blocked, and use native
 parent/dependency relationships. Issue bodies link spec sections rather than
 duplicate this spec. The implementation epic defines ownership and gates.
 
+The live execution index is
+[Deliver Galaxify's After hours frontend redesign](https://github.com/thalesraymond/galaxify-monorepo/issues/285),
+with seven native sub-issues and hard dependencies. Its first slice is
+[Establish After hours foundations and responsive navigation](https://github.com/thalesraymond/galaxify-monorepo/issues/286).
+
 Implement through small reviewable changes on production main, not by merging
 or cherry-picking prototype branches. Reuse production primitives/hooks and
 feature APIs; port approved presentation and authored geometry deliberately.

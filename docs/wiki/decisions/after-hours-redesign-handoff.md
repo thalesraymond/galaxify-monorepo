@@ -18,3 +18,9 @@ Planning approval authorizes publication and execution-ticket creation only.
 It does not authorize implementation, a prototype merge or automatic PR merges.
 The linked decision resolution identifies the implementation epic, native
 dependencies and published specification. Consult it before starting execution.
+
+Execution tracking lives in
+[Deliver Galaxify's After hours frontend redesign](https://github.com/thalesraymond/galaxify-monorepo/issues/285),
+not under the closed Wayfinder map. The foundation ticket is the first slice;
+the final release gate requires manual screen-reader evidence as well as the
+automated and real-stack checks.
