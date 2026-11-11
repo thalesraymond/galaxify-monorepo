@@ -1,0 +1,90 @@
+{
+  "node": "v24.22.2",
+  "browser": "156.0.8078.4",
+  "results": [
+    {
+      "width": 320,
+      "reducedMotion": true,
+      "routes": 22,
+      "automatedAxeViolations": 0,
+      "checks": [
+        "states",
+        "auth return",
+        "auth retry",
+        "new account",
+        "empty new-account histories",
+        "long Daily lifecycle",
+        "auth date/filter return",
+        "stale quote gate",
+        "Daily rejection retains draft",
+        "delayed result reward reconciles once",
+        "dialog trap/Escape/restore",
+        "dirty browser Back",
+        "overflow"
+      ]
+    },
+    {
+      "width": 390,
+      "reducedMotion": true,
+      "routes": 22,
+      "automatedAxeViolations": 0,
+      "checks": [
+        "states",
+        "auth return",
+        "auth retry",
+        "new account",
+        "empty new-account histories",
+        "long Daily lifecycle",
+        "auth date/filter return",
+        "stale quote gate",
+        "Daily rejection retains draft",
+        "delayed result reward reconciles once",
+        "dialog trap/Escape/restore",
+        "dirty browser Back",
+        "overflow"
+      ]
+    },
+    {
+      "width": 768,
+      "reducedMotion": true,
+      "routes": 22,
+      "automatedAxeViolations": 0,
+      "checks": [
+        "states",
+        "auth return",
+        "auth retry",
+        "new account",
+        "empty new-account histories",
+        "long Daily lifecycle",
+        "auth date/filter return",
+        "stale quote gate",
+        "Daily rejection retains draft",
+        "delayed result reward reconciles once",
+        "dialog trap/Escape/restore",
+        "dirty browser Back",
+        "overflow"
+      ]
+    },
+    {
+      "width": 1440,
+      "reducedMotion": true,
+      "routes": 22,
+      "automatedAxeViolations": 0,
+      "checks": [
+        "states",
+        "auth return",
+        "auth retry",
+        "new account",
+        "empty new-account histories",
+        "long Daily lifecycle",
+        "auth date/filter return",
+        "stale quote gate",
+        "Daily rejection retains draft",
+        "delayed result reward reconciles once",
+        "dialog trap/Escape/restore",
+        "dirty browser Back",
+        "overflow"
+      ]
+    }
+  ]
+}

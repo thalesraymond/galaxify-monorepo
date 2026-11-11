@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-10T00:00:00Z",
+  "title": "Design System: Galaxify convergence prototype",
+  "extensions": {
+    "breakpoints": [
+      { "name": "stacked-content", "value": "1100px" },
+      { "name": "mobile-navigation", "value": "850px" },
+      { "name": "stacked-rows", "value": "640px" },
+      { "name": "stacked-ship", "value": "480px" }
+    ],
+    "motion": [
+      { "name": "button-press", "value": "transform 120ms ease-out", "purpose": "Enabled buttons move down 1px when pressed; reduced motion removes the transition." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary button", "kind": "button", "refersTo": "primary-button",
+      "description": "A filled action for confirmed commands.",
+      "html": "<button class=\"ds-primary\">Repair Ship</button>",
+      "css": ".ds-primary{min-height:44px;padding:8px 14px;border:1px solid #fff;border-radius:999px;background:#fff;color:#000;font:500 14px Inter,sans-serif}.ds-primary:hover{text-decoration:underline;text-underline-offset:4px}.ds-primary:focus-visible{outline:3px solid #65bde9;outline-offset:4px}"
+    },
+    {
+      "name": "Outlined button", "kind": "button",
+      "description": "A secondary or Daily completion action.",
+      "html": "<button class=\"ds-button\">Complete</button>",
+      "css": ".ds-button{min-height:44px;padding:8px 14px;border:1px solid #777;border-radius:999px;background:transparent;color:#fff;font:500 14px Inter,sans-serif}.ds-button:hover{text-decoration:underline;text-underline-offset:4px}.ds-button:focus-visible{outline:3px solid #65bde9;outline-offset:4px}"
+    },
+    {
+      "name": "Text field", "kind": "input",
+      "description": "A visibly labelled field.",
+      "html": "<label class=\"ds-label\">Title<input class=\"ds-input\" value=\"Read ten pages\"></label>",
+      "css": ".ds-label{display:grid;gap:8px;color:#fff;font:16px Inter,sans-serif}.ds-input{min-height:44px;padding:8px 14px;border:1px solid #777;border-radius:999px;background:#111;color:#fff;font:inherit;caret-color:#65bde9}.ds-input:focus-visible{outline:3px solid #65bde9;outline-offset:4px}"
+    },
+    {
+      "name": "Primary navigation", "kind": "nav",
+      "description": "Visible navigation labels with an unfilled active state.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Primary\"><a href=\"#\" aria-current=\"page\">Dashboard</a><a href=\"#\">Dailies</a></nav>",
+      "css": ".ds-nav{display:flex;gap:8px;background:#000;font:14px Inter,sans-serif}.ds-nav a{min-height:44px;padding:10px 14px;color:#b4b4b4;text-decoration:none}.ds-nav a[aria-current=page]{color:#fff}.ds-nav a:hover{text-decoration:underline}.ds-nav a:focus-visible{outline:3px solid #65bde9;outline-offset:4px}"
+    },
+    {
+      "name": "Update notice", "kind": "card",
+      "description": "An explicit delayed-update message with local retry.",
+      "html": "<div class=\"ds-notice\">Update delayed — Ship balance is not yet refreshed.<button>Retry update</button></div>",
+      "css": ".ds-notice{padding:16px;border:1px solid #777;border-radius:8px;background:#111;color:#fff;font:14px Inter,sans-serif}.ds-notice button{display:block;margin-top:12px;min-height:44px;padding:8px 14px;border:1px solid #777;border-radius:999px;background:#111;color:#fff;font:inherit}.ds-notice button:hover{text-decoration:underline}.ds-notice button:focus-visible{outline:3px solid #65bde9;outline-offset:4px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "After hours",
+    "overview": "This task-first workspace is clear and restrained: a black ground, charcoal surfaces, white ink, and sky-blue data support readable controls and state. Depth comes from flat tonal layering and dividers rather than shadows.",
+    "keyCharacteristics": ["Visible labels and generous control targets.", "Confirmed facts remain distinct from delayed updates.", "Synthetic data and disposable prototype scope remain explicit."],
+    "dos": ["Do treat Dashboard as summary and Dailies as management; the duplicated comparison view was a prototype limitation, not architecture.", "Do keep URL-scoped date/status, immediate completion, and confirmed-fact gating with explicit delayed-update feedback."],
+    "donts": ["Don't treat this delta as approval to merge, or extend its authority past the prototype branches. Production ../DESIGN.md is untouched.", "Don't read the static History fixtures or simulated failure states as backend behavior."]
+  }
+}

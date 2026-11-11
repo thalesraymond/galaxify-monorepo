@@ -1,7 +1,17 @@
 import { useEffect, useRef, useState, type ReactNode, type SubmitEvent } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Link, useLocation, useNavigate, useSearchParams } from 'react-router'
+import {
+  createBrowserRouter,
+  RouterProvider,
+  Navigate,
+  Link,
+  useBlocker,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from 'react-router'
 import { dailies, initialShip, repairFixture, successChance } from './data'
+import { AuthSample, ProfileSample } from './AccountSamples'
 import styles from './prototype.module.css'
 
 type Daily = {
@@ -15,6 +25,13 @@ type Daily = {
   completed: boolean
 }
 type Phase = 'idle' | 'updating' | 'delayed'
+const longDaily: Daily = {
+  ...dailies[0],
+  id: 'long-sample',
+  title:
+    'Make time to read, reflect, and write a thoughtful note before the end of a very full day',
+  description: 'A long synthetic description. '.repeat(25) + 'UnbrokenReference'.repeat(20),
+}
 const routes = [
   ['/dashboard', 'Dashboard'],
   ['/dailies', 'Dailies'],
@@ -74,15 +91,26 @@ function Prototype() {
   const [params, setParams] = useSearchParams()
   const variant = 'after-hours'
   const path = useLocation().pathname
+  const authView = path === '/signup' || path === '/login'
   const navigate = useNavigate()
   const [tasks, setTasks] = useState<Daily[]>(dailies.map((daily) => ({ ...daily })))
-  const selectedDate = params.get('date') ?? '2026-01-15'
+  const rawDate = params.get('date') ?? '2026-01-15'
+  const selectedDate =
+    /^\d{4}-\d{2}-\d{2}$/.test(rawDate) && !Number.isNaN(Date.parse(`${rawDate}T12:00:00Z`))
+      ? rawDate
+      : '2026-01-15'
   const selectedStatus = params.get('status') ?? 'all'
   const historyView = path === '/dailies/history'
-  const formView = path === '/dailies/new' || /^\/dailies\/[^/]+\/edit$/.test(path)
+  const editView = /^\/dailies\/[^/]+\/edit$/.test(path)
   const editing = tasks.find((daily) => path === `/dailies/${daily.id}/edit`)
+  const formView = path === '/dailies/new' || (editView && Boolean(editing))
   const expeditionHistory = path === '/expeditions/history'
-  const expeditionDetail = /^\/expeditions\/[^/]+$/.test(path) && !expeditionHistory
+  const expeditionDetail = [
+    '/expeditions/sample-success',
+    '/expeditions/sample-failure',
+    '/expeditions/sample-flight',
+    '/expeditions/sample-delayed',
+  ].includes(path)
   const [draft, setDraft] = useState(
     editing
       ? { title: editing.title, description: editing.description, difficulty: editing.difficulty }
@@ -98,12 +126,39 @@ function Prototype() {
   const [phase, setPhase] = useState<Phase>('idle')
   const [pendingAward, setPendingAward] = useState(0)
   const [pendingSpend, setPendingSpend] = useState(0)
+  const [sampleRewardObserved, setSampleRewardObserved] = useState(false)
   const [busy, setBusy] = useState('')
   const [flight, setFlight] = useState<{ investment: number; chance: number } | null>(null)
   const inFlight = flight !== null
   const [investment, setInvestment] = useState('40')
   const [announcement, setAnnouncement] = useState('')
-  const [scenario, setScenario] = useState('populated')
+  const scenario = params.get('sample') ?? 'populated'
+  const setScenario = (value: string) =>
+    setParams(
+      (previous) => {
+        previous.set('sample', value)
+        return previous
+      },
+      { replace: true },
+    )
+  const [session, setSession] = useState(params.get('session') ?? 'bypass')
+  const [newAccount, setNewAccount] = useState(false)
+  const returnParams = new URLSearchParams(params)
+  returnParams.delete('session')
+  const protectedTarget = path + (returnParams.size ? `?${returnParams}` : '')
+  const [authReturn, setAuthReturn] = useState(
+    params.get('session') === 'anonymous' && !authView && path !== '/'
+      ? protectedTarget
+      : '/dashboard',
+  )
+  const [anonymousDestination, setAnonymousDestination] = useState('/login')
+  const [formError, setFormError] = useState('')
+  const [historyExpanded, setHistoryExpanded] = useState(false)
+  const savedNavigation = useRef(false)
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      dirty && !savedNavigation.current && currentLocation.pathname !== nextLocation.pathname,
+  )
   const [menuOpen, setMenuOpen] = useState(false)
   const [labOpen, setLabOpen] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -111,6 +166,22 @@ function Prototype() {
   const heading = useRef<HTMLHeadingElement>(null)
   const menu = useRef<HTMLButtonElement>(null)
   const previousPath = useRef(path)
+  useEffect(() => {
+    if (scenario === 'long' && path === '/dailies')
+      setTasks((previous) =>
+        previous.some((daily) => daily.id === longDaily.id)
+          ? previous
+          : [...previous, { ...longDaily }],
+      )
+  }, [scenario, path])
+  useEffect(() => {
+    if (blocker.state === 'blocked') {
+      if (window.confirm('Discard unsaved Daily changes?')) {
+        setDirty(false)
+        blocker.proceed()
+      } else blocker.reset()
+    }
+  }, [blocker])
   useEffect(
     () => () => {
       clearTimeout(timer.current)
@@ -120,6 +191,19 @@ function Prototype() {
   )
   useEffect(() => {
     if (previousPath.current !== path) heading.current?.focus()
+    savedNavigation.current = false
+    setFormError('')
+    if (path === '/dailies/new' || editing) {
+      setDraft(
+        editing
+          ? {
+              title: editing.title,
+              description: editing.description,
+              difficulty: editing.difficulty,
+            }
+          : { title: '', description: '', difficulty: 'Easy' },
+      )
+    }
     previousPath.current = path
   }, [path])
   useEffect(() => {
@@ -153,12 +237,15 @@ function Prototype() {
     setPhase('idle')
     setPendingAward(0)
     setPendingSpend(0)
+    setSampleRewardObserved(false)
     setBusy('')
     setFlight(null)
     setInvestment('40')
     setScenario('populated')
     setDirty(false)
     setAnnouncement('Sample reset.')
+    setSession('bypass')
+    setNewAccount(false)
   }
   function startDelay() {
     setPhase('updating')
@@ -187,7 +274,14 @@ function Prototype() {
     setAnnouncement('Ship refreshed. Confirmed balance updated.')
   }
   function repair() {
-    if (busy || phase !== 'idle' || ship.hull === 100 || ship.materials === 0) return
+    if (
+      busy ||
+      phase !== 'idle' ||
+      scenario === 'stale' ||
+      ship.hull === 100 ||
+      ship.materials === 0
+    )
+      return
     setBusy('repair')
     const spent = Math.min(100 - ship.hull, ship.materials, repairFixture.spent)
     commandTimer.current = setTimeout(() => {
@@ -210,7 +304,7 @@ function Prototype() {
     numericInvestment <= ship.materials
   const chance = validInvestment ? successChance(numericInvestment, ship.hull) : null
   function launch() {
-    if (!validInvestment || phase !== 'idle' || busy || inFlight) return
+    if (!validInvestment || phase !== 'idle' || scenario === 'stale' || busy || inFlight) return
     setBusy('launch')
     commandTimer.current = setTimeout(() => {
       setFlight({ investment: numericInvestment, chance: chance ?? 0 })
@@ -237,6 +331,15 @@ function Prototype() {
   }
   function saveDaily(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!draft.title.trim()) {
+      setFormError('Enter a title that is not only spaces.')
+      return
+    }
+    if (scenario === 'error') {
+      setFormError('Could not save this Daily. Your changes are still here. Retry when ready.')
+      return
+    }
+    setFormError('')
     const stakes =
       draft.difficulty === 'Hard'
         ? { reward: 50, damage: 30 }
@@ -260,6 +363,7 @@ function Prototype() {
     setAnnouncement(
       `Daily ${editing ? 'updated' : 'created'}: ${saved.title}. ${editing ? 'Schedule unchanged; past outcomes preserved.' : 'Due today in this synthetic scenario.'}`,
     )
+    savedNavigation.current = true
     void navigate(returnTo)
     requestAnimationFrame(() => document.getElementById(`daily-${id}`)?.focus())
   }
@@ -290,23 +394,24 @@ function Prototype() {
               ? 'Expeditions'
               : path === '/dailies'
                 ? 'Dailies'
-                  : path === '/dashboard' || path === '/'
-                    ? 'Dashboard'
-                    : 'Prototype unavailable'
+                : path === '/dashboard' || path === '/'
+                  ? 'Dashboard'
+                  : path === '/profile'
+                    ? 'Profile'
+                    : path === '/signup'
+                      ? 'Create your account'
+                      : path === '/login'
+                        ? 'Sign in'
+                        : path === '/__design-system-preview'
+                          ? 'Prototype unavailable'
+                          : 'Page not found'
   const navigation = (
     <nav aria-label="Primary">
       {routes.map(([route, label]) => (
         <Link
           key={route}
           to={href(route)}
-          onClick={(event) => {
-            if (dirty && !window.confirm('Discard unsaved Daily changes?')) {
-              event.preventDefault()
-              return
-            }
-            setDirty(false)
-            setMenuOpen(false)
-          }}
+          onClick={() => setMenuOpen(false)}
           aria-current={
             path === route || (route !== '/dashboard' && path.startsWith(`${route}/`))
               ? 'page'
@@ -316,21 +421,17 @@ function Prototype() {
           {label}
         </Link>
       ))}
+      <Link
+        to={href('/profile')}
+        onClick={() => setMenuOpen(false)}
+        aria-current={path === '/profile' ? 'page' : undefined}
+      >
+        Profile
+      </Link>
     </nav>
   )
   const brand = (
-    <Link
-      className={styles.brand}
-      to={href('/dashboard')}
-      onClick={(event) => {
-        if (dirty && !window.confirm('Discard unsaved Daily changes?')) {
-          event.preventDefault()
-          return
-        }
-        setDirty(false)
-        setMenuOpen(false)
-      }}
-    >
+    <Link className={styles.brand} to={href('/dashboard')} onClick={() => setMenuOpen(false)}>
       <Mark />
       Galaxify
     </Link>
@@ -360,7 +461,13 @@ function Prototype() {
                   ? 'Your routine keeps this Ship moving.'
                   : expeditionHistory || expeditionDetail || path === '/expeditions'
                     ? 'Invest materials. Give the journey time.'
-                    : `Thursday, January 15 · ${dailyCount - doneCount} Dailies left today.`}
+                    : authView
+                      ? 'A sample account flow, not connected to services.'
+                      : path === '/profile'
+                        ? 'Review your identity and account actions.'
+                        : path === '/dashboard' || path === '/'
+                          ? `Thursday, January 15 · ${dailyCount - doneCount} Dailies left today.`
+                          : 'This page is not available in the prototype.'}
         </p>
       </div>
       {path === '/dashboard' && (
@@ -656,6 +763,20 @@ function Prototype() {
     return (
       <section className={styles.dailyForm}>
         <form onSubmit={saveDaily}>
+          {formError && (
+            <p role="alert">
+              {formError}{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  setScenario('populated')
+                  setFormError('Retry is ready. Your changes are still here.')
+                }}
+              >
+                Retry save
+              </button>
+            </p>
+          )}
           <label>
             Title
             <input
@@ -712,10 +833,7 @@ function Prototype() {
             <button
               type="button"
               onClick={() => {
-                if (!dirty || window.confirm('Discard unsaved Daily changes?')) {
-                  setDirty(false)
-                  void navigate(returnTo)
-                }
+                void navigate(returnTo)
               }}
             >
               Cancel
@@ -726,7 +844,21 @@ function Prototype() {
     )
   }
   function shipContent(detailed = false) {
-    const gated = phase !== 'idle' || Boolean(busy)
+    if (['loading', 'preparing', 'error'].includes(scenario))
+      return (
+        <section>
+          <h2>Ship condition</h2>
+          <p role="status">
+            {scenario === 'loading'
+              ? 'Loading Ship…'
+              : scenario === 'preparing'
+                ? 'Preparing your Ship. Your Dailies are still available.'
+                : 'Ship is unavailable. Your Dailies are still available.'}
+          </p>
+          <button onClick={() => setScenario('populated')}>Retry Ship</button>
+        </section>
+      )
+    const gated = phase !== 'idle' || scenario === 'stale' || Boolean(busy)
     return (
       <section
         className={`${styles.ship} ${detailed ? styles.shipDetail : ''}`}
@@ -789,6 +921,20 @@ function Prototype() {
     )
   }
   function expeditionContent(detailed = false) {
+    if (['loading', 'preparing', 'error'].includes(scenario))
+      return (
+        <section>
+          <h2>Expedition</h2>
+          <p role="status">
+            {scenario === 'loading'
+              ? 'Loading Expedition…'
+              : scenario === 'preparing'
+                ? 'Preparing Expedition readiness…'
+                : 'Expedition is unavailable.'}
+          </p>
+          <button onClick={() => setScenario('populated')}>Retry Expedition</button>
+        </section>
+      )
     return (
       <section className={styles.expedition} aria-labelledby="expedition-heading">
         <div className={styles.sectionHeading}>
@@ -806,9 +952,10 @@ function Prototype() {
             <p>
               {flight.investment} materials invested · {flight.chance}% success chance at launch.
             </p>
-            <p className={styles.footnote}>
-              Sample time: 09:00 UTC. Resolve window: one hour. Results are outside this comparison.
-            </p>
+            <p className={styles.footnote}>Sample time: 09:00 UTC. Resolve window: one hour.</p>
+            <Link className={styles.textLink} to="/expeditions/sample-flight">
+              View in-flight Expedition
+            </Link>
             {detailed && status}
           </>
         ) : detailed ? (
@@ -866,14 +1013,16 @@ function Prototype() {
             <p id="investment-help">
               {!validInvestment
                 ? `Enter a whole number from 1 to ${ship.materials}.`
-                : phase !== 'idle'
+                : phase !== 'idle' || scenario === 'stale'
                   ? 'Quote unavailable until balance/readiness refreshes.'
                   : 'Sample quote ready. Chance uses your current hull.'}
             </p>
             {status}
             <button
               className={styles.primary}
-              disabled={!validInvestment || phase !== 'idle' || Boolean(busy)}
+              disabled={
+                !validInvestment || phase !== 'idle' || scenario === 'stale' || Boolean(busy)
+              }
               onClick={launch}
             >
               {busy === 'launch' ? 'Launching…' : 'Launch Expedition'}
@@ -911,8 +1060,51 @@ function Prototype() {
   }
   const dashboard = path === '/dashboard' || path === '/'
   let work: ReactNode
-  if (formView) work = dailyForm()
-  else if (path.startsWith('/dailies')) work = dailyManagement()
+  if (authView)
+    work = (
+      <AuthSample
+        key={path}
+        signup={path === '/signup'}
+        scenario={scenario}
+        onRetry={() => setScenario('populated')}
+        onSuccess={() => {
+          setSession('signed-in')
+          if (path === '/signup') {
+            setNewAccount(true)
+            setTasks([])
+            setCompleted([])
+            setShip({ ...initialShip, hull: 100, materials: 0 })
+          }
+          void navigate(authReturn)
+        }}
+      />
+    )
+  else if (path === '/profile')
+    work = (
+      <ProfileSample
+        scenario={scenario}
+        onRetry={() => setScenario('populated')}
+        onLogout={() => {
+          reset()
+          setAnonymousDestination('/login')
+          setSession('anonymous')
+          setAuthReturn('/dashboard')
+          void navigate('/login')
+        }}
+        onDelete={() => {
+          reset()
+          setTasks([])
+          setCompleted([])
+          setNewAccount(true)
+          setAnonymousDestination('/signup')
+          setSession('anonymous')
+          setAuthReturn('/dashboard')
+          void navigate('/signup')
+        }}
+      />
+    )
+  else if (formView) work = dailyForm()
+  else if (path === '/dailies' || historyView) work = dailyManagement()
   else if (dashboard)
     work = (
       <div className={styles.nightWork}>
@@ -934,25 +1126,121 @@ function Prototype() {
     work = (
       <section className={styles.history} aria-labelledby="expedition-history-heading">
         <h2 id="expedition-history-heading">Past Expeditions</h2>
-        <p>One completed journey in this synthetic sample.</p>
-        <ul className={styles.dailyList}>
-          <li>
-            <div className={styles.dailyText}>
-              <h3>Expedition · January 14</h3>
-              <p>Successful · 40 materials invested · 80 materials returned</p>
-              <Link to={href('/expeditions/sample-success')}>View result</Link>
-            </div>
-          </li>
-        </ul>
-        <Link to={href('/expeditions')}>Plan an Expedition</Link>
+        {scenario === 'loading' ? (
+          <p role="status">Loading Expedition history…</p>
+        ) : scenario === 'error' ? (
+          <>
+            <p>Expedition history is unavailable.</p>
+            <button onClick={() => setScenario('populated')}>Retry history</button>
+          </>
+        ) : scenario === 'empty' || newAccount ? (
+          <>
+            <p>No Expeditions yet.</p>
+            <Link to={href('/expeditions')}>Launch an Expedition</Link>
+          </>
+        ) : (
+          <>
+            <p>Synthetic journeys and outcomes.</p>
+            <ul className={styles.dailyList}>
+              {(
+                [
+                  ['sample-success', 'Successful', '40 materials invested · 80 materials returned'],
+                  ['sample-failure', 'Failed', '30 materials invested · no materials returned'],
+                  ['sample-flight', 'In flight', '20 materials invested · resolves at 10:00 UTC'],
+                  [
+                    'sample-delayed',
+                    'Result delayed',
+                    '40 materials invested · result not yet confirmed',
+                  ],
+                ] as const
+              )
+                .slice(0, scenario === 'long' && !historyExpanded ? 2 : 4)
+                .map(([id, outcome, facts]) => (
+                  <li key={id}>
+                    <div className={styles.dailyText}>
+                      <h3>{outcome} Expedition</h3>
+                      <p>{facts}</p>
+                      <Link to={href(`/expeditions/${id}`)}>
+                        View {outcome.toLowerCase()} Expedition
+                      </Link>
+                    </div>
+                  </li>
+                ))}
+            </ul>
+            {scenario === 'long' && (
+              <>
+                <p>{'A preserved history entry with a long explanatory note. '.repeat(15)}</p>
+                {historyExpanded ? (
+                  <p>End of synthetic history · 4 journeys shown.</p>
+                ) : (
+                  <button onClick={() => setHistoryExpanded(true)}>Load more history</button>
+                )}
+              </>
+            )}
+            <Link to={href('/expeditions')}>Plan an Expedition</Link>
+          </>
+        )}
       </section>
     )
-  else if (path === '/expeditions/sample-success')
+  else if (expeditionDetail)
     work = (
       <section className={styles.history} aria-labelledby="expedition-result-heading">
-        <h2 id="expedition-result-heading">Successful Expedition</h2>
-        <p>January 14 · 40 materials invested · 80 materials returned.</p>
-        <p>This is a synthetic resolved result, not a live Expedition.</p>
+        <nav aria-label="Expeditions">
+          <Link to="/expeditions">Current</Link>
+          <Link to="/expeditions/history">History</Link>
+        </nav>
+        <h2 id="expedition-result-heading">
+          {path.endsWith('success')
+            ? 'Successful Expedition'
+            : path.endsWith('failure')
+              ? 'Failed Expedition'
+              : path.endsWith('flight')
+                ? 'Expedition in flight'
+                : 'Result delayed'}
+        </h2>
+        <p>
+          {path.endsWith('success')
+            ? 'January 14 · 40 materials invested · 80 materials returned.'
+            : path.endsWith('failure')
+              ? 'January 14 · 30 materials invested · no materials returned.'
+              : path.endsWith('flight')
+                ? `${flight?.investment ?? 20} materials invested · resolves at 10:00 UTC.`
+                : '40 materials invested · the result is not yet confirmed.'}
+        </p>
+        <dl className={styles.quote}>
+          <div>
+            <dt>Launched</dt>
+            <dd>January 14, 2026 · 09:00 UTC</dd>
+          </div>
+          <div>
+            <dt>Resolve window</dt>
+            <dd>One hour</dd>
+          </div>
+          <div>
+            <dt>Chance at launch</dt>
+            <dd>{path.endsWith('flight') && flight ? flight.chance : 65}% (synthetic)</dd>
+          </div>
+        </dl>
+        {path.endsWith('delayed') && (
+          <p role="status">Last confirmed state: in flight. Check again for the result.</p>
+        )}
+        {path.endsWith('delayed') && (
+          <button
+            onClick={() => {
+              if (!sampleRewardObserved) {
+                setSampleRewardObserved(true)
+                setAnnouncement('Synthetic result received. Reward is not yet in Ship balance.')
+                setPendingAward((value) => value + 80)
+                startDelay()
+              }
+              void navigate('/expeditions/sample-success')
+            }}
+          >
+            Retry result
+          </button>
+        )}
+        {path.endsWith('success') && status}
+        <p>This is a synthetic sample, not a live Expedition.</p>
         <Link to={href('/expeditions/history')}>Back to Expedition history</Link>
       </section>
     )
@@ -963,12 +1251,129 @@ function Prototype() {
         {shipContent(true)}
       </div>
     )
+  else if (path === '/__design-system-preview')
+    work = (
+      <section className={styles.placeholder}>
+        <h2>Developer preview, not a player journey</h2>
+        <p>
+          The production component catalog is intentionally not duplicated. The prototype design
+          record and sample controls cover its inherited primitives without replacing the production
+          preview.
+        </p>
+        <Link to={href('/dashboard')}>Back to Dashboard</Link>
+      </section>
+    )
   else
     work = (
       <section className={styles.placeholder}>
-        <h2>Prototype route not yet modeled</h2>
-        <p>This surface has not been built in the prototype.</p>
+        <h2>We couldn’t find this page</h2>
+        <p>Check the address or return to your Dashboard.</p>
         <Link to={href('/dashboard')}>Back to Dashboard</Link>
+      </section>
+    )
+  const recover = () => {
+    setScenario('populated')
+    setAnnouncement('Sample loaded.')
+    requestAnimationFrame(() => heading.current?.focus())
+  }
+  if (
+    !authView &&
+    !formView &&
+    ['loading', 'preparing', 'error'].includes(scenario) &&
+    !(path === '/profile' && scenario === 'error') &&
+    !['/dashboard', '/dailies', '/expeditions/history'].includes(path)
+  ) {
+    work = (
+      <section className={styles.placeholder} aria-busy={scenario === 'loading'}>
+        <h2>
+          {scenario === 'loading'
+            ? `Loading ${title}…`
+            : scenario === 'preparing'
+              ? 'Preparing your Ship'
+              : `${title} is unavailable`}
+        </h2>
+        <p>
+          {scenario === 'preparing'
+            ? 'Your account is ready. Ship and Expedition data are still being prepared.'
+            : 'Your routine and last confirmed facts are not lost.'}
+        </p>
+        <button onClick={recover}>
+          {scenario === 'loading' ? 'Finish sample loading' : 'Retry'}
+        </button>
+      </section>
+    )
+  }
+  if (historyView && (scenario === 'empty' || newAccount))
+    work = (
+      <section>
+        <h2>No Daily outcomes yet</h2>
+        <p>Completed and missed Dailies will appear here.</p>
+        <Link to="/dailies">Back to Dailies</Link>
+      </section>
+    )
+  if (historyView && scenario === 'long')
+    work = (
+      <section>
+        <h2>Preserved Daily outcomes</h2>
+        <ul className={styles.dailyList}>
+          {Array.from({ length: 12 }, (_, index) => (
+            <li key={index}>
+              <div>
+                <h3>Read and reflect on a chapter before a busy day · {index + 1}</h3>
+                <p>Completed · January 14, 2026 · 17:42 UTC · +10 materials</p>
+                <details>
+                  <summary>Description for occurrence {index + 1}</summary>
+                  <p>{'A long preserved description. '.repeat(25)}</p>
+                </details>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )
+  if (scenario === 'stale' && !authView)
+    work = (
+      <>
+        <div className={styles.update} role="status">
+          Last confirmed facts shown. Refresh failed; spending is paused.
+          <button onClick={recover}>Retry refresh</button>
+        </div>
+        {work}
+      </>
+    )
+  const boundary = params.get('boundary')
+  if (boundary)
+    work = (
+      <section>
+        <h2>
+          {boundary === 'loading'
+            ? 'Loading page…'
+            : boundary === 'bootstrap'
+              ? 'Restoring your session…'
+              : 'This page could not open'}
+        </h2>
+        <p role="status">
+          {boundary === 'error'
+            ? 'Your saved routine is unchanged. Retry this page or return to Dashboard.'
+            : 'The sample is waiting for its next step.'}
+        </p>
+        <button
+          onClick={() => {
+            setParams(
+              (previous) => {
+                previous.delete('boundary')
+                return previous
+              },
+              { replace: true },
+            )
+          }}
+        >
+          {' '}
+          {boundary === 'error' ? 'Retry page' : 'Finish sample loading'}
+        </button>
+        <Link className={styles.textLink} to="/dashboard">
+          Back to Dashboard
+        </Link>
       </section>
     )
   const main = (
@@ -982,6 +1387,10 @@ function Prototype() {
   )
 
   const laneHeight = labOpen ? 'min(52dvh, 420px)' : '90px'
+  if (path === '/')
+    return <Navigate to={session === 'anonymous' ? '/signup' : '/dashboard'} replace />
+  if (!authView && session === 'anonymous') return <Navigate to={anonymousDestination} replace />
+  if (authView && session === 'signed-in') return <Navigate to={authReturn} replace />
   return (
     <div
       id="prototype-surface"
@@ -995,25 +1404,27 @@ function Prototype() {
         <div className={styles.nightFrame}>
           <header className={styles.topNav}>
             {brand}
-            {navigation}
-            {account}
+            {!authView && navigation}
+            {!authView && account}
           </header>
           {main}
         </div>
       }
-      <div className={styles.mobileNav}>
+      <header className={styles.mobileNav}>
         {brand}
-        <button
-          ref={menu}
-          aria-expanded={menuOpen}
-          onClick={() => {
-            setMenuOpen(!menuOpen)
-          }}
-        >
-          Menu
-        </button>
-        {menuOpen && navigation}
-      </div>
+        {!authView && (
+          <button
+            ref={menu}
+            aria-expanded={menuOpen}
+            onClick={() => {
+              setMenuOpen(!menuOpen)
+            }}
+          >
+            Menu
+          </button>
+        )}
+        {!authView && menuOpen && navigation}
+      </header>
       <div className={styles.live} role="status" aria-live="polite">
         {announcement}
       </div>
@@ -1044,7 +1455,7 @@ function Prototype() {
                 Reset sample
               </button>
               <label>
-                Daily state{' '}
+                Sample state{' '}
                 <select
                   value={scenario}
                   onChange={(e) => {
@@ -1055,12 +1466,34 @@ function Prototype() {
                   <option value="empty">Empty</option>
                   <option value="loading">Loading</option>
                   <option value="error">Unavailable</option>
+                  <option value="preparing">Preparing</option>
+                  <option value="stale">Stale confirmed facts</option>
+                  <option value="long">Long content</option>
                 </select>
               </label>
               <p>
                 Completed: {completed.join(', ')}. Hull: {ship.hull}/100. Materials:{' '}
                 {ship.materials}. Award pending: {pendingAward}. Deduction pending: {pendingSpend}.
                 Update: {phase}. Expedition: {inFlight ? 'in flight' : 'not launched'}.
+              </p>
+              <label>
+                Session sample
+                <select
+                  value={session}
+                  onChange={(event) => {
+                    if (!authView) setAuthReturn(protectedTarget)
+                    setAnonymousDestination('/login')
+                    setSession(event.target.value)
+                  }}
+                >
+                  <option value="bypass">Route exploration (default)</option>
+                  <option value="anonymous">Anonymous</option>
+                  <option value="signed-in">Signed in</option>
+                </select>
+              </label>
+              <p>
+                Forms use synthetic credentials only. URL examples: ?sample=error, ?sample=long,
+                ?boundary=bootstrap, ?boundary=loading, ?boundary=error, ?session=anonymous.
               </p>
             </div>
           </details>
@@ -1073,7 +1506,5 @@ function Prototype() {
 const root = document.getElementById('root')
 if (!root) throw new Error('Prototype root is missing.')
 createRoot(root).render(
-  <BrowserRouter>
-    <Prototype />
-  </BrowserRouter>,
+  <RouterProvider router={createBrowserRouter([{ path: '*', element: <Prototype /> }])} />,
 )

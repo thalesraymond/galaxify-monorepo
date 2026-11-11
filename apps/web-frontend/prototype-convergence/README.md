@@ -1,5 +1,16 @@
 # After hours — convergence prototype
 
+## Cross-frontend extension (#275)
+
+The core flow below is preserved. The extension adds synthetic account journeys,
+Profile, Expedition history/outcomes, explicit unknown-route recovery, and state
+samples across the existing frontend. Start with [COVERAGE.md](COVERAGE.md) for
+the full route/state matrix, runnable URLs, verification commands and limits;
+[CROSS-FRONTEND-REVIEW.md](CROSS-FRONTEND-REVIEW.md) is the new review record.
+Default route exploration skips auth; Session sample demonstrates anonymous and
+signed-in navigation without real credentials. This does not approve production
+implementation or complete the user acceptance gate.
+
 **Fourth, disposable prototype. No production UI changes or permission to merge.**
 
 The selected comparison remains intact in `../prototype-identity`. This extends
@@ -61,11 +72,12 @@ segment above the separate prototype-control lane. `evidence/verification.json`
 records the actual results. Taste inspector reports and captures are under
 `evidence/taste-*`; see `REVIEW.md` for critique and unrun checks.
 
-This is not a frontend replacement: authentication/Profile, server validation,
-recurrence/timezone calculations, History pagination and Expedition results remain
-outside this round. History is static; a new completion does not synthesize a
-server-generated past occurrence. Browser Back does not implement the production
-router's dirty-form blocker. Network/provisioning failures are simulated, not API
+This is not a frontend replacement: synthetic authentication/Profile samples do
+not connect to accounts; the password-confirmation dialog cannot delete an account.
+Server validation, recurrence/timezone calculations and History pagination are not
+modeled; Expedition results are synthetic. History is static; a new completion does not synthesize a
+server-generated past occurrence. Browser Back, links and Cancel now share the
+prototype's dirty-form blocker. Network/provisioning failures are simulated, not API
 proof. Same deterministic 58-material/58-hull repair and quote formula as comparison.
 
 Production `../DESIGN.md` and code under `../src` are untouched. The selected

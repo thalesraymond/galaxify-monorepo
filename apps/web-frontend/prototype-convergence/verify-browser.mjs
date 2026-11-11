@@ -198,7 +198,7 @@ try {
       await page.goto(`${base}/dailies`)
       assert.equal(await page.getByRole('link', { name: 'Inspect Ship', exact: true }).count(), 0)
       await page.getByLabel('Show', { exact: false }).selectOption('pending')
-      assert.equal(await page.locator('main li').count(), 2)
+      await expect(page.locator('main li')).toHaveCount(2)
       assert.equal(new URL(page.url()).searchParams.get('status'), 'pending')
       await page.getByRole('button', { name: 'Next day', exact: true }).click()
       await expect(page.locator('main li')).toHaveCount(0)
@@ -234,7 +234,7 @@ try {
         .filter({ visible: true })
         .getByRole('link', { name: 'Dashboard', exact: true })
         .click()
-      assert.match(page.url(), /dailies\/edit/)
+      assert.match(page.url(), /dailies\/[^/]+\/edit/)
       if (await menu.isVisible()) await page.keyboard.press('Escape')
       await page.getByRole('button', { name: 'Save Daily', exact: true }).click()
       await page
@@ -303,7 +303,7 @@ try {
       await page.getByLabel('Show', { exact: false }).selectOption('all')
       await page.getByText('Sample controls & state', { exact: true }).click()
       for (const scenario of ['empty', 'loading', 'error']) {
-        await page.getByLabel('Daily state').selectOption(scenario)
+        await page.getByLabel('Sample state').selectOption(scenario)
         await capture(page, `${variant}-${scenario}-${width}`)
         const stateAxe = await new AxeBuilder({ page })
           .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
@@ -318,7 +318,7 @@ try {
         )
       }
       await page.getByRole('button', { name: 'Retry Dailies', exact: true }).click()
-      assert.equal(await page.locator('main li').count(), 3)
+      await expect(page.locator('main li')).toHaveCount(3)
       await page.getByText('Sample controls & state', { exact: true }).click()
       results.push({
         variant,

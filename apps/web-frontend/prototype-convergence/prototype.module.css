@@ -149,6 +149,7 @@
   margin: 0;
 }
 .app p {
+  overflow-wrap: anywhere;
   margin: 8px 0 16px;
   max-width: 68ch;
 }
@@ -356,6 +357,7 @@
   border-top: 1px solid var(--border);
 }
 .dailyText {
+  overflow-wrap: anywhere;
   flex: 1;
   min-width: 0;
 }
@@ -691,6 +693,19 @@
 .placeholder {
   min-height: 200px;
   padding: 24px 0;
+}
+.sampleDialog {
+  max-height: 85dvh;
+  overflow: auto;
+  width: min(90vw, 480px);
+  padding: 24px;
+  border: 1px solid var(--control);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+}
+.sampleDialog::backdrop {
+  background: rgb(0 0 0 / 75%);
 }
 .placeholder > div {
   height: 28px;

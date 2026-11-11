@@ -1,0 +1,181 @@
+{
+  "exitCode": 2,
+  "findings": [
+    {
+      "antipattern": "overused-font",
+      "name": "Overused font",
+      "description": "Inter, Roboto, Fraunces, Geist, Plus Jakarta Sans, and Space Grotesk are used on so many sites they no longer feel distinctive. Each new wave of AI-generated UIs converges on the same handful of faces. Choose a face that gives your interface personality.",
+      "severity": "warning",
+      "category": "slop",
+      "file": "prototype-convergence/prototype.module.css",
+      "line": 2,
+      "snippet": "font-family: Geist"
+    },
+    {
+      "antipattern": "overused-font",
+      "name": "Overused font",
+      "description": "Inter, Roboto, Fraunces, Geist, Plus Jakarta Sans, and Space Grotesk are used on so many sites they no longer feel distinctive. Each new wave of AI-generated UIs converges on the same handful of faces. Choose a face that gives your interface personality.",
+      "severity": "warning",
+      "category": "slop",
+      "file": "prototype-convergence/prototype.module.css",
+      "line": 8,
+      "snippet": "font-family: 'Instrument Sans"
+    },
+    {
+      "antipattern": "overused-font",
+      "name": "Overused font",
+      "description": "Inter, Roboto, Fraunces, Geist, Plus Jakarta Sans, and Space Grotesk are used on so many sites they no longer feel distinctive. Each new wave of AI-generated UIs converges on the same handful of faces. Choose a face that gives your interface personality.",
+      "severity": "warning",
+      "category": "slop",
+      "file": "prototype-convergence/prototype.module.css",
+      "line": 14,
+      "snippet": "font-family: Inter"
+    },
+    {
+      "antipattern": "overused-font",
+      "name": "Overused font",
+      "description": "Inter, Roboto, Fraunces, Geist, Plus Jakarta Sans, and Space Grotesk are used on so many sites they no longer feel distinctive. Each new wave of AI-generated UIs converges on the same handful of faces. Choose a face that gives your interface personality.",
+      "severity": "warning",
+      "category": "slop",
+      "file": "prototype-convergence/prototype.module.css",
+      "line": 46,
+      "snippet": "font-family: Geist"
+    },
+    {
+      "antipattern": "overused-font",
+      "name": "Overused font",
+      "description": "Inter, Roboto, Fraunces, Geist, Plus Jakarta Sans, and Space Grotesk are used on so many sites they no longer feel distinctive. Each new wave of AI-generated UIs converges on the same handful of faces. Choose a face that gives your interface personality.",
+      "severity": "warning",
+      "category": "slop",
+      "file": "prototype-convergence/prototype.module.css",
+      "line": 65,
+      "snippet": "font-family: 'Instrument Sans"
+    },
+    {
+      "antipattern": "overused-font",
+      "name": "Overused font",
+      "description": "Inter, Roboto, Fraunces, Geist, Plus Jakarta Sans, and Space Grotesk are used on so many sites they no longer feel distinctive. Each new wave of AI-generated UIs converges on the same handful of faces. Choose a face that gives your interface personality.",
+      "severity": "warning",
+      "category": "slop",
+      "file": "prototype-convergence/prototype.module.css",
+      "line": 82,
+      "snippet": "font-family: Inter"
+    },
+    {
+      "antipattern": "overused-font",
+      "name": "Overused font",
+      "description": "Inter, Roboto, Fraunces, Geist, Plus Jakarta Sans, and Space Grotesk are used on so many sites they no longer feel distinctive. Each new wave of AI-generated UIs converges on the same handful of faces. Choose a face that gives your interface personality.",
+      "severity": "warning",
+      "category": "slop",
+      "file": "prototype-convergence/prototype.module.css",
+      "line": 747,
+      "snippet": "font-family: Geist"
+    },
+    {
+      "antipattern": "design-system-font",
+      "name": "Font outside DESIGN.md",
+      "description": "A font is used that is not declared in DESIGN.md typography. Use the documented type system or update DESIGN.md if this is an intentional brand addition.",
+      "severity": "warning",
+      "category": "quality",
+      "file": "prototype-convergence/prototype.module.css",
+      "line": 8,
+      "snippet": "font-family: Instrument Sans is not declared in DESIGN.md typography",
+      "ignoreValue": "Instrument Sans"
+    },
+    {
+      "antipattern": "design-system-font",
+      "name": "Font outside DESIGN.md",
+      "description": "A font is used that is not declared in DESIGN.md typography. Use the documented type system or update DESIGN.md if this is an intentional brand addition.",
+      "severity": "warning",
+      "category": "quality",
+      "file": "prototype-convergence/prototype.module.css",
+      "line": 65,
+      "snippet": "font-family: Instrument Sans is not declared in DESIGN.md typography",
+      "ignoreValue": "Instrument Sans"
+    },
+    {
+      "antipattern": "design-system-font-size",
+      "name": "Font size outside DESIGN.md",
+      "description": "A literal font-size is off the type ramp documented in DESIGN.md typography. Use a documented size step or update the design system if the new step is intentional.",
+      "severity": "advisory",
+      "category": "quality",
+      "file": "prototype-convergence/prototype.module.css",
+      "line": 133,
+      "snippet": "font-size: 28px is off the DESIGN.md type ramp",
+      "advisory": true,
+      "ignoreValue": "28px"
+    },
+    {
+      "antipattern": "design-system-radius",
+      "name": "Radius outside DESIGN.md",
+      "description": "A border-radius value is outside the DESIGN.md rounded scale. Use a documented radius token or update the design system if the new shape is intentional.",
+      "severity": "advisory",
+      "category": "quality",
+      "file": "prototype-convergence/prototype.module.css",
+      "line": 521,
+      "snippet": "border-radius: 16px is outside the DESIGN.md rounded scale",
+      "advisory": true,
+      "ignoreValue": "16px"
+    },
+    {
+      "antipattern": "design-system-font-size",
+      "name": "Font size outside DESIGN.md",
+      "description": "A literal font-size is off the type ramp documented in DESIGN.md typography. Use a documented size step or update the design system if the new step is intentional.",
+      "severity": "advisory",
+      "category": "quality",
+      "file": "prototype-convergence/prototype.module.css",
+      "line": 533,
+      "snippet": "font-size: 28px is off the DESIGN.md type ramp",
+      "advisory": true,
+      "ignoreValue": "28px"
+    },
+    {
+      "antipattern": "design-system-font-size",
+      "name": "Font size outside DESIGN.md",
+      "description": "A literal font-size is off the type ramp documented in DESIGN.md typography. Use a documented size step or update the design system if the new step is intentional.",
+      "severity": "advisory",
+      "category": "quality",
+      "file": "prototype-convergence/prototype.module.css",
+      "line": 577,
+      "snippet": "font-size: 12px is off the DESIGN.md type ramp",
+      "advisory": true,
+      "ignoreValue": "12px"
+    },
+    {
+      "antipattern": "design-system-color",
+      "name": "Color outside DESIGN.md",
+      "description": "A literal color is outside the DESIGN.md palette and sidecar tonal ramps. This may be legitimate, but it should be an intentional design-system addition rather than drift.",
+      "severity": "advisory",
+      "category": "quality",
+      "file": "prototype-convergence/prototype.module.css",
+      "line": 743,
+      "snippet": "Undocumented color #999 is outside DESIGN.md colors",
+      "advisory": true,
+      "ignoreValue": "#999"
+    },
+    {
+      "antipattern": "design-system-color",
+      "name": "Color outside DESIGN.md",
+      "description": "A literal color is outside the DESIGN.md palette and sidecar tonal ramps. This may be legitimate, but it should be an intentional design-system addition rather than drift.",
+      "severity": "advisory",
+      "category": "quality",
+      "file": "prototype-convergence/prototype.module.css",
+      "line": 793,
+      "snippet": "Undocumented color #ddd is outside DESIGN.md colors",
+      "advisory": true,
+      "ignoreValue": "#ddd"
+    },
+    {
+      "antipattern": "design-system-font-size",
+      "name": "Font size outside DESIGN.md",
+      "description": "A literal font-size is off the type ramp documented in DESIGN.md typography. Use a documented size step or update the design system if the new step is intentional.",
+      "severity": "advisory",
+      "category": "quality",
+      "file": "prototype-convergence/prototype.module.css",
+      "line": 993,
+      "snippet": "font-size: 12px is off the DESIGN.md type ramp",
+      "advisory": true,
+      "ignoreValue": "12px"
+    }
+  ]
+}
