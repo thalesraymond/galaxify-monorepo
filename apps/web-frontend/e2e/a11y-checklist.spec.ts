@@ -116,7 +116,7 @@ test('200% zoom keeps every page usable without two-dimensional scrolling', asyn
   await page.setViewportSize({ width: 720, height: 450 })
   for (const appPage of appPages) {
     await openAuthenticatedPage(page, appPage.path, appPage.heading)
-    await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Menu', exact: true })).toBeVisible()
     await expectNoHorizontalScroll(page)
   }
 })
@@ -126,7 +126,7 @@ test('320 px reflow loses no primary content to horizontal scrolling', async ({ 
   await page.setViewportSize({ width: 320, height: 700 })
   for (const appPage of appPages) {
     await openAuthenticatedPage(page, appPage.path, appPage.heading)
-    await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Menu', exact: true })).toBeVisible()
     await expectNoHorizontalScroll(page)
   }
 })
@@ -155,7 +155,7 @@ test('portrait and landscape orientations both stay usable', async ({ page }) =>
       { path: '/dailies', heading: 'Dailies' },
     ]) {
       await openAuthenticatedPage(page, appPage.path, appPage.heading)
-      await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Menu', exact: true })).toBeVisible()
       await expectNoHorizontalScroll(page)
     }
   }

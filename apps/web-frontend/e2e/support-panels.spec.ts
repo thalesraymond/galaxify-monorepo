@@ -76,6 +76,10 @@ for (const viewport of viewports) {
     await expect(mechanics).toBeHidden()
 
     // The dedicated Ship consumer uses the same guidance without changing commands.
+    const menuButton = page.getByRole('button', { name: 'Menu', exact: true })
+    if (await menuButton.isVisible()) {
+      await menuButton.click()
+    }
     await page.getByRole('link', { name: 'Ship', exact: true }).click()
     await expect(page.getByRole('heading', { level: 1, name: 'Ship' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Repair Ship' })).toBeEnabled()

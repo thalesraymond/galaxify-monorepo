@@ -4,15 +4,16 @@
   top: calc(-1 * var(--space-16));
   z-index: var(--z-toast);
   display: inline-flex;
-  min-height: 44px;
+  min-height: var(--touch-target);
   align-items: center;
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-control);
-  background-color: var(--color-logbook);
-  color: var(--color-ink);
-  font-weight: 600;
+  background-color: var(--color-primary);
+  color: var(--color-on-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
   text-decoration: none;
-  transition: top 150ms var(--ease-out);
+  transition: top var(--transition-fast);
 }
 
 .skipLink:focus-visible {

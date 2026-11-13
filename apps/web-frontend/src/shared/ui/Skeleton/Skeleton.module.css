@@ -5,8 +5,9 @@
 .skeleton span:not(.srOnly) {
   display: block;
   height: 1rem;
-  border-radius: var(--radius-control);
-  background: color-mix(in srgb, currentColor 14%, transparent);
+  border-radius: var(--radius-notice);
+  background: var(--color-raised);
+  animation: pulse 1.6s ease-in-out infinite;
 }
 .skeleton span:nth-child(2) {
   width: 80%;
@@ -21,4 +22,13 @@
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
 }

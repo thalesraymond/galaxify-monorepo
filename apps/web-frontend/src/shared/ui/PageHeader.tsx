@@ -6,17 +6,20 @@ export type PageHeaderProps = {
   title: string
   /** Optional supporting sentence rendered below the heading. */
   description?: string
-  /** Surface the header sits on; the default matches the dark application shell. */
+  /** Legacy surface prop retained for compatibility during migration. */
   tone?: 'on-dark' | 'on-light'
 }
 
 /**
- * Domain-neutral route header. Owns the single logical h1 for a route.
+ * Domain-neutral route header. Owns the single logical h1 for a route and
+ * supports programmatic focus after route transitions.
  */
 export function PageHeader({ title, description, tone = 'on-dark' }: PageHeaderProps) {
   return (
     <header className={classNames(styles.header, styles[tone])}>
-      <h1 className={styles.title}>{title}</h1>
+      <h1 className={styles.title} tabIndex={-1}>
+        {title}
+      </h1>
       {description ? <p className={styles.description}>{description}</p> : null}
     </header>
   )

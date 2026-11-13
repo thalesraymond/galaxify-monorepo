@@ -25,7 +25,14 @@ test.describe('application shell', () => {
     ]) {
       await page.setViewportSize(viewport)
       await page.goto('/dashboard')
-      await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible()
+      if (viewport.width <= 850) {
+        const menu = page.getByRole('button', { name: 'Menu', exact: true })
+        await expect(menu).toBeVisible()
+        await menu.click()
+        await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible()
+      } else {
+        await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible()
+      }
     }
   })
 
