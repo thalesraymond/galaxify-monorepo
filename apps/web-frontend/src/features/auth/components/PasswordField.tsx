@@ -1,6 +1,6 @@
 import { useState, type InputHTMLAttributes, type ReactNode } from 'react'
 
-import { Field } from '@/shared/ui'
+import { Button, Field } from '@/shared/ui'
 
 import styles from './PasswordField.module.css'
 
@@ -28,16 +28,17 @@ export function PasswordField({ label, error, hint, ...input }: PasswordFieldPro
         type={visible ? 'text' : 'password'}
         {...input}
       />
-      <button
+      <Button
         className={styles.toggle}
         type="button"
+        variant="secondary"
         aria-pressed={visible}
         onClick={() => {
           setVisible((current) => !current)
         }}
       >
         {visible ? 'Hide password' : 'Show password'}
-      </button>
+      </Button>
     </div>
   )
 }

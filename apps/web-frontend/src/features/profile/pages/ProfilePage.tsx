@@ -136,11 +136,12 @@ function ProfileContent({
     }
   }, [successMessage])
 
-  // The dialog focuses its own first control (the close button); move focus to
-  // the password field once the destructive dialog opens.
+  // The shared Dialog focuses its first control on mount (and StrictMode
+  // replays that in dev), so the password focus must land after the whole
+  // passive-effect pass, not inside this effect's own turn.
   useEffect(() => {
     if (deleteOpen) {
-      focusDeletePassword()
+      queueMicrotask(focusDeletePassword)
     }
   }, [deleteOpen])
 
@@ -181,59 +182,61 @@ function ProfileContent({
     <div className={styles.page}>
       <PageHeader title="Profile" description="Review your identity and account actions." />
 
-      <ContentSurface aria-labelledby="identity-heading">
-        <h2 id="identity-heading">Identity</h2>
-        <dl className={styles.identity}>
-          <div>
-            <dt>Email</dt>
-            <dd>{user.email}</dd>
-          </div>
-          <div>
-            <dt>Member since</dt>
-            <dd>{formatMemberSince(user.created_at)}</dd>
-          </div>
-        </dl>
+      <div className={styles.sections}>
+        <ContentSurface aria-labelledby="identity-heading">
+          <h2 id="identity-heading">Identity</h2>
+          <dl className={styles.identity}>
+            <div>
+              <dt>Email</dt>
+              <dd>{user.email}</dd>
+            </div>
+            <div>
+              <dt>Member since</dt>
+              <dd>{formatMemberSince(user.created_at)}</dd>
+            </div>
+          </dl>
 
-        <form
-          className={styles.form}
-          noValidate
-          onSubmit={(event) => {
-            void submitUsername(event)
-          }}
-        >
-          <Field
-            autoComplete="username"
-            error={errors.username?.message}
-            hint="3–30 characters."
-            label="Username"
-            {...register('username')}
-          />
-          <div>
-            <Button loading={isSubmitting || updateMutation.isPending} type="submit">
-              Save username
-            </Button>
-          </div>
-        </form>
-        {successMessage !== undefined ? <LiveRegion message={successMessage} /> : null}
-      </ContentSurface>
+          <form
+            className={styles.form}
+            noValidate
+            onSubmit={(event) => {
+              void submitUsername(event)
+            }}
+          >
+            <Field
+              autoComplete="username"
+              error={errors.username?.message}
+              hint="3–30 characters."
+              label="Username"
+              {...register('username')}
+            />
+            <div>
+              <Button loading={isSubmitting || updateMutation.isPending} type="submit">
+                Save username
+              </Button>
+            </div>
+          </form>
+          {successMessage !== undefined ? <LiveRegion message={successMessage} /> : null}
+        </ContentSurface>
 
-      <ContentSurface aria-labelledby="danger-heading" tone="raised">
-        <h2 id="danger-heading">Danger zone</h2>
-        <p>
-          Deleting your account permanently removes your Player, Dailies, Ship, and Expeditions.
-          This cannot be undone.
-        </p>
-        <Button
-          variant="danger"
-          onClick={() => {
-            setDeletePassword('')
-            setDeleteError(undefined)
-            setDeleteOpen(true)
-          }}
-        >
-          Delete account
-        </Button>
-      </ContentSurface>
+        <ContentSurface aria-labelledby="danger-heading">
+          <h2 id="danger-heading">Danger zone</h2>
+          <p>
+            Deleting your account permanently removes your Player, Dailies, Ship, and Expeditions.
+            This cannot be undone.
+          </p>
+          <Button
+            variant="danger"
+            onClick={() => {
+              setDeletePassword('')
+              setDeleteError(undefined)
+              setDeleteOpen(true)
+            }}
+          >
+            Delete account
+          </Button>
+        </ContentSurface>
+      </div>
 
       {deleteOpen ? (
         <Dialog
@@ -243,10 +246,12 @@ function ProfileContent({
           }}
         >
           <p>
-            Enter your password to permanently delete <strong>{user.username}</strong>. This cannot
-            be undone.
+            Enter your password to permanently delete{' '}
+            <strong className={styles.dialogUsername}>{user.username}</strong>. This cannot be
+            undone.
           </p>
           <Field
+            autoComplete="current-password"
             error={deleteError}
             id="delete-account-password"
             label="Password"

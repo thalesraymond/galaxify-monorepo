@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -82,6 +82,42 @@ describe('Profile page', () => {
     expect(error).toBeInTheDocument()
   })
 
+  it('keeps the draft after a rejected update and succeeds on retry', async () => {
+    const user = userEvent.setup()
+    server.server.use(
+      http.patch(
+        '/api/user/users/me',
+        () =>
+          HttpResponse.json(
+            {
+              error: {
+                code: 'USER_USERNAME_TAKEN',
+                message: 'Username is already taken.',
+              },
+            },
+            { status: 409 },
+          ),
+        { once: true },
+      ),
+    )
+    await renderProfile()
+
+    const username = screen.getByLabelText('Username')
+    await user.clear(username)
+    await user.type(username, 'taken-name')
+    await user.click(screen.getByRole('button', { name: 'Save username' }))
+
+    expect(await screen.findByText('That username is already taken.')).toBeInTheDocument()
+    expect(username).toHaveValue('taken-name')
+
+    await user.clear(username)
+    await user.type(username, 'free-name')
+    await user.click(screen.getByRole('button', { name: 'Save username' }))
+
+    expect(await screen.findByText('Your username was updated.')).toBeInTheDocument()
+    expect(username).toHaveValue('free-name')
+  })
+
   it('validates the username client-side before contacting the server', async () => {
     const user = userEvent.setup()
     await renderProfile()
@@ -106,6 +142,49 @@ describe('Profile page', () => {
     expect(await within(dialog).findByText('Enter your password to confirm.')).toBeInTheDocument()
     expect(dialog).toBeInTheDocument()
     expect(screen.getByLabelText('Password')).toHaveFocus()
+    expect(screen.getByLabelText('Password')).toHaveAttribute('autocomplete', 'current-password')
+  })
+
+  it('keeps the draft and password focus after a rejected deletion, then retries', async () => {
+    const user = userEvent.setup()
+    server.server.use(
+      http.delete(
+        '/api/user/users/me',
+        () =>
+          HttpResponse.json(
+            {
+              error: {
+                code: 'USER_INVALID_CREDENTIALS',
+                message: 'Password is incorrect.',
+              },
+            },
+            { status: 401 },
+          ),
+        { once: true },
+      ),
+    )
+    await renderProfile()
+
+    await user.click(screen.getByRole('button', { name: 'Delete account' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Delete your account' })
+    const password = within(dialog).getByLabelText('Password')
+    await waitFor(() => {
+      expect(password).toHaveFocus()
+    })
+    await user.type(password, 'password123')
+    await user.click(within(dialog).getByRole('button', { name: 'Delete account' }))
+
+    expect(await within(dialog).findByText('Password is incorrect.')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Delete your account' })).toBeInTheDocument()
+    expect(password).toHaveValue('password123')
+    expect(password).toHaveFocus()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Delete account' }))
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Create your account' }),
+    ).toBeInTheDocument()
+    expect(window.localStorage.getItem(SESSION_REFRESH_STORAGE_KEY)).toBeNull()
   })
 
   it('deletes the account, purges the session, and lands on signup without logout', async () => {
