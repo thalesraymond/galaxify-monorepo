@@ -81,6 +81,10 @@ for (const viewport of viewports) {
     await page.getByRole('button', { name: 'Save changes' }).click()
     await expect(page.getByText('Updated Daily "Edited coolant loop".')).toBeAttached()
 
+    const menuButton = page.getByRole('button', { name: 'Menu', exact: true })
+    if (await menuButton.isVisible()) {
+      await menuButton.click()
+    }
     await page.getByRole('link', { name: 'Ship', exact: true }).click()
     const gauge = page.getByRole('progressbar', { name: 'Hull health' })
     await expect(gauge).toHaveAttribute('aria-valuenow', '96')

@@ -1,3 +1,4 @@
+import { ContentSurface, Skeleton } from '@/shared/ui'
 import { PageHeader } from '@/shared/ui/PageHeader'
 
 /**
@@ -9,12 +10,15 @@ export function SessionBootstrap() {
   return (
     <div>
       <PageHeader
-        title="Preparing your logbook"
-        description="Restoring your session before showing protected content."
+        title="Restoring your session"
+        description="Confirming your sign-in before loading protected content."
       />
-      <p role="status" aria-live="polite">
-        Preparing…
-      </p>
+      <ContentSurface>
+        <Skeleton lines={3} />
+        <p role="status" aria-live="polite">
+          Preparing…
+        </p>
+      </ContentSurface>
     </div>
   )
 }

@@ -1,10 +1,17 @@
 .state {
-  padding: var(--space-6);
-  border-radius: var(--radius-panel);
-  background: var(--color-shell-raised);
-  color: var(--color-text-on-dark);
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  padding: var(--space-5);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-notice);
+  background: var(--color-surface);
+  color: var(--color-ink);
 }
 .state h2,
 .state p {
-  margin: var(--space-3) 0;
+  margin: 0;
+}
+.state p {
+  color: var(--color-muted);
 }

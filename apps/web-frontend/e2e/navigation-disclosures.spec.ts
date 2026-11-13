@@ -9,42 +9,70 @@ test.beforeEach(async ({ page }) => {
 })
 
 for (const width of [320, 390]) {
-  test(`mobile destinations stay readable and navigate at ${width}px`, async ({ page }) => {
+  test(`mobile destinations stay readable, dismiss on Escape, and focus route h1 at ${width}px`, async ({
+    page,
+  }) => {
     await page.setViewportSize({ width, height: 700 })
     await page.goto('/dashboard')
+
+    const menuButton = page.getByRole('button', { name: 'Menu', exact: true })
     const nav = page.getByRole('navigation', { name: 'Primary' })
-    await expect(nav.getByRole('link')).toHaveText([
-      '◈Dashboard',
-      '✓Dailies',
-      '◇Ship',
-      '↗Expeditions',
-    ])
-    for (const label of ['Dashboard', 'Dailies', 'Ship', 'Expeditions']) {
+
+    await expect(menuButton).toBeVisible()
+    await expect(menuButton).toHaveAttribute('aria-expanded', 'false')
+    await expect(nav).toBeHidden()
+
+    await menuButton.click()
+    await expect(menuButton).toHaveAttribute('aria-expanded', 'true')
+    await expect(nav).toBeVisible()
+    await expect(nav.getByRole('link')).toHaveText(['Dashboard', 'Dailies', 'Ship', 'Expeditions'])
+
+    await page.keyboard.press('Escape')
+    await expect(menuButton).toHaveAttribute('aria-expanded', 'false')
+    await expect(nav).toBeHidden()
+    await expect(menuButton).toBeFocused()
+
+    for (const label of ['Dailies', 'Ship', 'Expeditions', 'Dashboard']) {
+      await menuButton.click()
+      await expect(nav).toBeVisible()
       const link = nav.getByRole('link', { name: label, exact: true })
-      await link.click()
-      await expect(link).toHaveAttribute('aria-current', 'page')
-      await expect(page.getByRole('heading', { level: 1, name: label, exact: true })).toBeVisible()
       const geometry = await link.evaluate((element) => {
-        const text = element.lastElementChild
-        if (text === null) throw new Error('Navigation label is missing')
         const rect = element.getBoundingClientRect()
-        const labelRect = text.getBoundingClientRect()
         return {
-          fontSize: parseFloat(getComputedStyle(text).fontSize),
+          fontSize: parseFloat(getComputedStyle(element).fontSize),
           width: rect.width,
           height: rect.height,
-          fits: labelRect.left >= rect.left && labelRect.right <= rect.right,
           overflow: document.documentElement.scrollWidth > innerWidth,
         }
       })
       expect(geometry.fontSize).toBeGreaterThanOrEqual(14)
       expect(geometry.width).toBeGreaterThanOrEqual(44)
       expect(geometry.height).toBeGreaterThanOrEqual(44)
-      expect(geometry.fits).toBe(true)
       expect(geometry.overflow).toBe(false)
+
+      await link.click()
+      await expect(menuButton).toHaveAttribute('aria-expanded', 'false')
+      await expect(nav).toBeHidden()
+      const heading = page.getByRole('heading', { level: 1, name: label, exact: true })
+      await expect(heading).toBeVisible()
+      await expect(heading).toBeFocused()
+      await menuButton.click()
+      await expect(link).toHaveAttribute('aria-current', 'page')
+      await page.keyboard.press('Escape')
     }
   })
 }
+
+test('responsive navigation toggles cleanly across the 850px breakpoint', async ({ page }) => {
+  await page.setViewportSize({ width: 850, height: 900 })
+  await page.goto('/dashboard')
+  await expect(page.getByRole('button', { name: 'Menu', exact: true })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'Primary' })).toBeHidden()
+
+  await page.setViewportSize({ width: 851, height: 900 })
+  await expect(page.getByRole('button', { name: 'Menu', exact: true })).toBeHidden()
+  await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible()
+})
 
 for (const viewport of [
   { width: 320, height: 700 },
@@ -72,14 +100,9 @@ for (const viewport of [
       await expect(summary).toHaveCSS('outline-style', 'solid')
       await expect(page).toHaveScreenshot(`${route}-${viewport.width}-expanded-focus.png`)
       await summary.scrollIntoViewIfNeeded()
-      if (viewport.width < 768) {
-        const nav = page.getByRole('navigation', { name: 'Primary' })
-        const summaryBox = await summary.boundingBox()
-        const navBox = await nav.boundingBox()
-        if (summaryBox === null || navBox === null)
-          throw new Error('Navigation or summary is hidden')
-        expect(summaryBox.y + summaryBox.height).toBeLessThanOrEqual(navBox.y)
-      }
+      const summaryBox = await summary.boundingBox()
+      if (summaryBox === null) throw new Error('Summary is hidden')
+      expect(summaryBox.y + summaryBox.height).toBeLessThanOrEqual(viewport.height)
     })
   }
 }

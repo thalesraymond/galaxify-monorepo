@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 
@@ -67,7 +67,7 @@ describe('application shell and route tree', () => {
     expect(screen.queryByRole('navigation', { name: /primary/i })).not.toBeInTheDocument()
   })
 
-  it('navigates between primary routes through the nav links', async () => {
+  it('navigates between primary routes through the nav links and focuses route heading', async () => {
     const user = userEvent.setup()
     renderAppAt('/dashboard', { sessionRuntime: createAuthenticatedSessionRuntime() })
     await screen.findByRole('heading', { level: 1, name: 'Dashboard' })
@@ -75,7 +75,33 @@ describe('application shell and route tree', () => {
     const primaryNav = screen.getByRole('navigation', { name: /primary/i })
     await user.click(within(primaryNav).getByRole('link', { name: 'Dailies' }))
 
+    const nextHeading = await screen.findByRole('heading', { level: 1, name: 'Dailies' })
+    expect(nextHeading).toBeInTheDocument()
+    expect(nextHeading).toHaveFocus()
+  })
+
+  it('toggles the mobile menu disclosure, closes on Escape, and closes on navigation', async () => {
+    const user = userEvent.setup()
+    renderAppAt('/dashboard', { sessionRuntime: createAuthenticatedSessionRuntime() })
+    await screen.findByRole('heading', { level: 1, name: 'Dashboard' })
+
+    const menuButton = screen.getByText('Menu')
+    expect(menuButton).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(menuButton)
+    expect(menuButton).toHaveAttribute('aria-expanded', 'true')
+
+    await user.keyboard('{Escape}')
+    expect(menuButton).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(menuButton)
+    expect(menuButton).toHaveAttribute('aria-expanded', 'true')
+
+    const primaryNav = screen.getByRole('navigation', { name: /primary/i })
+    await user.click(within(primaryNav).getByRole('link', { name: 'Dailies' }))
+
     expect(await screen.findByRole('heading', { level: 1, name: 'Dailies' })).toBeInTheDocument()
+    expect(menuButton).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('redirects the root route to signup for anonymous visitors', async () => {

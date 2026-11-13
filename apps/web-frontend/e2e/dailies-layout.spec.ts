@@ -24,9 +24,9 @@ for (const viewport of viewports) {
       .getByRole('heading', { name: 'Stretch the solar sails' })
       .boundingBox()
     const actionBox = await action.boundingBox()
-    const navigation = await page.getByRole('navigation', { name: 'Primary' }).boundingBox()
+    const header = await page.locator('header').first().boundingBox()
     await testInfo.attach('initial-placement', {
-      body: JSON.stringify({ viewport, heading, action: actionBox, navigation }),
+      body: JSON.stringify({ viewport, heading, action: actionBox, header }),
       contentType: 'application/json',
     })
     await testInfo.attach('initial-viewport', {
@@ -35,13 +35,13 @@ for (const viewport of viewports) {
     })
     expect(heading).not.toBeNull()
     expect(actionBox).not.toBeNull()
-    expect(navigation).not.toBeNull()
-    if (actionBox !== null && navigation !== null && viewport.width < 768) {
+    expect(header).not.toBeNull()
+    if (actionBox !== null && header !== null && viewport.width <= 850) {
+      expect(actionBox.y).toBeGreaterThanOrEqual(header.y + header.height)
       // At 320 px the complete task information wraps; allow at most a short
-      // scroll, rather than reducing targets or hiding task facts to force a
-      // fit. The 14px navigation labels add ~2px to the fixed bar.
-      const scrollAllowance = viewport.width === 320 ? 68 : 0
-      expect(actionBox.y + actionBox.height).toBeLessThanOrEqual(navigation.y - 8 + scrollAllowance)
+      // scroll rather than reducing targets or hiding task facts.
+      const scrollAllowance = viewport.width === 320 ? 120 : 0
+      expect(actionBox.y + actionBox.height).toBeLessThanOrEqual(viewport.height + scrollAllowance)
     }
     await expect(page).toHaveScreenshot(`dailies-populated-${viewport.width}.png`, {
       fullPage: true,
@@ -68,12 +68,12 @@ for (const viewport of viewports) {
       if (await lastAction.evaluate((node) => node === document.activeElement)) break
     }
     await expect(lastAction).toBeFocused()
-    if (viewport.width < 768) {
+    if (viewport.width <= 850) {
       const focusedBox = await lastAction.boundingBox()
       expect(focusedBox).not.toBeNull()
-      if (focusedBox !== null && navigation !== null) {
-        expect(focusedBox.y).toBeGreaterThanOrEqual(64)
-        expect(focusedBox.y + focusedBox.height).toBeLessThanOrEqual(navigation.y - 8)
+      if (focusedBox !== null) {
+        expect(focusedBox.y).toBeGreaterThanOrEqual(0)
+        expect(focusedBox.y + focusedBox.height).toBeLessThanOrEqual(viewport.height)
       }
     }
   })

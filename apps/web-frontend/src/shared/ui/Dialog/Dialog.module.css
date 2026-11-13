@@ -5,18 +5,23 @@
   display: grid;
   place-items: center;
   padding: var(--space-4);
-  background: rgb(0 0 0 / 0.6);
+  background: rgb(0 0 0 / 0.8);
 }
 .dialog {
-  width: min(100%, 34rem);
-  max-height: calc(100vh - var(--space-8));
+  width: min(100%, 480px);
+  max-height: min(85dvh, calc(100vh - var(--space-8)));
   overflow: auto;
   padding: var(--space-6);
-  border: 1px solid var(--color-logbook-edge);
-  border-radius: var(--radius-panel);
-  background: var(--color-logbook);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-section);
+  background: var(--color-surface);
   color: var(--color-ink);
-  box-shadow: 0 20px 48px rgb(0 0 0 / 0.45);
+  box-shadow: none;
+}
+@media (max-width: 850px) {
+  .dialog {
+    padding: var(--space-5);
+  }
 }
 .dialog header {
   display: flex;
@@ -28,11 +33,18 @@
   margin: 0;
 }
 .dialog header button {
-  min-width: 44px;
-  min-height: 44px;
-  border: 0;
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  border: 1px solid var(--color-control);
+  border-radius: var(--radius-control);
   background: transparent;
-  color: inherit;
-  font-size: 2rem;
+  color: var(--color-ink);
+  font-size: 1.5rem;
+  line-height: 1;
   cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .dialog header button:hover {
+    background: var(--color-raised);
+  }
 }

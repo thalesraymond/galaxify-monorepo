@@ -6,7 +6,9 @@ import {
   ContentSurface,
   EmptyState,
   Field,
+  Gauge,
   Skeleton,
+  StatusBadge,
   UnavailableState,
 } from '@/shared/ui'
 import { PageHeader } from '@/shared/ui/PageHeader'
@@ -20,7 +22,7 @@ export function DesignSystemPreviewPage() {
     <div className={styles.page}>
       <PageHeader
         title="Interface states"
-        description="Shared controls and recovery states used across the application."
+        description="Shared After hours controls, telemetry indicators, and recovery states."
       />
       <div className={styles.grid}>
         <ContentSurface aria-labelledby="form-state-title">
@@ -29,7 +31,7 @@ export function DesignSystemPreviewPage() {
             <Field
               label="Email"
               type="email"
-              value="captain@example"
+              value="player@example"
               error="Enter a valid email address."
               onChange={() => undefined}
             />
@@ -38,24 +40,34 @@ export function DesignSystemPreviewPage() {
         </ContentSurface>
         <ContentSurface tone="raised" aria-labelledby="loading-state-title">
           <h2 id="loading-state-title">Loading Ship status</h2>
+          <Gauge label="Hull condition" value={72} />
+          <div className={styles.badges}>
+            <StatusBadge status="ready" />
+            <StatusBadge status="updating" />
+          </div>
           <Skeleton lines={3} />
         </ContentSurface>
         <ContentSurface aria-labelledby="empty-state-title">
-          <EmptyState title="No Dailies">Create a Daily to start your logbook.</EmptyState>
+          <EmptyState embedded title="No Dailies">
+            Create a Daily to begin tracking today&apos;s routine.
+          </EmptyState>
         </ContentSurface>
         <UnavailableState
           title="Ship status is unavailable"
-          description="The Ship service did not respond. Your Dailies are still available."
+          description="The Ship service did not respond. Your Dailies remain usable."
           onRetry={() => undefined}
         />
       </div>
-      <Button
-        onClick={() => {
-          setDialogOpen(true)
-        }}
-      >
-        Delete Daily
-      </Button>
+      <div className={styles.actions}>
+        <Button
+          variant="danger"
+          onClick={() => {
+            setDialogOpen(true)
+          }}
+        >
+          Delete Daily
+        </Button>
+      </div>
       {dialogOpen ? (
         <ConfirmationDialog
           title="Delete Daily"

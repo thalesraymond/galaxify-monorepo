@@ -3,25 +3,35 @@
   flex-direction: column;
   gap: var(--space-2);
   margin-bottom: var(--space-6);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .title {
   margin: 0;
-  color: var(--color-text-on-dark);
-  font-size: clamp(2rem, 1.5rem + 2vw, 3rem);
+  color: var(--color-ink);
+  font-size: 1.5rem;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+}
+
+.title:focus:not(:focus-visible) {
+  outline: none;
 }
 
 .description {
   margin: 0;
-  color: var(--color-text-muted-dark);
-  font-size: 1.125rem;
+  max-width: 65ch;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
 
-/* Warm logbook surfaces need ink text to keep WCAG AA contrast. */
 .on-light .title {
   color: var(--color-ink);
 }
 
 .on-light .description {
-  color: var(--color-text-muted-light);
+  color: var(--color-muted);
 }

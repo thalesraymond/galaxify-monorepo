@@ -10,7 +10,7 @@ async function expectTaskTitle(title: Locator) {
   await expect(title).toHaveCSS('font-size', '18px')
   await expect(title).toHaveCSS('text-transform', 'none')
   await expect(title).toHaveCSS('letter-spacing', 'normal')
-  await expect(title).toHaveCSS('color', 'rgb(23, 48, 56)')
+  await expect(title).toHaveCSS('color', 'rgb(255, 255, 255)')
 }
 
 for (const viewport of [
@@ -30,6 +30,9 @@ for (const viewport of [
     await page.getByRole('button', { name: 'Create Daily', exact: true }).click()
     await expect(page.getByRole('heading', { name: longTitle, exact: true })).toBeVisible()
 
+    if (viewport.width <= 850) {
+      await page.getByRole('button', { name: 'Menu', exact: true }).click()
+    }
     await page
       .getByRole('navigation', { name: 'Primary' })
       .getByRole('link', { name: 'Dashboard', exact: true })
@@ -44,7 +47,7 @@ for (const viewport of [
     const pendingHeading = page.getByRole('heading', { name: 'Pending', exact: true })
     await expect(pendingHeading).toHaveCSS('font-size', '14px')
     await expect(pendingHeading).toHaveCSS('text-transform', 'uppercase')
-    await expect(pendingHeading).toHaveCSS('color', 'rgb(95, 109, 105)')
+    await expect(pendingHeading).toHaveCSS('color', 'rgb(180, 180, 180)')
     // Completed uses its existing disclosure-heading treatment, not the pending label rule.
     await expect(completedHeading).toHaveCSS('margin', '0px')
     await expect(completedHeading).toHaveCSS('text-transform', 'none')

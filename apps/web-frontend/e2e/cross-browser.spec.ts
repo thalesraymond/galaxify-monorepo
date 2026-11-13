@@ -45,6 +45,7 @@ test.describe('cross-browser release journeys', () => {
     await page.goto('/dashboard')
     await expectAuthenticatedDashboard(page)
 
+    const menuButton = page.getByRole('button', { name: 'Menu', exact: true })
     const primaryNav = page.getByRole('navigation', { name: 'Primary' })
     for (const route of [
       { label: 'Dailies', heading: 'Dailies', url: /\/dailies$/ },
@@ -52,6 +53,9 @@ test.describe('cross-browser release journeys', () => {
       { label: 'Expeditions', heading: 'Expeditions', url: /\/expeditions$/ },
       { label: 'Dashboard', heading: 'Dashboard', url: /\/dashboard$/ },
     ]) {
+      if (await menuButton.isVisible()) {
+        await menuButton.click()
+      }
       await primaryNav.getByRole('link', { name: route.label }).click()
       await expect(page.getByRole('heading', { level: 1, name: route.heading })).toBeVisible()
       await expect(page).toHaveURL(route.url)

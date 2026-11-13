@@ -1,10 +1,12 @@
 .disclosure summary {
-  min-height: 44px;
+  min-height: var(--touch-target);
   display: flex;
   align-items: center;
   cursor: pointer;
-  font-weight: 700;
+  color: var(--color-ink);
+  font-weight: 500;
 }
 .disclosure > div {
   padding: var(--space-3) 0;
+  color: var(--color-muted);
 }

@@ -3,24 +3,37 @@
   gap: var(--space-2);
 }
 .field label {
-  font-weight: 700;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-ink);
 }
 .field input {
-  min-height: 44px;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-text-muted-light);
+  width: 100%;
+  min-width: 0;
+  min-height: var(--touch-target);
+  padding: var(--space-2) 0.875rem;
+  border: 1px solid var(--color-control);
   border-radius: var(--radius-control);
-  background: var(--color-logbook);
+  background: var(--color-ground);
   color: var(--color-ink);
   font: inherit;
+  font-size: 1rem;
+}
+.field input::placeholder {
+  color: var(--color-muted);
+}
+.field input:focus-visible {
+  border-color: var(--color-focus);
 }
 .field small {
-  color: var(--color-text-muted-light);
+  color: var(--color-muted);
+  font-size: 0.875rem;
 }
 .error {
   margin: 0;
-  color: var(--color-danger-strong);
-  font-weight: 700;
+  color: var(--color-danger);
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 .field input[aria-invalid='true'] {
   border-width: 2px;

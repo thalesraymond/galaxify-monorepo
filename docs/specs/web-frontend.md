@@ -239,7 +239,7 @@ logout call.
 
 ### 5.1 Signup and login
 
-Use a focused logbook form with concise product copy and a cross-link—no
+Use a focused account form with concise product copy and a cross-link—no
 marketing split panel.
 
 - Signup: email, username, password; username 3–30 characters; password at least
@@ -263,7 +263,7 @@ Render this fixed priority:
    updating/stale status, and direct eligible Repair.
 3. **Expedition** shows active progress or a route to launch, never the full
    investment form.
-4. A restrained trace may connect Dailies → Ship → Expeditions.
+4. An inline trace may connect Dailies → Ship → Expeditions.
 
 An empty Daily day remains first and offers Create Daily. Provisioning and
 failures replace only affected panels.
