@@ -23,9 +23,17 @@ describe('signup page', () => {
       sessionRuntime: createSessionTestHarness({ authenticated: false }).runtime,
     })
 
-    expect(
-      await screen.findByRole('heading', { level: 1, name: 'Create your account' }),
-    ).toBeInTheDocument()
+    const heading = await screen.findByRole('heading', {
+      level: 1,
+      name: 'Create your account',
+    })
+    expect(heading).toBeInTheDocument()
+    // The route heading stays on the page ground above the charcoal form panel.
+    const submit = screen.getByRole('button', { name: 'Create account' })
+    const signupForm = submit instanceof HTMLButtonElement ? submit.form : null
+    expect(signupForm).not.toBeNull()
+    expect(signupForm).not.toContainElement(heading)
+    expect(screen.getByText('Complete Dailies and keep your Ship flying.')).toBeInTheDocument()
     expect(screen.getByLabelText('Email')).toBeInTheDocument()
     expect(screen.getByLabelText('Username')).toBeInTheDocument()
     expect(screen.getByLabelText('Password')).toBeInTheDocument()

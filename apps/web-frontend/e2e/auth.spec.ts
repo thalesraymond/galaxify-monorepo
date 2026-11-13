@@ -46,6 +46,28 @@ test.describe('signup and login', () => {
     await expect(page).toHaveURL(/\/ship$/)
   })
 
+  test('preserves the full Dailies date/status query through sign-in', async ({ page }) => {
+    await page.goto('/dailies?date=2026-01-15&status=PENDING')
+    await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible()
+
+    await page.getByLabel('Email').fill('captain@galaxify.test')
+    await page.getByLabel('Password').fill('password123')
+    await page.getByRole('button', { name: 'Sign in' }).click()
+
+    await expect(page.getByRole('heading', { level: 1, name: 'Dailies' })).toBeVisible()
+    await expect(page).toHaveURL(/\/dailies\?date=2026-01-15&status=PENDING$/)
+  })
+
+  test('authenticated visits to signup and login redirect to the Dashboard', async ({ page }) => {
+    await seedAuthenticated(page)
+
+    await page.goto('/signup')
+    await expectAuthenticatedDashboard(page)
+
+    await page.goto('/login')
+    await expectAuthenticatedDashboard(page)
+  })
+
   test('validation errors stay inline and accessible', async ({ page }) => {
     await page.goto('/signup')
     await waitForMockRuntime(page)

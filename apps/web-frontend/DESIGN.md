@@ -48,6 +48,10 @@ typography:
     fontSize: "24px"
     fontWeight: 400
     lineHeight: 1.2
+  control:
+    fontSize: "14px"
+    fontWeight: 500
+    lineHeight: 1.2
 rounded:
   section: "20px"
   control: "999px"
@@ -59,6 +63,56 @@ spacing:
   sectionMobile: "20px"
   interPanel: "24px"
   targetGap: "8px"
+components:
+  button-primary:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.on-primary}"
+    typography: "{typography.control}"
+    rounded: "{rounded.control}"
+    padding: "8px 14px"
+  button-secondary:
+    backgroundColor: "transparent"
+    textColor: "{colors.ink}"
+    typography: "{typography.control}"
+    rounded: "{rounded.control}"
+    padding: "8px 14px"
+  button-danger:
+    backgroundColor: "transparent"
+    textColor: "{colors.danger}"
+    typography: "{typography.control}"
+    rounded: "{rounded.control}"
+    padding: "8px 14px"
+  button-quiet:
+    backgroundColor: "transparent"
+    textColor: "{colors.muted}"
+    typography: "{typography.control}"
+    rounded: "{rounded.control}"
+    padding: "8px 14px"
+  field-input:
+    backgroundColor: "{colors.ground}"
+    textColor: "{colors.ink}"
+    typography: "{typography.body}"
+    rounded: "{rounded.control}"
+    padding: "8px 14px"
+  content-surface:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
+    typography: "{typography.body}"
+    rounded: "{rounded.section}"
+    padding: "{spacing.section}"
+  dialog:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
+    typography: "{typography.body}"
+    rounded: "{rounded.section}"
+    padding: "{spacing.section}"
+    width: "min(100%, 480px)"
+  status-badge:
+    backgroundColor: "{colors.raised}"
+    textColor: "{colors.ink}"
+    typography: "{typography.control}"
+    rounded: "{rounded.control}"
+    padding: "4px 12px"
 layout:
   frameMaxWidth: "1248px"
   formMaxWidth: "760px"
@@ -167,7 +221,37 @@ All player-facing copy and numerals use self-hosted variable **Inter** with
 - **Touch targets**: Interactive controls enforce at least `44×44px` hit areas
   and at least `8px` spacing between adjacent targets.
 
-## Component states and authored SVG signatures
+## Components
+
+Machine-readable variants are declared in the `components:` frontmatter. The
+canonical account-surface forms:
+
+- [`Button`](./src/shared/ui/Button/Button.tsx) — `variant`:
+  `primary` (default) `secondary` `danger` `quiet`. Shared `44px` minimum
+  height (not fixed), `8px 14px` padding, pill radius, `14px`/`500`/`1.2`
+  type, the shared `:focus-visible` `3px solid #65bde9` ring at `4px` offset,
+  and a `translateY(1px)` enabled press. `primary` has a white fill and black text;
+  outlined variants stay transparent (`secondary` borders `--color-control`,
+  `danger` borders `--color-danger`, `quiet` borders nothing and mutes ink).
+  Disabled swaps to raised fill, muted ink, and `not-allowed` cursor.
+- [`Field`](./src/shared/ui/Field/Field.tsx) — `label`/`hint`/`error` props;
+  visible `14px`/`500` label, `#000000` input fill inside charcoal panels,
+  `1px` `--color-control` border, pill radius, `8px 14px` padding, `44px`
+  minimum height. `:focus-visible` moves the border to `--color-focus`;
+  `aria-invalid` raises it to `2px` `--color-danger` with the error linked by
+  `aria-describedby`.
+- [`ContentSurface`](./src/shared/ui/ContentSurface/ContentSurface.tsx) —
+  `tone` `logbook` (default) | `raised`; `#111111` fill, `20px` radius,
+  `24px` padding (`20px` at ≤850px), no border or shadow.
+- [`Dialog`](./src/shared/ui/Dialog/Dialog.tsx) — `title`/`onClose`; width
+  `min(100%, 480px)`, `max-height` `min(85dvh, 100vh − 32px)` with internal
+  scroll, `#111111` fill, `1px` `--color-border` edge, `20px` radius. Owns the
+  focus trap, Escape dismissal, and return-focus.
+- [`StatusBadge`](./src/shared/ui/StatusBadge/StatusBadge.tsx) — `status`:
+  `ready` `preparing` `updating` `delayed` `error` (+ optional `label`).
+  `#252525` fill, `4px 12px` padding, `28px` minimum height, pill, `14px`/`500`,
+  `1px` border. `ready` recolors to `--color-data`, `delayed`/`error` to
+  `--color-danger`; text/glyph always accompany color.
 
 All shared primitives (`Button`, `ContentSurface`, `Dialog`, `ConfirmationDialog`,
 `Disclosure`, `EmptyState`, `Field`, `FormError`, `Gauge`, `LiveRegion`,

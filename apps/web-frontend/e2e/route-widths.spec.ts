@@ -99,7 +99,8 @@ for (const viewport of viewports) {
     await expectReflow(page)
 
     if (viewport.name === 'desktop') {
-      expect(identityWidth).toBeLessThanOrEqual(480)
+      // Identity owns the wider 1.4fr Profile track (frontend-redesign §3).
+      expect(identityWidth).toBeGreaterThan(480)
       expect(dailyWidth).toBeLessThanOrEqual(608)
       expect(shipWidth).toBeLessThanOrEqual(640)
     }

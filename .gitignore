@@ -50,3 +50,7 @@ blob-report/
 .vite/
 *.tsbuildinfo
 apps/web-frontend/.lighthouseci/
+
+# Impeccable machine-local consent and detector cache
+.impeccable/config.local.json
+.impeccable/hook.cache.json

@@ -64,12 +64,7 @@ export function LoginPage() {
 
   return (
     <div className={styles.page}>
-      <PageHeader
-        tone="on-light"
-        title="Sign in"
-        description="Return to your Dailies, Ship, and Expeditions."
-      />
-      <SessionNotice notice={notice} />
+      <PageHeader title="Sign in" description="Return to your Dailies, Ship, and Expeditions." />
       <form
         ref={formRef}
         className={styles.form}
@@ -78,6 +73,7 @@ export function LoginPage() {
           void submit(event)
         }}
       >
+        <SessionNotice notice={notice} />
         <Field
           autoComplete="email"
           error={errors.email?.message}

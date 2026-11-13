@@ -45,18 +45,13 @@
 .main {
   width: 100%;
   max-width: 760px;
-  padding: var(--space-6);
-  border-radius: var(--radius-section);
-  background: var(--color-surface);
-  color: var(--color-ink);
+  /* Stays on the page ground: the account form supplies the charcoal panel,
+     so the route heading sits above it like the pinned prototype. */
+  padding: 0;
 }
 
 @media (max-width: 850px) {
   .shell {
     padding: var(--space-8) 20px var(--space-6);
-  }
-
-  .main {
-    padding: var(--space-5);
   }
 }

@@ -67,11 +67,9 @@ export function SignupPage() {
   return (
     <div className={styles.page}>
       <PageHeader
-        tone="on-light"
         title="Create your account"
-        description="Start your logbook, complete Dailies, and keep your Ship flying."
+        description="Complete Dailies and keep your Ship flying."
       />
-      <SessionNotice notice={notice} />
       <form
         ref={formRef}
         className={styles.form}
@@ -80,6 +78,7 @@ export function SignupPage() {
           void submit(event)
         }}
       >
+        <SessionNotice notice={notice} />
         <Field
           autoComplete="email"
           error={errors.email?.message}
