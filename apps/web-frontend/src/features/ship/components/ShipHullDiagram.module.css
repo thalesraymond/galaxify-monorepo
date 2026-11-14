@@ -1,0 +1,22 @@
+.diagram {
+  display: block;
+  width: 100%;
+  max-width: 260px;
+  height: 220px;
+  margin: auto;
+}
+
+.intact {
+  fill: var(--color-data);
+}
+
+.damaged {
+  fill: transparent;
+  stroke: var(--color-control);
+}
+
+@media (max-width: 480px) {
+  .diagram {
+    height: 100px;
+  }
+}

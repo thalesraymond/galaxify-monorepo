@@ -1,4 +1,4 @@
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, queryAllByAttribute, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -93,6 +93,29 @@ function bearerOf(request: Request): string | undefined {
 }
 
 describe('Ship page', () => {
+  it.each([0, 42, 100])('shows %i confirmed hull cells alongside matching facts', async (hull) => {
+    await renderShip('damaged-ship', () => {
+      server.server.use(
+        http.get('/api/ship/ships/me', () =>
+          HttpResponse.json(createDamagedShip({ hull_health: hull })),
+        ),
+      )
+    })
+
+    const diagram = await screen.findByRole('img', {
+      name: `Ship hull diagram: ${hull} of 100 cells intact`,
+    })
+    expect(queryAllByAttribute('data-state', diagram, /^(intact|damaged)$/)).toHaveLength(100)
+    expect(queryAllByAttribute('data-state', diagram, 'intact')).toHaveLength(hull)
+    expect(queryAllByAttribute('data-state', diagram, 'damaged')).toHaveLength(100 - hull)
+    expect(screen.getByRole('progressbar', { name: 'Hull health' })).toHaveAttribute(
+      'aria-valuenow',
+      String(hull),
+    )
+    expect(screen.getByText('120')).toBeInTheDocument()
+    expect(screen.getByText(hull === 100 ? 'Fully repaired' : 'Damaged')).toBeInTheDocument()
+  })
+
   it('shows the healthy Ship: hull gauge, materials, level, and last update', async () => {
     await renderShip('established-player')
 
@@ -102,8 +125,20 @@ describe('Ship page', () => {
     expect(screen.getByText('96 / 100')).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 3, name: 'Materials' })).toBeInTheDocument()
     expect(screen.getByText('250')).toBeInTheDocument()
-    expect(screen.getByText(/Level 3 · Updated/)).toBeInTheDocument()
+    expect(screen.getByText('Level 3')).toBeInTheDocument()
+    expect(screen.getByText(/Updated/)).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Repair Ship' })).toBeEnabled()
+  })
+
+  it('keeps Expedition context available beside the confirmed Ship', async () => {
+    await renderShip('damaged-ship')
+
+    expect(await screen.findByRole('region', { name: 'Ship status' })).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: 'Launch an Expedition' })).toHaveAttribute(
+      'href',
+      '/expeditions',
+    )
+    expect(screen.getByRole('heading', { level: 1, name: 'Ship' })).toBeInTheDocument()
   })
 
   it('explains repair mechanics on a damaged repairable Ship', async () => {
@@ -124,6 +159,14 @@ describe('Ship page', () => {
     await user.click(await screen.findByRole('button', { name: 'Repair Ship' }))
 
     expect(await screen.findByText('100 / 100')).toBeInTheDocument()
+    const repaired = screen.getByRole('img', {
+      name: 'Ship hull diagram: 100 of 100 cells intact',
+    })
+    expect(queryAllByAttribute('data-state', repaired, 'intact')).toHaveLength(100)
+    expect(screen.getByRole('progressbar', { name: 'Hull health' })).toHaveAttribute(
+      'aria-valuenow',
+      '100',
+    )
     expect(screen.getByText('62')).toBeInTheDocument()
     expect(await screen.findByText('The Ship was repaired.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Repair Ship' })).toBeDisabled()
@@ -154,6 +197,14 @@ describe('Ship page', () => {
     fireEvent.click(repair)
 
     expect(screen.getByRole('button', { name: 'Working…' })).toBeDisabled()
+    expect(
+      screen.getByRole('img', { name: 'Ship hull diagram: 42 of 100 cells intact' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('progressbar', { name: 'Hull health' })).toHaveAttribute(
+      'aria-valuenow',
+      '42',
+    )
+    expect(screen.getByText('120')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('link', { name: 'Dailies' }))
 
     await waitForUi(() => screen.queryByRole('heading', { level: 1, name: 'Dailies' }) !== null)
@@ -161,6 +212,46 @@ describe('Ship page', () => {
 
     // Resolve the in-flight repair so no request stays dangling.
     await advanceFake(1_000)
+  })
+
+  it('never lets a late route read undo a confirmed repair diagram or balance', async () => {
+    await import('@/features/dailies')
+    enableFakeTimers(FIXED_MOCK_EPOCH_MS)
+    await renderShipFake('damaged-ship')
+    await advanceFake(31_000)
+    let releaseRead: (() => void) | undefined
+    let readStarted = false
+    server.server.use(
+      http.get(
+        '/api/ship/ships/me',
+        async () => {
+          readStarted = true
+          await new Promise<void>((resolve) => {
+            releaseRead = resolve
+          })
+          return HttpResponse.json(createDamagedShip())
+        },
+        { once: true },
+      ),
+    )
+
+    fireEvent.click(screen.getByRole('link', { name: 'Dailies' }))
+    await waitForUi(() => screen.queryByRole('heading', { level: 1, name: 'Dailies' }) !== null)
+    fireEvent.click(screen.getByRole('link', { name: 'Ship' }))
+    await waitForUi(() => readStarted)
+    fireEvent.click(screen.getByRole('button', { name: 'Repair Ship' }))
+    await waitForUi(() => screen.queryByText('100 / 100') !== null)
+    releaseRead?.()
+    await advanceFake(1_000)
+
+    expect(
+      screen.getByRole('img', { name: 'Ship hull diagram: 100 of 100 cells intact' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('progressbar', { name: 'Hull health' })).toHaveAttribute(
+      'aria-valuenow',
+      '100',
+    )
+    expect(screen.getByRole('region', { name: 'Materials' })).toHaveTextContent('62')
   })
 
   it('explains a full hull typed error and points to Dailies', async () => {
@@ -183,6 +274,10 @@ describe('Ship page', () => {
       /Repair becomes available when the hull is damaged — complete Dailies to keep the Ship healthy/,
     )
     expect(outcome).toBeInTheDocument()
+    expect(
+      screen.getByRole('img', { name: 'Ship hull diagram: 42 of 100 cells intact' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('120')).toBeInTheDocument()
     const dailiesLink = screen.getByRole('link', { name: 'Open Dailies' })
     expect(dailiesLink).toHaveFocus()
     await user.click(dailiesLink)
@@ -220,15 +315,17 @@ describe('Ship page', () => {
     const user = userEvent.setup()
     await renderShip('provisioning')
 
-    expect(await screen.findByText('Preparing…')).toBeInTheDocument()
+    const preparing = await screen.findByRole('region', { name: 'Preparing your Ship' })
+    expect(within(preparing).getByText('Preparing…')).toBeInTheDocument()
     expect(screen.getByText('Preparing your Ship')).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: /Ship hull diagram/ })).not.toBeInTheDocument()
 
     scheduler.advance(5_000)
     server.server.use(
       http.get('/api/ship/ships/me', () => HttpResponse.json(createDamagedShip(), { status: 200 })),
     )
 
-    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    await user.click(within(preparing).getByRole('button', { name: 'Retry' }))
 
     expect(await screen.findByRole('progressbar', { name: 'Hull health' })).toHaveAttribute(
       'aria-valuenow',
@@ -254,6 +351,7 @@ describe('Ship page', () => {
     expect(
       await screen.findByText('Ship status is unavailable', undefined, { timeout: 2_000 }),
     ).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: /Ship hull diagram/ })).not.toBeInTheDocument()
 
     server.server.resetHandlers()
     await user.click(screen.getByRole('button', { name: 'Retry' }))
@@ -291,6 +389,10 @@ describe('Ship page', () => {
     const repair = await screen.findByRole('button', { name: 'Repair Ship' })
     expect(repair).toBeDisabled()
     expect(repair).toHaveAccessibleDescription(expect.stringContaining('No materials'))
+    expect(screen.getByText('0')).toBeInTheDocument()
+    expect(
+      screen.getByRole('img', { name: 'Ship hull diagram: 42 of 100 cells intact' }),
+    ).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open Dailies' })).toBeInTheDocument()
   })
 })
