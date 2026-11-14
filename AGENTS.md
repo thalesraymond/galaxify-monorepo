@@ -1,157 +1,35 @@
-# Agent configuration
+# Agent Configuration
 
-This file is the entry point for coding agents (OpenCode, Claude Code, etc.)
-working in this repo.
+Entry point for coding agents working in `galaxify-monorepo`. Keep global context small: follow the pointers below when a task touches that area.
 
-## Repository structure (Go workspace monorepo)
-
-This is a **Go workspace monorepo** (see `docs/adr/0001-go-workspace-monorepo.md`).
-There is no single root `go.mod`; instead each module has its own `go.mod` and the
-root `go.work` (committed) unites them:
+## Repository map
 
 ```
 /
-├── go.work                  ← workspace root, lists all Go modules
-├── docker-compose.yml       ← local infrastructure
+├── go.work                  ← Go workspace root (unites all Go modules; no root go.mod)
 ├── apps/
-│   ├── daily-service/       ← Go module (HTTP API)
-│   ├── expedition-service/  ← Go module (HTTP API)
-│   ├── ship-service/        ← Go module (HTTP API)
-│   ├── user-service/        ← Go module (HTTP API)
-│   └── web-frontend/        ← frontend, NO Go module
-├── pkg/                     ← shared code Go module (events, rabbitmq)
-└── workers/                 ← background workers and crons (Lambdas/Functions)
-    └── daily-cron/          ← Go module (Missed dailies worker)
+│   ├── user-service/        ← Go HTTP API (Player identity, JWT, JWKS)    [apps/user-service/AGENTS.md]
+│   ├── daily-service/       ← Go HTTP API (recurring dailies, history)    [apps/daily-service/AGENTS.md]
+│   ├── ship-service/        ← Go HTTP API (hull health, materials)        [apps/ship-service/AGENTS.md]
+│   ├── expedition-service/  ← Go HTTP API (expedition launch & results)   [apps/expedition-service/AGENTS.md]
+│   └── web-frontend/        ← React/TS Vite frontend (not a Go module)    [apps/web-frontend/AGENTS.md]
+├── pkg/                     ← Shared Go library module
+├── workers/                 ← Background Go workers (daily-cron, expedition-worker)
+└── docs/                    ← Specs, ADRs, OpenAPI contracts, agent guides, wiki
 ```
 
-- Add a service by adding a directory with a `go.mod` and one line in `go.work`
-  — never a `replace` directive (the workspace resolves local modules directly).
-- A change in `pkg/` affects every module that imports it; verify all of them.
-- `apps/web-frontend/` is not part of the Go workspace; Go commands there are a no-op.
-- gopls sees the full module map via `go.work`, so cross-module navigation works from the repo root.
+## Contextual guides
 
-## Required verification (go build / test / vet)
+- **Agent working memory (read first before decisions)**: [`docs/wiki/index.md`](docs/wiki/index.md)
+- **Go services, `pkg/`, and workers**: [`docs/agents/go-services.md`](docs/agents/go-services.md)
+- **Web frontend (`apps/web-frontend`)**: [`docs/agents/web-frontend.md`](docs/agents/web-frontend.md)
+- **Domain glossary & ADRs**: [`docs/agents/domain.md`](docs/agents/domain.md)
+- **Issue tracker (`gh` CLI & wayfinding)**: [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md)
+- **Triage labels**: [`docs/agents/triage-labels.md`](docs/agents/triage-labels.md)
 
-Every agentic change must be verified with **`go build`**, **`go test`**, and
-**`go vet`** for **every module containing changed code** (and any module that
-imports changed `pkg/` code). Run them from each affected module directory:
+## Global rules
 
-```sh
-cd apps/<service>        # or pkg, per affected module
-go build ./...
-go test  ./...
-go vet   ./...
-```
-
-This includes `pkg/` itself, even when only one service depends on it: a
-change in `pkg/` affects every module that imports it, so run the three
-commands there too, and keep the repo-root `Makefile` targets (`make test`,
-`make coverage`, `make vet`, …) covering `pkg/` so a single command exercises
-every module.
-
-(The repo root has no `go.mod`, so `go build ./...` from the root does not
-work; run the three commands per module instead. gopls sees the full module
-map via `go.work`.)
-
-## Build artifacts (never commit binaries)
-
-- **Always** write compiled binaries to the module's local `bin/` folder —
-  **never** to the module root or anywhere else in the tree.
-- **Never commit binaries.** `bin/` is gitignored. A binary that shows up in
-  `git status` outside `bin/` is a mistake: remove it before committing — do
-  not `git add` it, do not `git commit` it.
-
-```sh
-cd apps/<service>          # or any module with a main package
-mkdir -p bin
-go build -o bin/ .         # writes bin/<service>
-```
-
-A change is not done until the build/test/vet checks above pass with no
-failures.
-
-## Workflow discipline
-
-- **Apply follow-up refinements before reporting done**: When the user refines
-  or corrects a previous request in the same session (e.g. "the test command
-  should use `-race`"), treat it as an amendment, not a new suggestion. Verify
-  the refinement actually landed in the code (`grep`, `git diff`) before
-  finishing — if it didn't, apply it or report it as unfinished. Never mark a
-  change done when a requested follow-up is still pending.
-- **Repeated request = previous attempt failed**: If the user re-sends the same
-  request verbatim (identical prompt sent twice), the earlier attempt likely
-  did not complete. Before redoing the work, check `git status` and
-  `git log` to see whether part of it already landed, and tell the user what
-  you found.
-
-## Code conventions
-
-- **Check `pkg/` before writing any service helper**: When a service needs a
-  helper function (JSON encoding, error helpers, logging, etc.), first check
-  whether an equivalent already exists in a shared `pkg/` module — reuse it
-  instead of recreating it in the service. Only create a new shared piece of
-  code in `pkg/` (under a proper module) when a helper is being duplicated
-  across two or more services.
-- **Name things with context**: instead of generic names like `NewHandler` or
-  `Builder`, include the domain in the name — better names: `NewDailyApiHandler`,
-  `LoggerBuilder`. Since Go functions are "loose" (package-level), names are
-  very important.
-
-## Handler and domain conventions
-
-HTTP handler tests follow the contract in
-[ADR-0008](docs/adr/0008-handler-owned-interfaces-and-table-driven-tests.md) and
-[ADR-0011](docs/adr/0011-domain-lifecycle-modules-and-deep-seams.md):
-
-- Handlers depend on **high-leverage domain interfaces** (e.g. `daily.Manager`),
-  never raw SQL queries or multi-step database orchestration.
-- Handlers expose a `RegisterXRoutes(*http.ServeMux)` method so tests can
-  exercise the real route table.
-- Tests use package-local helpers (`newTestXHandler`, `newTestXRouter`,
-  `newTestRequest`, `wantStatus`, `decodeBody`, etc.) and table-driven cases.
-- Tests assert both the HTTP response and the parameters passed to the domain mock.
-
-Read ADR-0008, ADR-0011, and ADR-0012 before writing or reviewing handler and domain code.
-
-## Shared infrastructure (cross-cutting `pkg/`)
-
-The cross-cutting subsystems (`pkg/sharedhttp`, `pkg/auth`, `pkg/events`,
-`pkg/rabbitmq`) implement foundational decisions that affect every service.
-Each subsystem has an ADR recording the design rationale and the contract —
-read the ADR before touching the corresponding code.
-
-| Subsystem                                                                 | ADR                                                                                                                              | Read when…                                                                          |
-| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `pkg/sharedhttp` — error envelope, request ID middleware, auth middleware | [ADR-0006](docs/adr/0006-shared-http-error-envelope-and-request-id.md)                                                           | writing/modifying HTTP handlers, adding error codes, wiring middleware in `main.go` |
-| `pkg/auth` — EdDSA JWT, JWKS cache, password hashing, refresh tokens      | [ADR-0003](docs/adr/0003-asymmetric-jwt-eddsa-with-jwks.md)                                                                      | working on auth flows, login/signup/refresh, JWT verification                       |
-| `pkg/events` — event bus topology, envelope, outbox, DLX/AE, idempotent consumer pipeline | [ADR-0004](docs/adr/0004-transactional-outbox-http-triggered-drain.md), [ADR-0005](docs/adr/0005-galaxify-event-bus-topology.md), [ADR-0009](docs/adr/0009-dead-letter-and-alternate-exchanges.md), [ADR-0010](docs/adr/0010-idempotent-consumer-pipeline.md) | emitting or consuming events, designing new event types, declaring queues, writing consumers |
-
-The implementation contract and on-the-wire shapes live in
-[`docs/specs/cross-cutting.md`](docs/specs/cross-cutting.md); the
-implementation itself lives under each `pkg/` module
-([errors.go](pkg/sharedhttp/errors.go), [middleware.go](pkg/sharedhttp/middleware.go),
-[auth/\*](pkg/auth)).
-
-## Agent skills
-
-### Issue tracker
-
-Issues and specs for this repo live as GitHub issues, operated via the `gh`
-CLI. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Triage uses the default five labels: `needs-triage`, `needs-info`,
-`ready-for-agent`, `ready-for-human`, `wontfix`. See
-`docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See
-`docs/agents/domain.md`.
-
-### Agent wiki
-
-Long-lived agent working memory lives in `docs/wiki/`; read
-[`docs/wiki/index.md`](docs/wiki/index.md) before making decisions and update it
-when something durable is learned.
+- **Verify every affected module**: Before reporting done, run the verification checks documented in the contextual guide for every changed module (and all dependents when `pkg/` changes).
+- **Keep Go binaries in `bin/`**: Compile service/worker binaries into each module's gitignored `bin/` directory; keep binaries out of git commits.
+- **Apply follow-up refinements**: Treat user refinements in the same session as required amendments and confirm they landed via `git diff`.
+- **Inspect history on repeated prompts**: If the same prompt arrives verbatim twice, inspect `git status` and `git log` first and report what already landed.
