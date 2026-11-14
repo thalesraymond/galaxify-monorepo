@@ -1,12 +1,14 @@
 .page {
   display: grid;
   gap: var(--space-6);
-  max-width: 38rem;
+  max-width: var(--form-max-width);
 }
 
 .heading {
   margin: 0 0 var(--space-4);
-  font-size: 1.5rem;
+  font-size: 1.125rem;
+  font-weight: 500;
+  line-height: 1.3;
 }
 
 .backLink {
@@ -14,22 +16,29 @@
   min-height: 44px;
   align-items: center;
   width: fit-content;
-  color: var(--color-text-on-dark);
-  font-weight: 700;
+  color: var(--color-ink);
+  font-size: 0.875rem;
+  font-weight: 500;
   text-decoration: none;
+}
+
+.backLink:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .completedNotice {
   display: flex;
   gap: var(--space-2);
   flex-wrap: wrap;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid color-mix(in srgb, var(--color-amber-strong) 55%, transparent);
-  border-radius: var(--radius-panel);
-  background: color-mix(in srgb, var(--color-amber) 16%, transparent);
-  color: var(--color-text-on-dark);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-notice);
+  background: var(--color-raised);
+  color: var(--color-ink);
+  font-size: 0.875rem;
 }
 
 .completedNotice strong {
-  color: var(--color-amber);
+  color: var(--color-data);
 }

@@ -3,9 +3,16 @@
   gap: var(--space-6);
 }
 
+.listSurface {
+  padding: 0;
+  background: transparent;
+}
+
 .heading {
   margin: 0 0 var(--space-4);
-  font-size: 1.5rem;
+  font-size: 1.125rem;
+  font-weight: 500;
+  line-height: 1.3;
 }
 
 .history {
@@ -15,24 +22,23 @@
 
 .group {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-1);
 }
 
 .groupHeading {
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
+  flex-wrap: wrap;
   margin: 0;
   font-size: 1.125rem;
+  font-weight: 500;
+  line-height: 1.3;
 }
 
 .groupZone {
-  color: var(--color-text-muted-light);
-  font-family: 'Avenir Next', 'Trebuchet MS', sans-serif;
+  color: var(--color-muted);
   font-size: 0.875rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .rows {
@@ -41,15 +47,14 @@
   list-style: none;
 }
 
-.row {
-  display: grid;
-  gap: var(--space-3);
-  padding: var(--space-4) 0;
-  border-top: 1px solid color-mix(in srgb, var(--color-ink) 18%, transparent);
+.rows > li + li {
+  border-top: 1px solid var(--color-border);
 }
 
-.row:first-child {
-  border-top: 0;
+.row {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4) 0;
 }
 
 .rowHead {
@@ -57,59 +62,67 @@
   align-items: baseline;
   gap: var(--space-3);
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .title {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .facts {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2) var(--space-4);
+  gap: var(--space-1) var(--space-4);
   margin: 0;
+  min-width: 0;
 }
 
 .facts > div {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
+  min-width: 0;
 }
 
 .facts dt {
-  color: var(--color-text-muted-light);
+  color: var(--color-muted);
   font-size: 0.875rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .facts dd {
   margin: 0;
   font-size: 0.875rem;
+  overflow-wrap: anywhere;
 }
 
 .effect {
   width: fit-content;
-  border-radius: 999px;
+  max-width: 100%;
+  border-radius: var(--radius-control);
   padding: var(--space-1) var(--space-3);
+  background: var(--color-raised);
   font-size: 0.875rem;
-  font-weight: 700;
+  font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 .reward {
-  background: color-mix(in srgb, var(--color-mint) 32%, transparent);
-  color: var(--color-ink);
+  color: var(--color-data);
 }
 
 .damage {
-  background: color-mix(in srgb, var(--color-danger) 20%, transparent);
-  color: var(--color-danger-strong);
+  color: var(--color-danger);
 }
 
 .description {
   margin: 0;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
 }
 
 .footer {
@@ -121,18 +134,21 @@
 
 .footerError {
   margin: 0;
-  color: var(--color-danger-strong);
-  font-weight: 700;
+  color: var(--color-danger);
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
 .createLink {
   display: inline-flex;
-  min-height: 44px;
+  min-height: var(--touch-target);
   align-items: center;
-  padding: var(--space-2) var(--space-4);
+  padding: var(--space-2) 0.875rem;
   border-radius: var(--radius-control);
   background: var(--color-primary);
   color: var(--color-on-primary);
-  font-weight: 700;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.2;
   text-decoration: none;
 }

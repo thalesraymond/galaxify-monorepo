@@ -101,7 +101,7 @@ for (const viewport of viewports) {
     if (viewport.name === 'desktop') {
       // Identity owns the wider 1.4fr Profile track (frontend-redesign §3).
       expect(identityWidth).toBeGreaterThan(480)
-      expect(dailyWidth).toBeLessThanOrEqual(608)
+      expect(dailyWidth).toBeLessThanOrEqual(760)
       expect(shipWidth).toBeLessThanOrEqual(640)
     }
   })

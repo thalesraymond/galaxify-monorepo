@@ -88,11 +88,11 @@
 }
 
 .rowItem + .rowItem {
-  border-top: 1px solid color-mix(in srgb, var(--color-ink) 12%, transparent);
+  border-top: 1px solid var(--color-border);
 }
 
 .completedSection {
-  border-top: 1px solid color-mix(in srgb, var(--color-ink) 12%, transparent);
+  border-top: 1px solid var(--color-border);
   padding-top: var(--space-3);
 }
 
