@@ -1,9 +1,10 @@
 ---
 type: subsystem
 created: 2026-11-01
-updated: 2026-11-01
+updated: 2026-11-14
 sources:
   - "galaxify-monorepo@dfb2577db9d07c3f3dd0cf6340c3f0ff8df6923d"
+  - "galaxify-monorepo@9f63224"
 ---
 
 # Downstream reconciliation navigation
@@ -72,3 +73,19 @@ and [module-level subscriptions](../problems/module-level-subscription-never-pau
   balance it reconciles. `LaunchForm` still registers the session-owned
   expectation from the pre-submit mutation context; the earlier claim that
   `ExpeditionOverview` observes the deduction is superseded.
+- As of 2026-11-14 (ADR-0014, branch `refactor/deepen-downstream-reconciliation`),
+  `apps/web-frontend/src/shared/reconciliation/downstreamReconciliation.ts` and
+  `useDownstreamObservation.ts` were deepened to absorb `balanceGate.ts` (now
+  deleted), scoped expectation `Meta` stores (`useDownstreamExpectations`),
+  duplicate-registration conflict policies (`resume`, `once-per-session`,
+  `replace-when-settled`, `restart`), atomic `publish -> isSatisfied`
+  evaluation, `SessionGuard` (`captureDownstreamSession` / `useDownstreamSession`),
+  the full Balance Gate state machine (`gatesBalance` / `useBalanceGate`), and an
+  internal `ReconciliationEnvironment` seam (`createTestReconciliationEnvironment`).
+  `features/dailies/lib/dailyAwardObservation.ts`,
+  `features/expeditions/lib/expeditionRewardObservation.ts`,
+  `features/expeditions/lib/launchDeductionObservation.ts`, and
+  `features/ship/components/useShipBalanceGate.ts` are now thin domain adapters
+  without module-level `Map`/listener/controller state; earlier claims that
+  `balanceGate.ts` or adapter-local `Map` and phase-subscription stores own that
+  bookkeeping are superseded.

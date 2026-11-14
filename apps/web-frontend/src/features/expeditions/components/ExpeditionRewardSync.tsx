@@ -1,15 +1,10 @@
-import { useSyncExternalStore } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { getShip, shipQueryKey } from '@/features/ship'
 import { useApiTransport } from '@/shared/api/TransportContext'
 import { useDownstreamObservation } from '@/shared/reconciliation'
 
-import {
-  expeditionRewardKey,
-  getExpeditionRewards,
-  subscribeToExpeditionRewards,
-} from '../lib/expeditionRewardObservation'
+import { expeditionRewardKey, useExpeditionRewards } from '../lib/expeditionRewardObservation'
 import { MaterialsBalance } from './MaterialsBalance'
 
 export function ExpeditionRewardSync({ expeditionId }: { expeditionId: string }) {
@@ -19,11 +14,7 @@ export function ExpeditionRewardSync({ expeditionId }: { expeditionId: string })
     queryFn: ({ signal }) => getShip(transport, signal),
     enabled: false,
   }).data
-  const expectations = useSyncExternalStore(
-    subscribeToExpeditionRewards,
-    getExpeditionRewards,
-    getExpeditionRewards,
-  )
+  const expectations = useExpeditionRewards()
   const expectation = expectations.get(expeditionId)
   const observation = useDownstreamObservation(
     expeditionRewardKey(expeditionId),
@@ -42,11 +33,7 @@ export function ExpeditionRewardSync({ expeditionId }: { expeditionId: string })
 }
 
 export function PendingExpeditionRewards({ excludeId }: { excludeId?: string | undefined }) {
-  const expectations = useSyncExternalStore(
-    subscribeToExpeditionRewards,
-    getExpeditionRewards,
-    getExpeditionRewards,
-  )
+  const expectations = useExpeditionRewards()
   return [...expectations.values()]
     .filter((expectation) => expectation.phase !== 'idle' && expectation.expeditionId !== excludeId)
     .map((expectation) => (

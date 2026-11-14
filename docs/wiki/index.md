@@ -70,7 +70,10 @@ This wiki complements, and does not replace, [`docs/adr/`](../adr/) and
 
 - [Downstream reconciliation](subsystems/downstream-reconciliation.md) —
   On 2026-11-01, navigation pointers mapped the coordinator, public hook, and
-  the Daily, repair, launch, and reward adapters through the reviewed SHA.
+  the Daily, repair, launch, and reward adapters through the reviewed SHA. On
+  2026-11-14 (ADR-0014), `src/shared/reconciliation` was deepened to absorb
+  `balanceGate.ts`, scoped `Meta` expectation stores, `ConflictPolicy`, atomic
+  `publish -> isSatisfied`, `SessionGuard`, and `ReconciliationEnvironment`.
 
 ## Preferences
 

@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 
-import { clearDownstreamObservations } from './downstreamReconciliation'
 import {
+  clearDownstreamObservations,
   getBalanceGateExpiry,
   getBalanceGateExpirySnapshot,
   getBalanceGateKeys,
@@ -10,7 +10,7 @@ import {
   subscribeToBalanceGateExpiry,
   subscribeToBalanceGateKeys,
   unregisterBalanceGateKey,
-} from './balanceGate'
+} from './index'
 
 afterEach(() => {
   clearDownstreamObservations()

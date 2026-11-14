@@ -1,22 +1,43 @@
 export {
+  DownstreamReconciliation,
+  DownstreamSessionChangedError,
+  browserReconciliationEnvironment,
+  captureDownstreamSession,
   clearDownstreamObservations,
+  createTestReconciliationEnvironment,
   disposeDownstreamReconciliation,
   downstreamObservationPhase,
   downstreamReconciliation,
-  getDownstreamSessionGeneration,
-  onClearDownstreamObservations,
-  registerDownstreamObservation,
-} from './downstreamReconciliation'
-export type { DownstreamObservation, DownstreamObservationPhase } from './downstreamReconciliation'
-export { useDownstreamObservation } from './useDownstreamObservation'
-export type { DownstreamObservationView } from './useDownstreamObservation'
-export {
-  registerBalanceGateKey,
-  unregisterBalanceGateKey,
-  markBalanceGateExpired,
-  subscribeToBalanceGateKeys,
-  getBalanceGateKeys,
-  subscribeToBalanceGateExpiry,
-  getBalanceGateExpirySnapshot,
   getBalanceGateExpiry,
-} from './balanceGate'
+  getBalanceGateExpirySnapshot,
+  getBalanceGateKeys,
+  getDownstreamSessionGeneration,
+  markBalanceGateExpired,
+  onClearDownstreamObservations,
+  registerBalanceGateKey,
+  registerDownstreamObservation,
+  subscribeToBalanceGateExpiry,
+  subscribeToBalanceGateKeys,
+  unregisterBalanceGateKey,
+} from './downstreamReconciliation'
+export type {
+  BalanceGateExpiry,
+  BalanceGateInput,
+  BalanceGateState,
+  BalanceGateView,
+  ConflictPolicy,
+  DownstreamExpectation,
+  DownstreamObservation,
+  DownstreamObservationPhase,
+  ReconciliationEnvironment,
+  SessionGuard,
+  TestReconciliationEnvironment,
+  TimerHandle,
+} from './downstreamReconciliation'
+export {
+  useBalanceGate,
+  useDownstreamExpectations,
+  useDownstreamObservation,
+  useDownstreamSession,
+} from './useDownstreamObservation'
+export type { DownstreamObservationView } from './useDownstreamObservation'
