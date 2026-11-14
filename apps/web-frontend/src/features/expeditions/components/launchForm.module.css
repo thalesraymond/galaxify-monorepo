@@ -1,18 +1,35 @@
 .balanceLine {
   margin: var(--space-2) 0 var(--space-4);
-  font-weight: 700;
+  font-size: 1.5rem;
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
 
 .loadingHint {
-  color: var(--color-text-muted-light);
+  color: var(--color-muted);
+  font-size: 0.875rem;
   font-weight: 400;
+}
+
+.balanceGuidance {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--color-ink);
+  font-weight: 500;
 }
 
 .form {
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-6);
   max-width: 28rem;
+  min-width: 0;
 }
 
 .shortcuts {
@@ -24,52 +41,55 @@
 .quote {
   display: grid;
   gap: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid color-mix(in srgb, var(--color-logbook-edge) 55%, transparent);
-  border-radius: var(--radius-control);
-  background: color-mix(in srgb, var(--color-logbook-edge) 8%, transparent);
+  min-width: 0;
 }
 
 .quoteFacts {
   display: grid;
   gap: var(--space-2);
   margin: 0;
+  min-width: 0;
 }
 
 .quoteFacts > div {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-1) var(--space-4);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .quoteFacts dt {
-  font-weight: 700;
+  color: var(--color-muted);
+  font-size: 0.875rem;
 }
 
 .quoteFacts dd {
   margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
 .cooldown {
   margin: 0;
-  font-weight: 700;
+  color: var(--color-muted);
 }
 
 .blocker {
   margin: 0;
-  color: var(--color-danger-strong);
-  font-weight: 700;
+  color: var(--color-danger);
 }
 
 .eligible {
   margin: 0;
-  color: var(--color-ink);
-  font-weight: 700;
+  color: var(--color-data);
 }
 
 .refreshing {
-  color: var(--color-text-muted-light);
+  color: var(--color-muted);
   font-size: 0.875rem;
 }
 

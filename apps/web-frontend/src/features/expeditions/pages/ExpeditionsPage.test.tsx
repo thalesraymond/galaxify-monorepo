@@ -1,6 +1,6 @@
 process.env.TZ = 'UTC'
 
-import { act, fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, screen, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { QueryClient } from '@tanstack/react-query'
@@ -12,6 +12,7 @@ import {
   FIXED_MOCK_EPOCH_MS,
   ManualMockScheduler,
   createMockTestServer,
+  createExpeditionQuote,
   createHealthyShip,
   fixedUuid,
   onUnhandledMockRequest,
@@ -225,37 +226,37 @@ describe('Expeditions overview — launch form', () => {
     expect(screen.queryByText('Updating…')).not.toBeInTheDocument()
     expect(launches).toBe(1)
   })
-  it('does not invent a deduction baseline when the initial Ship read fails', async () => {
-    let fail = true
+  it('does not invent a deduction baseline from retained Ship data after a failed refresh', async () => {
+    const queryClient = createQueryClient()
+    let fail = false
+    let balance = 210
     server.server.use(
       http.get('/api/ship/ships/me', () =>
         fail
           ? HttpResponse.error()
-          : HttpResponse.json(createHealthyShip({ materials_balance: 210 })),
+          : HttpResponse.json(createHealthyShip({ materials_balance: balance })),
       ),
-      http.post('/api/expedition/expeditions/launch', () => {
-        fail = false
-      }),
+      http.post('/api/expedition/expeditions/launch', () => {}),
     )
-    await renderOverviewFake()
-    await advanceUntil(
-      () => screen.queryByRole('heading', { name: 'Launch an Expedition' }) !== null,
-      'launch form',
-    )
-    await advanceFakeTime(3_000)
+    await renderOverviewFake(queryClient)
+    await advanceUntil(() => screen.queryByText('You have 210 materials') !== null, 'balance')
     changeInvestment('40')
     await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'quote')
+    fail = true
+    act(() => {
+      void queryClient.invalidateQueries({ queryKey: shipQueryKey })
+    })
+    await advanceUntil(() => screen.queryByText('Stale') !== null, 'the stale Ship badge')
     fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
     await advanceUntil(
       () => screen.queryByText('Expedition in flight') !== null,
       'the in-flight view',
     )
     expect(screen.getByText('Updating…')).toBeInTheDocument()
+    fail = false
+    balance = 165
     await advanceFakeTime(8_500)
-    expect(screen.getByText('Update delayed')).toBeInTheDocument()
-    expect(screen.getByText(/Available materials: 210/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
-    await advanceFakeTime(8_500)
+    expect(screen.getByText(/Available materials: 165/)).toBeInTheDocument()
     expect(screen.getByText('Update delayed')).toBeInTheDocument()
   })
 
@@ -540,17 +541,426 @@ describe('Expeditions overview — launch form', () => {
   })
 })
 
+describe('Expeditions overview — quote readiness', () => {
+  it('keeps quote facts but withholds readiness while the balance gate blocks launch', async () => {
+    await renderOverviewFake()
+    await advanceUntil(() => screen.queryByText('You have 250 materials') !== null, 'balance')
+    changeInvestment('40')
+    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'quote')
+    act(() => {
+      registerBalanceGateKey('daily:pending:award')
+      registerDownstreamObservation({
+        key: 'daily:pending:award',
+        read: () => new Promise(() => {}),
+        isSatisfied: () => false,
+        publish: () => {},
+      })
+    })
+    const launch = screen.getByRole('button', { name: 'Launch Expedition' })
+    expect(launch).toBeDisabled()
+    expect(launch).toHaveAccessibleDescription(/balance is updating/i)
+    expect(screen.getByText('Projected balance')).toBeInTheDocument()
+    expect(screen.queryByText('Ready to launch.')).not.toBeInTheDocument()
+  })
+
+  it('withholds readiness while a changed investment is not yet confirmed', async () => {
+    await renderOverviewFake()
+    await advanceUntil(() => screen.queryByText('You have 250 materials') !== null, 'balance')
+    changeInvestment('40')
+    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'quote')
+
+    changeInvestment('80')
+    expect(screen.getByText('Confirming investment…')).toBeInTheDocument()
+    expect(screen.queryByText('Ready to launch.')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Launch Expedition' })).toBeDisabled()
+
+    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'fresh quote')
+    expect(screen.getByRole('button', { name: 'Launch Expedition' })).toBeEnabled()
+  })
+
+  it('shows zero-funds guidance and never implies readiness', async () => {
+    server.server.use(
+      http.get('/api/ship/ships/me', () =>
+        HttpResponse.json(createHealthyShip({ materials_balance: 0 })),
+      ),
+    )
+    await renderOverviewFake()
+    await advanceUntil(() => screen.queryByText('You have 0 materials') !== null, 'balance')
+    const launchPanel = screen.getByRole('region', { name: 'Launch an Expedition' })
+    expect(within(launchPanel).getByText(/Complete Dailies to earn materials/)).toBeInTheDocument()
+    expect(within(launchPanel).getByRole('link', { name: 'Open Dailies' })).toBeInTheDocument()
+
+    changeInvestment('1')
+    await advanceUntil(
+      () => screen.queryByText('Projected balance') !== null,
+      'the settled quote facts',
+    )
+    expect(screen.getByRole('button', { name: 'Launch Expedition' })).toBeDisabled()
+    expect(screen.queryByText('Ready to launch.')).not.toBeInTheDocument()
+  })
+
+  it('flags invalid investments on the field and withholds readiness', async () => {
+    await renderOverviewFake()
+    await advanceUntil(() => screen.queryByText('You have 250 materials') !== null, 'balance')
+    const input = screen.getByLabelText('Materials to invest')
+    const launch = () => screen.getByRole('button', { name: 'Launch Expedition' })
+
+    changeInvestment('2.5')
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText(/whole number/i)).toBeInTheDocument()
+    expect(launch()).toBeDisabled()
+
+    changeInvestment('0')
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(launch()).toBeDisabled()
+
+    changeInvestment('-5')
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(launch()).toBeDisabled()
+
+    changeInvestment('9999')
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText(/250 materials or fewer/)).toBeInTheDocument()
+    expect(launch()).toBeDisabled()
+    expect(screen.queryByText('Ready to launch.')).not.toBeInTheDocument()
+
+    changeInvestment('40')
+    expect(input).not.toHaveAttribute('aria-invalid')
+    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'fresh quote')
+    expect(launch()).toBeEnabled()
+  })
+
+  it('withholds readiness while the quote fails and keeps the retry', async () => {
+    let fail = true
+    server.server.use(
+      http.get('/api/expedition/expeditions/quote', () =>
+        fail
+          ? HttpResponse.error()
+          : HttpResponse.json(
+              createExpeditionQuote({
+                materials_invested: 40,
+                eligible: true,
+                blocker: null,
+              }),
+            ),
+      ),
+    )
+    await renderOverviewFake()
+    await advanceUntil(() => screen.queryByText('You have 250 materials') !== null, 'balance')
+    changeInvestment('40')
+    await advanceUntil(
+      () => screen.queryByText('We could not load a quote. Try again.') !== null,
+      'the quote failure',
+    )
+    expect(screen.getByRole('button', { name: 'Launch Expedition' })).toBeDisabled()
+    expect(screen.queryByText('Ready to launch.')).not.toBeInTheDocument()
+
+    fail = false
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'retried quote')
+    expect(screen.getByRole('button', { name: 'Launch Expedition' })).toBeEnabled()
+  })
+
+  it('shows the authoritative blocker and cooldown without implying readiness', async () => {
+    server.server.use(
+      http.get('/api/expedition/expeditions/quote', ({ request }) => {
+        const invested = Number(new URL(request.url).searchParams.get('materials_invested') ?? '0')
+        return HttpResponse.json(
+          createExpeditionQuote({
+            materials_invested: invested,
+            eligible: false,
+            blocker: 'EXPEDITION_COOLDOWN',
+            cooldown_until: new Date(FIXED_MOCK_EPOCH_MS + HOUR).toISOString(),
+          }),
+        )
+      }),
+    )
+    await renderOverviewFake()
+    await advanceUntil(() => screen.queryByText('You have 250 materials') !== null, 'balance')
+    changeInvestment('40')
+    await advanceUntil(
+      () => screen.queryByText('Expeditions are on cooldown right now.') !== null,
+      'the cooldown blocker',
+    )
+    expect(screen.getByText(/on cooldown until/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Launch Expedition' })).toBeDisabled()
+    expect(screen.queryByText('Ready to launch.')).not.toBeInTheDocument()
+  })
+
+  it('names an ineligible quote and keeps an explicit quote refresh', async () => {
+    server.server.use(
+      http.get('/api/expedition/expeditions/quote', ({ request }) => {
+        const invested = Number(new URL(request.url).searchParams.get('materials_invested') ?? '0')
+        return HttpResponse.json(
+          createExpeditionQuote({
+            materials_invested: invested,
+            eligible: false,
+            blocker: null,
+          }),
+        )
+      }),
+    )
+    await renderOverviewFake()
+    await advanceUntil(() => screen.queryByText('You have 250 materials') !== null, 'balance')
+    changeInvestment('40')
+    await advanceUntil(
+      () => screen.queryByText('This investment is not available right now.') !== null,
+      'the ineligible reason',
+    )
+    expect(screen.getByRole('button', { name: 'Refresh quote' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Launch Expedition' })).toBeDisabled()
+    expect(screen.queryByText('Ready to launch.')).not.toBeInTheDocument()
+  })
+
+  it('launches on a server quote that omits the optional blocker', async () => {
+    let launchCalls = 0
+    server.server.use(
+      http.post('/api/expedition/expeditions/launch', () => {
+        launchCalls += 1
+      }),
+      http.get('/api/expedition/expeditions/quote', ({ request }) => {
+        const invested = Number(new URL(request.url).searchParams.get('materials_invested') ?? '0')
+        const quote = createExpeditionQuote({
+          materials_invested: invested,
+          eligible: true,
+          blocker: null,
+        })
+        delete quote.blocker
+        return HttpResponse.json(quote)
+      }),
+    )
+    await renderOverviewFake()
+    await advanceUntil(() => screen.queryByText('You have 250 materials') !== null, 'balance')
+    changeInvestment('40')
+    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'quote')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
+    await advanceUntil(() => screen.queryByText('Expedition in flight') !== null, 'the launch')
+    expect(launchCalls).toBe(1)
+  })
+
+  it('refreshes a settled blocked quote without auto-launching', async () => {
+    let blocked = true
+    let launchCalls = 0
+    server.server.use(
+      http.post('/api/expedition/expeditions/launch', () => {
+        launchCalls += 1
+      }),
+      http.get('/api/expedition/expeditions/quote', ({ request }) => {
+        const invested = Number(new URL(request.url).searchParams.get('materials_invested') ?? '0')
+        return HttpResponse.json(
+          createExpeditionQuote({
+            materials_invested: invested,
+            eligible: !blocked,
+            blocker: blocked ? 'EXPEDITION_INSUFFICIENT_MATERIALS' : null,
+          }),
+        )
+      }),
+    )
+    await renderOverviewFake()
+    await advanceUntil(() => screen.queryByText('You have 250 materials') !== null, 'balance')
+    changeInvestment('40')
+    await advanceUntil(
+      () => screen.queryByText('You do not have enough materials to invest that amount.') !== null,
+      'the blocked quote',
+    )
+    expect(screen.getByRole('button', { name: 'Refresh quote' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Launch Expedition' })).toBeDisabled()
+
+    blocked = false
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh quote' }))
+    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'the eligible quote')
+    expect(launchCalls).toBe(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
+    await advanceUntil(() => screen.queryByText('Expedition in flight') !== null, 'the launch')
+    expect(launchCalls).toBe(1)
+  })
+
+  it('does not launch from a retained quote when the revalidation read fails', async () => {
+    let launchCalls = 0
+    let failRevalidation = false
+    server.server.use(
+      http.post('/api/expedition/expeditions/launch', () => {
+        launchCalls += 1
+      }),
+      http.get('/api/expedition/expeditions/quote', ({ request }) => {
+        const invested = Number(new URL(request.url).searchParams.get('materials_invested') ?? '0')
+        if (failRevalidation) {
+          return HttpResponse.json(
+            { error: { code: 'INTERNAL_ERROR', message: 'Boom.' } },
+            { status: 500 },
+          )
+        }
+        return HttpResponse.json(
+          createExpeditionQuote({
+            materials_invested: invested,
+            eligible: true,
+            blocker: null,
+          }),
+        )
+      }),
+    )
+    await renderOverviewFake()
+    await advanceUntil(() => screen.queryByText('You have 250 materials') !== null, 'balance')
+    changeInvestment('40')
+    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'quote')
+
+    failRevalidation = true
+    fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
+    await advanceUntil(
+      () => screen.queryByText('Something went wrong. Try again.') !== null,
+      'the failed revalidation',
+    )
+    expect(launchCalls).toBe(0)
+    expect(screen.getByLabelText('Materials to invest')).toHaveValue(40)
+
+    failRevalidation = false
+    fireEvent.click(screen.getAllByRole('button', { name: 'Retry' })[0] as HTMLElement)
+    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'the recovered quote')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await advanceUntil(
+      () => screen.queryByText('Expedition in flight') !== null,
+      'the retried launch',
+    )
+    expect(launchCalls).toBe(1)
+  })
+
+  it('prevents a duplicate launch while the revalidation is in flight', async () => {
+    let launchCalls = 0
+    let deferQuote = false
+    let releaseQuote: (() => void) | undefined
+    server.server.use(
+      http.post('/api/expedition/expeditions/launch', () => {
+        launchCalls += 1
+      }),
+      http.get('/api/expedition/expeditions/quote', async ({ request }) => {
+        const invested = Number(new URL(request.url).searchParams.get('materials_invested') ?? '0')
+        if (deferQuote) {
+          await new Promise<void>((resolve) => {
+            releaseQuote = resolve
+          })
+        }
+        return HttpResponse.json(
+          createExpeditionQuote({
+            materials_invested: invested,
+            eligible: true,
+            blocker: null,
+          }),
+        )
+      }),
+    )
+    await renderOverviewFake()
+    await advanceUntil(() => screen.queryByText('You have 250 materials') !== null, 'balance')
+    changeInvestment('40')
+    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'quote')
+
+    deferQuote = true
+    fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
+    await advanceUntil(
+      () => releaseQuote !== undefined && screen.queryByText('Ready to launch.') === null,
+      'the pending revalidation',
+    )
+    const working = screen.getByRole('button', { name: 'Working…' })
+    expect(working).toBeDisabled()
+    fireEvent.click(working)
+    expect(launchCalls).toBe(0)
+
+    act(() => {
+      releaseQuote?.()
+    })
+    await advanceUntil(() => screen.queryByText('Expedition in flight') !== null, 'the launch')
+    expect(launchCalls).toBe(1)
+  })
+
+  it('disables launch while the Ship is unavailable and recovers on Ship Retry', async () => {
+    let fail = true
+    let launchCalls = 0
+    server.server.use(
+      http.get('/api/ship/ships/me', () =>
+        fail
+          ? HttpResponse.error()
+          : HttpResponse.json(createHealthyShip({ materials_balance: 210 })),
+      ),
+      http.post('/api/expedition/expeditions/launch', () => {
+        launchCalls += 1
+      }),
+    )
+    await renderOverviewFake()
+    await advanceUntil(
+      () => screen.queryByRole('heading', { name: 'Launch an Expedition' }) !== null,
+      'launch form',
+    )
+    await advanceUntil(
+      () => screen.queryByText('Ship status is unavailable') !== null,
+      'the unavailable Ship',
+    )
+    changeInvestment('40')
+    await advanceUntil(() => screen.queryByText('Success chance') !== null, 'the quote facts')
+    const launch = screen.getByRole('button', { name: 'Launch Expedition' })
+    expect(launch).toBeDisabled()
+    expect(screen.queryByText('Ready to launch.')).not.toBeInTheDocument()
+    fireEvent.click(launch)
+    expect(launchCalls).toBe(0)
+
+    fail = false
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await advanceUntil(() => screen.queryByText('You have 210 materials') !== null, 'balance')
+    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'ready launch')
+    fireEvent.click(screen.getByRole('button', { name: 'Launch Expedition' }))
+    await advanceUntil(() => screen.queryByText('Expedition in flight') !== null, 'the launch')
+    expect(launchCalls).toBe(1)
+  })
+})
+
+describe('Expeditions overview — Ship status pair', () => {
+  it('composes the confirmed Ship status panel beside launch planning', async () => {
+    await renderOverview()
+
+    await screen.findByRole('heading', { name: 'Launch an Expedition' })
+    const shipPanel = await screen.findByRole('region', { name: 'Ship status' })
+    expect(within(shipPanel).getByRole('heading', { name: 'Hull' })).toBeInTheDocument()
+    expect(within(shipPanel).getByRole('heading', { name: 'Materials' })).toBeInTheDocument()
+    expect(within(shipPanel).getByText('250')).toBeInTheDocument()
+    expect(within(shipPanel).getByRole('button', { name: 'Repair Ship' })).toBeInTheDocument()
+
+    expect(screen.getByLabelText('Materials to invest')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Min' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Max' })).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: 'Expeditions navigation' })).toBeInTheDocument()
+  })
+
+  it('keeps the Ship status panel beside the in-flight view', async () => {
+    server.reset('active-expedition')
+    await seedAuthenticatedSession()
+    await renderOverviewFake()
+
+    await advanceUntil(
+      () => screen.queryByText('Expedition in flight') !== null,
+      'the in-flight view',
+    )
+    const shipPanel = screen.getByRole('region', { name: 'Ship status' })
+    expect(within(shipPanel).getByRole('heading', { name: 'Materials' })).toBeInTheDocument()
+  })
+})
+
 describe('Expeditions overview — provisioning and failure', () => {
   it('shows a preparing state while Ship state provisions and recovers on Retry', async () => {
     server.reset('provisioning')
     await seedAuthenticatedSession()
     await renderOverview()
 
-    await screen.findByText('Preparing your Expedition')
-    expect(screen.getByText('Preparing…')).toBeInTheDocument()
+    const expeditionPanel = await screen.findByRole('region', {
+      name: 'Preparing your Expedition',
+    })
+    expect(within(expeditionPanel).getByText('Preparing…')).toBeInTheDocument()
 
     scheduler.advance(5_000)
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    fireEvent.click(
+      within(screen.getByRole('region', { name: 'Preparing your Expedition' })).getByRole(
+        'button',
+        { name: 'Retry' },
+      ),
+    )
     await screen.findByRole('heading', { name: 'Launch an Expedition' })
   })
 

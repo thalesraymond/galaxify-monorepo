@@ -64,3 +64,11 @@ and [module-level subscriptions](../problems/module-level-subscription-never-pau
   combined cross-flow suite lives in `src/app/pages/ReconciliationCrossFlow.test.tsx`;
   the browser journey is `e2e/reconciliation-flows.spec.ts`. See
   [TanStack revert retained cache](../problems/tanstack-revert-retained-cache.md).
+- As of issue #290 (`feat/290-expedition-after-hours`, 2026-11-13), the launch
+  deduction's visible observer moved out of `ExpeditionOverview` into
+  `features/expeditions/components/LaunchDeductionSync.tsx`, which renders
+  inside the shared `ShipStatusPanel` `materialsSync` slot on `/expeditions`
+  so the Updating…/Update delayed state sits beside the confirmed materials
+  balance it reconciles. `LaunchForm` still registers the session-owned
+  expectation from the pre-submit mutation context; the earlier claim that
+  `ExpeditionOverview` observes the deduction is superseded.

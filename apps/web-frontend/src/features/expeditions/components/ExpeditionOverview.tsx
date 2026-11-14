@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { getShip, shipQueryKey } from '@/features/ship'
 import { useApiTransport } from '@/shared/api/TransportContext'
-import { getDownstreamSessionGeneration, useDownstreamObservation } from '@/shared/reconciliation'
+import { getDownstreamSessionGeneration } from '@/shared/reconciliation'
 import { Skeleton, UnavailableState } from '@/shared/ui'
 
 import {
@@ -13,12 +13,10 @@ import {
   type CurrentExpedition,
   type Expedition,
 } from '../api/expeditionApi'
-import { launchDeductionKey } from '../lib/launchDeductionObservation'
 import { registerExpeditionReward } from '../lib/expeditionRewardObservation'
 import { PendingExpeditionRewards } from './ExpeditionRewardSync'
 import { ExpeditionProgress } from './ExpeditionProgress'
 import { LaunchForm } from './LaunchForm'
-import { type MaterialsSync } from './MaterialsBalance'
 import { boundedResolvePollMs } from './polling'
 import { PreparingPanel, ResultPanel } from './ResultPanel'
 import { StaleNotice } from './StaleNotice'
@@ -83,17 +81,6 @@ export function ExpeditionOverview() {
 
   const currentStale = currentQuery.isRefetchError
 
-  // Bounded Ship deduction reconciliation after a launch (§3.4).
-  const inFlight =
-    currentQuery.data?.kind === 'current' && currentQuery.data.expedition.status === 'IN_FLIGHT'
-  const expeditionId = currentQuery.data?.kind === 'current' ? currentQuery.data.expedition.id : ''
-  const deductionObservation = useDownstreamObservation(launchDeductionKey(expeditionId), inFlight)
-  const deductionSync: MaterialsSync = {
-    balance,
-    phase: deductionObservation.phase,
-    onRetry: deductionObservation.retry,
-  }
-
   if (currentQuery.isPending) {
     return <Skeleton lines={4} />
   }
@@ -130,11 +117,7 @@ export function ExpeditionOverview() {
               }}
             />
           ) : null}
-          <ExpeditionProgress
-            expedition={current.expedition}
-            showLinks
-            balanceSync={deductionSync}
-          />
+          <ExpeditionProgress expedition={current.expedition} showLinks />
           <PendingExpeditionRewards />
         </div>
       )

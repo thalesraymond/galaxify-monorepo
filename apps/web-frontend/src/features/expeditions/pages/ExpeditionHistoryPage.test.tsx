@@ -113,19 +113,21 @@ describe('Expedition history', () => {
     expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument()
   })
 
-  it('keeps loaded rows and offers a local Retry when a continuation fails', async () => {
+  it('keeps loaded rows through a failed continuation and its recovered Retry', async () => {
     const history = buildHistory(12)
+    let failing = true
     server.server.use(
       http.get('/api/expedition/expeditions', ({ request }) => {
         const url = new URL(request.url)
         const offset = Number(url.searchParams.get('offset') ?? 0)
-        if (offset > 0) {
+        const limit = Number(url.searchParams.get('limit') ?? 10)
+        if (offset > 0 && failing) {
           return HttpResponse.json(
             { error: { code: 'INTERNAL_ERROR', message: 'Boom.' } },
             { status: 500 },
           )
         }
-        return HttpResponse.json(history.slice(0, 10))
+        return HttpResponse.json(history.slice(offset, offset + limit))
       }),
     )
     await renderHistory()
@@ -139,6 +141,12 @@ describe('Expedition history', () => {
     screen.getByText(/Could not load more Expeditions/)
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: /Success|Failed/ })).toHaveLength(10)
+
+    failing = false
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await advanceFakeTime(1_100)
+    expect(screen.getAllByRole('link', { name: /Success|Failed/ })).toHaveLength(12)
+    expect(screen.queryByText(/Could not load more Expeditions/)).not.toBeInTheDocument()
   })
 
   it('tracks an in-flight expedition as a plain row without an outcome badge', async () => {
@@ -155,24 +163,39 @@ describe('Expedition history', () => {
   })
 
   it('preserves loaded rows across detail navigation from the query cache', async () => {
-    let listCalls = 0
-    server.server.events.on('request:start', ({ request }) => {
-      if (new URL(request.url).pathname === '/api/expedition/expeditions') {
-        listCalls += 1
-      }
+    const history = buildHistory(12)
+    history[0] = createResolvedExpedition(FIXED_EXPEDITION_IDS.resolvedSuccess, {
+      outcome: 'SUCCESS',
+      status: 'RESOLVED',
     })
+    let listCalls = 0
+    server.server.use(
+      http.get('/api/expedition/expeditions', ({ request }) => {
+        const url = new URL(request.url)
+        const limit = Number(url.searchParams.get('limit') ?? 10)
+        const offset = Number(url.searchParams.get('offset') ?? 0)
+        listCalls += 1
+        return HttpResponse.json(history.slice(offset, offset + limit))
+      }),
+    )
     await renderHistory()
 
     await screen.findAllByRole('link', { name: /Success|Failed/ })
-    expect(listCalls).toBe(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    await waitFor(() => {
+      expect(screen.getAllByRole('link', { name: /Success|Failed/ })).toHaveLength(12)
+    })
+    const callsAfterLoad = listCalls
+    expect(callsAfterLoad).toBe(2)
+
     fireEvent.click(screen.getAllByRole('link', { name: /Success/ })[0] as HTMLElement)
     await screen.findByText('Expedition resolved')
-    expect(listCalls).toBe(1)
+    expect(listCalls).toBe(callsAfterLoad)
 
     fireEvent.click(screen.getByRole('link', { name: 'History' }))
     await screen.findByRole('heading', { level: 1, name: 'Expedition history' })
     // Rows come straight from the stable query key's cache — no re-request.
-    expect(screen.getAllByRole('link', { name: /Success|Failed/ })).toHaveLength(2)
-    expect(listCalls).toBe(1)
+    expect(screen.getAllByRole('link', { name: /Success|Failed/ })).toHaveLength(12)
+    expect(listCalls).toBe(callsAfterLoad)
   })
 })
