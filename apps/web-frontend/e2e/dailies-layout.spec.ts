@@ -65,8 +65,8 @@ for (const viewport of viewports) {
     }
     // Keyboard traversal can scroll the last action completely clear of the nav.
     await page.getByRole('button', { name: 'Completed', exact: true }).focus()
-    const lastAction = page.getByRole('button', { name: 'Delete Calibrate sensors' })
-    for (let index = 0; index < 12; index += 1) {
+    const lastAction = page.getByRole('button', { name: 'Complete Calibrate sensors' })
+    for (let index = 0; index < 16; index += 1) {
       await page.keyboard.press('Tab')
       if (await lastAction.evaluate((node) => node === document.activeElement)) break
     }
