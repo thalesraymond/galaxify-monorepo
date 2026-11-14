@@ -232,6 +232,37 @@ test('date, filters, History, and browser navigation retain their URL semantics'
   await expect(page.getByLabel('Date', { exact: true })).toHaveValue('2026-01-15')
 })
 
+test('Daily rows reflow actions cleanly across the 640px breakpoint', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-01-15T09:00:00Z'))
+  await seedAuthenticated(page)
+
+  for (const width of [641, 640]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto('/dailies')
+    const complete = page.getByRole('button', { name: 'Complete Stretch the solar sails' })
+    const deleteButton = page.getByRole('button', { name: 'Delete Stretch the solar sails' })
+    await expect(complete).toBeVisible()
+    await expect(deleteButton).toBeVisible()
+
+    const marginLeft = await complete.evaluate((node) => getComputedStyle(node).marginLeft)
+    if (width <= 640) {
+      expect(Number.parseFloat(marginLeft)).toBeGreaterThan(0)
+    } else {
+      expect(marginLeft).toBe('0px')
+    }
+
+    const completeBox = await complete.boundingBox()
+    const deleteBox = await deleteButton.boundingBox()
+    expect(completeBox).not.toBeNull()
+    expect(deleteBox).not.toBeNull()
+    if (completeBox !== null && deleteBox !== null) {
+      expect(completeBox.height).toBeGreaterThanOrEqual(44)
+      expect(deleteBox.height).toBeGreaterThanOrEqual(44)
+    }
+    await expectAccessibleReflow(page)
+  }
+})
+
 async function expectAccessibleReflow(page: Page): Promise<void> {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBe(
     0,

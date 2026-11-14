@@ -167,12 +167,9 @@ tokens rather than local hex literals.
 Danger relies on `--color-danger` text/borders paired with explicit labels and
 confirmation dialogs. Never invent a pink-filled button with white text.
 
-During the incremental rollout under epic `#285`, legacy token names
-(`--color-shell*`, `--color-logbook*`, `--color-amber*`, `--color-mint`,
-`--color-text-*`, `--color-danger-*`) remain defined in `tokens.css` as aliases
-to the After hours palette so unmigrated feature CSS modules keep AA contrast
-until feature tickets `#287`–`#291` complete, after which `#292` removes unused
-aliases.
+`src/shared/styles/tokens.css` defines only the canonical After hours semantic
+tokens listed above; temporary legacy migration aliases were removed in
+[`#292`](https://github.com/thalesraymond/galaxify-monorepo/issues/292).
 
 ## Typography and self-hosted font provenance
 
@@ -184,10 +181,14 @@ All player-facing copy and numerals use self-hosted variable **Inter** with
   (SIL Open Font License 1.1).
 - **Conversion & coverage**: Generated from the pinned prototype variable
   TrueType font (`dca3e21:apps/web-frontend/prototype-identity/fonts/inter.ttf`,
-  847,019 bytes) via `woff2_compress` (350,223 bytes) with 100% glyph coverage
-  retained (Latin, extended Latin, punctuation, arrows, and tabular figures). No
-  remote font requests and no extra font families (`Geist`, `Instrument Sans`)
-  are shipped.
+  847,019 bytes) via `woff2_compress` (350,352 bytes) and subsetted in
+  [`#292`](https://github.com/thalesraymond/galaxify-monorepo/issues/292) with
+  `pyftsubset` (`67,792` bytes, `450` glyphs, `290` codepoints; retaining
+  variable axes `opsz` `14..32` and `wght` `100..900`, Latin and Latin-1
+  `U+0000-00FF`, punctuation, arrows `U+2190-2193`, minus/math signs, and
+  OpenType features `kern,liga,clig,calt,tnum,locl,ccmp,mark,mkmk` for tabular
+  numerals) so Slow 4G LCP stays within the Lighthouse budget. No remote font
+  requests and no extra font families (`Geist`, `Instrument Sans`) are shipped.
 - **Scale & numerals**:
   - Brand mark text: `20px`, weight `500`
   - Route `h1`: `24px` (`1.5rem`), weight `500`, line-height `1.2`, tracking `-0.025em`
@@ -275,9 +276,11 @@ All shared primitives (`Button`, `ContentSurface`, `Dialog`, `ConfirmationDialog
 - **Authored SVG brand mark**: `32×32` geometric craft/horizon stroke mark in
   `currentColor`, `aria-hidden="true"`.
 - **Authored 100-cell spacecraft hull silhouette** (delivered on `/ship` and
-  summarized on `/dashboard`): `10×10` grid SVG (`role="img"`) encoding `0–100`
-  confirmed hull; intact cells filled `#65bde9` (`#ff9ca5` when critical),
-  damaged cells outlined `#777777`, always accompanied by numeric hull (`X / 100`)
+  summarized on `/dashboard`): 100-cell spacecraft silhouette SVG
+  (`viewBox="0 0 256 240"`, `role="img"`, 14 rows
+  `[2, 4, 4, 4, 6, 6, 10, 12, 14, 14, 10, 6, 4, 4]`) encoding `0–100` confirmed
+  hull; intact cells filled `#65bde9` (`--color-data`), damaged cells outlined
+  `#777777` (`--color-control`), always accompanied by numeric hull (`X / 100`)
   and `<Gauge>`. Cells are never keyboard targets.
 
 ## Motion and accessibility guardrails
