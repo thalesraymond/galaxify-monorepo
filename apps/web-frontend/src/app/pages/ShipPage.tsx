@@ -11,7 +11,7 @@ export function ShipPage() {
       <PageHeader title="Ship" description="Hull condition, materials, and repair." />
       <div className={styles.grid}>
         <ShipStatusPanel materialsSync={<PendingExpeditionRewards />} />
-        <DashboardExpeditionPanel />
+        <DashboardExpeditionPanel showRewardSync={false} />
       </div>
     </div>
   )

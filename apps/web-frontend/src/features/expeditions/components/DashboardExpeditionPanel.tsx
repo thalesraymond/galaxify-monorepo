@@ -21,7 +21,13 @@ import styles from './DashboardExpeditionPanel.module.css'
  *
  * Provisioning, failures, and stale states replace only this panel.
  */
-export function DashboardExpeditionPanel() {
+export function DashboardExpeditionPanel({
+  showRewardSync = true,
+}: {
+  /** Set false when another panel on the page already renders reward sync. */
+  showRewardSync?: boolean
+} = {}) {
+  const rewardSync = showRewardSync ? <PendingExpeditionRewards /> : null
   const [sessionGeneration] = useState(getDownstreamSessionGeneration)
   const transport = useApiTransport()
   const queryClient = useQueryClient()
@@ -48,7 +54,7 @@ export function DashboardExpeditionPanel() {
         <ContentSurface tone="raised" className={styles.loading} aria-busy="true">
           <Skeleton lines={3} />
         </ContentSurface>
-        <PendingExpeditionRewards />
+        {rewardSync}
       </>
     )
   }
@@ -62,7 +68,7 @@ export function DashboardExpeditionPanel() {
             void currentQuery.refetch()
           }}
         />
-        <PendingExpeditionRewards />
+        {rewardSync}
       </>
     )
   }
@@ -76,7 +82,7 @@ export function DashboardExpeditionPanel() {
             void currentQuery.refetch()
           }}
         />
-        <PendingExpeditionRewards />
+        {rewardSync}
       </>
     )
   }
@@ -92,7 +98,7 @@ export function DashboardExpeditionPanel() {
             />
           ) : null}
           <ExpeditionProgress expedition={current.expedition} showLinks balanceSync={undefined} />
-          <PendingExpeditionRewards />
+          {rewardSync}
         </div>
       )
     }
@@ -101,7 +107,7 @@ export function DashboardExpeditionPanel() {
       <ContentSurface tone="raised" aria-labelledby={headingId}>
         <h2 id={headingId}>Expedition resolved</h2>
         <p>Your latest Expedition has resolved. View its result and launch a new one.</p>
-        <PendingExpeditionRewards />
+        {rewardSync}
         <nav className={styles.links} aria-label="Expedition links">
           <Link to="/expeditions">Go to Expeditions</Link>
         </nav>
@@ -121,7 +127,7 @@ export function DashboardExpeditionPanel() {
         />
       ) : null}
       <p>Invest materials in an Expedition to earn rewards on success.</p>
-      <PendingExpeditionRewards />
+      {rewardSync}
       <nav className={styles.links} aria-label="Expedition links">
         <Link to="/expeditions">Launch an Expedition</Link>
         <Link to="/expeditions/history">View history</Link>
