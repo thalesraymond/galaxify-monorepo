@@ -44,7 +44,13 @@ const UPDATED_AT_REFRESH_MS = 30_000
  * Route-agnostic so the Dashboard can compose it without page chrome; the
  * `/ship` route is a thin wrapper around it.
  */
-export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode } = {}) {
+export function ShipStatusPanel({
+  materialsSync,
+  variant = 'detail',
+}: {
+  materialsSync?: ReactNode
+  variant?: 'detail' | 'summary'
+} = {}) {
   const transport = useApiTransport()
   const queryClient = useQueryClient()
   const balanceGate = useShipBalanceGate()
@@ -176,7 +182,10 @@ export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode }
             : 'repair-summary'
 
   return (
-    <ContentSurface aria-labelledby="ship-status-heading" className={styles.panel}>
+    <ContentSurface
+      aria-labelledby="ship-status-heading"
+      className={`${styles.panel} ${variant === 'summary' ? styles.summary : ''}`}
+    >
       <div className={styles.header}>
         <h2 ref={statusHeadingRef} id="ship-status-heading" tabIndex={-1}>
           Ship status
@@ -239,18 +248,25 @@ export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode }
                   <LiveRegion message={balanceGate.reason} />
                 </div>
               ) : null}
-              <Button
-                ref={repairButtonRef}
-                loading={repairMutation.isPending}
-                disabled={repairBlocked !== undefined || balanceGate.state !== 'open'}
-                aria-describedby={repairDescribedBy}
-                onClick={() => {
-                  setRepairOutcome({ kind: 'none' })
-                  repairMutation.mutate(getDownstreamSessionGeneration())
-                }}
-              >
-                Repair Ship
-              </Button>
+              <div className={styles.repairActions}>
+                <Button
+                  ref={repairButtonRef}
+                  loading={repairMutation.isPending}
+                  disabled={repairBlocked !== undefined || balanceGate.state !== 'open'}
+                  aria-describedby={repairDescribedBy}
+                  onClick={() => {
+                    setRepairOutcome({ kind: 'none' })
+                    repairMutation.mutate(getDownstreamSessionGeneration())
+                  }}
+                >
+                  Repair Ship
+                </Button>
+                {variant === 'summary' ? (
+                  <Link to="/ship" className={styles.link}>
+                    Inspect Ship
+                  </Link>
+                ) : null}
+              </div>
               {repairBlocked !== undefined ? (
                 <p id="repair-guidance" className={styles.copy}>
                   {blockerMessage(repairBlocked, 'eligibility')}{' '}
@@ -273,12 +289,14 @@ export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode }
                   />
                 </div>
               ) : null}
-              <Disclosure summary="How repair works">
-                <p className={styles.copy}>
-                  Repairing spends materials up to the smaller of the missing hull and your balance.
-                  Each material restores a variable amount of hull.
-                </p>
-              </Disclosure>
+              {variant === 'detail' ? (
+                <Disclosure summary="How repair works">
+                  <p className={styles.copy}>
+                    Repairing spends materials up to the smaller of the missing hull and your
+                    balance. Each material restores a variable amount of hull.
+                  </p>
+                </Disclosure>
+              ) : null}
             </div>
           </section>
         </div>

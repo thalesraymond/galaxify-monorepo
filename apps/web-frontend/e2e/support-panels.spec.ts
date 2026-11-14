@@ -56,10 +56,17 @@ for (const viewport of viewports) {
     const repair = page.getByRole('button', { name: 'Repair Ship' })
     await expect(repair).toBeEnabled()
     await expect(repair).toHaveAccessibleDescription('Spend materials; restoration varies.')
+    await expect(page.locator('summary').filter({ hasText: 'How repair works' })).toHaveCount(0)
+    // The dedicated Ship consumer uses the same guidance without changing commands.
+    await page.getByRole('link', { name: 'Inspect Ship' }).click()
+    await expect(page.getByRole('heading', { level: 1, name: 'Ship' })).toBeVisible()
+
+    const detailRepair = page.getByRole('button', { name: 'Repair Ship' })
+    await expect(detailRepair).toBeEnabled()
     const summary = page.locator('summary').filter({ hasText: 'How repair works' })
     const mechanics = page.getByText(/Repairing spends materials up to the smaller/)
     await expect(mechanics).toBeHidden()
-    await repair.focus()
+    await detailRepair.focus()
     await page.keyboard.press('Tab')
     await expect(summary).toBeFocused()
     await page.keyboard.press('Enter')
@@ -74,15 +81,6 @@ for (const viewport of viewports) {
     expect(accessibility.violations).toEqual([])
     await page.keyboard.press('Space')
     await expect(mechanics).toBeHidden()
-
-    // The dedicated Ship consumer uses the same guidance without changing commands.
-    const menuButton = page.getByRole('button', { name: 'Menu', exact: true })
-    if (await menuButton.isVisible()) {
-      await menuButton.click()
-    }
-    await page.getByRole('link', { name: 'Ship', exact: true }).click()
-    await expect(page.getByRole('heading', { level: 1, name: 'Ship' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Repair Ship' })).toBeEnabled()
-    await expect(page.locator('summary').filter({ hasText: 'How repair works' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Inspect Ship' })).toHaveCount(0)
   })
 }
