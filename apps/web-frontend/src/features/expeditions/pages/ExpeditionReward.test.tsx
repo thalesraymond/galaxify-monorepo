@@ -500,7 +500,7 @@ it('does not restart a settled result across Dashboard, overview and detail', as
     () => downstreamObservationPhase(expeditionRewardKey(id)) === 'idle',
     'settled reward',
   )
-  fireEvent.click(screen.getByRole('link', { name: 'Go to Expeditions' }))
+  fireEvent.click(screen.getByRole('link', { name: 'Plan Expedition' }))
   await advanceUntil(
     () => screen.queryByRole('heading', { name: 'Expeditions' }) !== null,
     'overview',

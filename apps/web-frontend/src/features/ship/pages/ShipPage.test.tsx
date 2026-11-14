@@ -134,7 +134,7 @@ describe('Ship page', () => {
     await renderShip('damaged-ship')
 
     expect(await screen.findByRole('region', { name: 'Ship status' })).toBeInTheDocument()
-    expect(await screen.findByRole('link', { name: 'Launch an Expedition' })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: 'Plan Expedition' })).toHaveAttribute(
       'href',
       '/expeditions',
     )

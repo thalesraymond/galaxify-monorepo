@@ -48,7 +48,7 @@ export function DashboardExpeditionPanel({
   if (currentQuery.isPending) {
     return (
       <>
-        <ContentSurface tone="raised" className={styles.loading} aria-busy="true">
+        <ContentSurface className={styles.loading} aria-busy="true">
           <Skeleton lines={3} />
         </ContentSurface>
         {rewardSync}
@@ -101,12 +101,20 @@ export function DashboardExpeditionPanel({
     }
     // Resolved but still authoritative current: show a link to the detail.
     return (
-      <ContentSurface tone="raised" aria-labelledby={headingId}>
+      <ContentSurface aria-labelledby={headingId}>
         <h2 id={headingId}>Expedition resolved</h2>
+        {currentStale ? (
+          <StaleNotice
+            onRetry={() => {
+              void currentQuery.refetch()
+            }}
+          />
+        ) : null}
         <p>Your latest Expedition has resolved. View its result and launch a new one.</p>
         {rewardSync}
         <nav className={styles.links} aria-label="Expedition links">
-          <Link to="/expeditions">Go to Expeditions</Link>
+          <Link to={`/expeditions/${current.expedition.id}`}>View Expedition detail</Link>
+          <Link to="/expeditions">Plan Expedition</Link>
         </nav>
       </ContentSurface>
     )
@@ -114,7 +122,7 @@ export function DashboardExpeditionPanel({
 
   // No Expedition is current: offer a route to launch.
   return (
-    <ContentSurface tone="raised" aria-labelledby={headingId}>
+    <ContentSurface aria-labelledby={headingId}>
       <h2 id={headingId}>No Expedition in flight</h2>
       {currentStale ? (
         <StaleNotice
@@ -126,7 +134,7 @@ export function DashboardExpeditionPanel({
       <p>Invest materials in an Expedition to earn rewards on success.</p>
       {rewardSync}
       <nav className={styles.links} aria-label="Expedition links">
-        <Link to="/expeditions">Launch an Expedition</Link>
+        <Link to="/expeditions">Plan Expedition</Link>
         <Link to="/expeditions/history">View history</Link>
       </nav>
     </ContentSurface>

@@ -8,7 +8,6 @@ import { useApiTransport } from '@/shared/api/TransportContext'
 import {
   Button,
   ConfirmationDialog,
-  ContentSurface,
   EmptyState,
   Skeleton,
   StatusBadge,
@@ -199,15 +198,23 @@ export function DashboardDailiesPanel() {
     )
   }
 
+  const dailiesData = listQuery.data
+  const doneCount =
+    dailiesData !== undefined && dailiesData.length > 0
+      ? `${dailiesData.filter((daily) => daily.status === 'COMPLETED').length}/${dailiesData.length} done`
+      : undefined
+
   return (
-    <ContentSurface aria-labelledby="dashboard-dailies-heading" className={styles.panel}>
+    <section aria-labelledby="dashboard-dailies-heading" className={styles.panel}>
       <div className={styles.panelHeader}>
         <h2 id="dashboard-dailies-heading">Today's Dailies</h2>
-        <Link className={styles.viewAllLink} to="/dailies">
-          View all
-        </Link>
+        {doneCount !== undefined ? <span className={styles.count}>{doneCount}</span> : null}
       </div>
       {body}
+
+      <Link className={styles.manageLink} to="/dailies">
+        Manage Dailies
+      </Link>
 
       {deleteTarget !== undefined ? (
         <ConfirmationDialog
@@ -232,6 +239,6 @@ export function DashboardDailiesPanel() {
           ) : null}
         </ConfirmationDialog>
       ) : null}
-    </ContentSurface>
+    </section>
   )
 }

@@ -47,7 +47,7 @@ for (const viewport of [
 
     const pendingHeading = page.getByRole('heading', { name: 'Pending', exact: true })
     await expect(pendingHeading).toHaveCSS('font-size', '14px')
-    await expect(pendingHeading).toHaveCSS('text-transform', 'uppercase')
+    await expect(pendingHeading).toHaveCSS('text-transform', 'none')
     await expect(pendingHeading).toHaveCSS('color', 'rgb(180, 180, 180)')
     // Completed uses its existing disclosure-heading treatment, not the pending label rule.
     await expect(completedHeading).toHaveCSS('margin', '0px')
@@ -87,7 +87,7 @@ for (const viewport of [
     }
     await expectTaskTitle(page.getByRole('heading', { name: longTitle, exact: true }))
 
-    await page.getByRole('link', { name: 'View all', exact: true }).click()
+    await page.getByRole('link', { name: 'Manage Dailies', exact: true }).click()
     await expectTaskTitle(page.getByRole('heading', { name: 'Calibrate sensors', exact: true }))
     await page.getByRole('button', { name: 'Completed', exact: true }).click()
     for (const name of [longTitle, 'Hydrate the coolant loop']) {
