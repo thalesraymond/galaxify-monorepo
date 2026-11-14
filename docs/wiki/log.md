@@ -155,3 +155,12 @@ and the full Balance Gate state machine (`gatesBalance` / `useBalanceGate`) insi
 `launchDeductionObservation.ts`, and `useShipBalanceGate.ts`. Updated
 `docs/specs/web-frontend.md` §3.4, `CONTEXT.md`, and
 [`subsystems/downstream-reconciliation.md`](subsystems/downstream-reconciliation.md).
+
+## [2026-11-14] verify | After hours frontend redesign verification (#292)
+
+Completed verification and cleanup for the After hours redesign (`#292` under epic `#285`) on branch `feat/292-verify-after-hours-redesign`:
+
+- **Legacy cleanup**: Removed 17 unused `--color-*` aliases and `--radius-panel` / `--radius-logbook` from `apps/web-frontend/src/shared/styles/tokens.css`, removed unused `tone` prop and `.on-light` rules from `PageHeader`, and removed orphaned `apps/web-frontend/src/features/ship/pages/ShipPage.*`.
+- **Docs & design system alignment**: Reconciled `apps/web-frontend/DESIGN.md` (including `pyftsubset` Inter font provenance), `docs/specs/frontend-redesign.md`, `docs/specs/web-frontend-delivery.md`, `docs/specs/web-frontend-phase1-release-evidence.md`, and `docs/specs/web-frontend-accessibility-checklist.md` against base commit `galaxify-monorepo@f9339d1`.
+- **Verification & performance fixes**: Fixed 320 px horizontal reflow overflow on `AppErrorBoundary` (`min-width: 0; overflow-wrap: anywhere`) with route error-boundary checks shared via `e2e/route-error-boundary.ts`, added `DailyRow` `640`/`641` px breakpoint checks in `e2e/dailies-layout.spec.ts`, updated `e2e/real-stack-smoke.spec.ts` to match shipped forms and regions, refreshed `ship-reflow-chromium-linux.png` (`320×1091 -> 320×1031`), subsetted `inter.woff2` (`350,352 B -> 67,792 B` source, `67.79 kB` built), and adjusted `DashboardDailiesPanel` `.loading` min-height (`18rem -> 8.75rem`) to restore authenticated Dashboard Lighthouse (`0.84 -> 0.95`, LCP `4.4 s -> 2.9 s`, CLS `0.070 -> 0`).
+- **Automated results**: `npm run verify` (426 unit/integration tests, 6 orchestration tests, `api:check`, `bundle:check`, E2E/mock/cross-browser/a11y/visual, `/login` Lighthouse `0.98`), `npm run perf:dashboard` (`0.95`), and `real-stack-smoke` (Chromium against `make dev`) all pass. The human-only native screen-reader smoke (VoiceOver/Safari or NVDA/Chrome-or-Firefox) was **not performed** and blocks closing `#292`.

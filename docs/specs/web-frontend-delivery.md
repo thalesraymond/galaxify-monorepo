@@ -41,44 +41,62 @@ is the ordered index. Its native sub-issues hold detail.
 
 ## 3. Planned implementation graph
 
+Phase 1 delivery was executed under
+[Implement Galaxify Phase 1 React product](https://github.com/thalesraymond/galaxify-monorepo/issues/141):
+
 ### Foundations
 
-- Establish service OpenAPI contracts and conformance testing.
-- Scaffold the React application and engineering gates.
-- Implement the Captain's Log design system and responsive shell.
-- Implement the typed transport and generated API boundary.
-- Implement deterministic mocks and local product orchestration.
+- [#145 — Establish service OpenAPI contracts and conformance testing](https://github.com/thalesraymond/galaxify-monorepo/issues/145).
+- [#142 — Scaffold the React application and engineering gates](https://github.com/thalesraymond/galaxify-monorepo/issues/142).
+- [#146 — Implement the Captain's Log design system and responsive shell](https://github.com/thalesraymond/galaxify-monorepo/issues/146).
+- [#144 — Implement the typed transport and generated API boundary](https://github.com/thalesraymond/galaxify-monorepo/issues/144).
+- [#143 — Implement deterministic mocks and local product orchestration](https://github.com/thalesraymond/galaxify-monorepo/issues/143).
 
 ### Backend capabilities
 
-- Make refresh rotation atomic and add family logout.
-- Correct completed Daily edit and delete lifecycle behavior.
-- Implement timezone-aware Daily scheduling.
-- Expose Daily difficulty, completion-effect, and readiness contracts.
-- Paginate Daily History with stable cursors.
-- Expose Expedition quote, typed results, and readiness contracts.
+- [#149 — Make refresh rotation atomic and add family logout](https://github.com/thalesraymond/galaxify-monorepo/issues/149).
+- [#147 — Correct completed Daily edit and delete lifecycle behavior](https://github.com/thalesraymond/galaxify-monorepo/issues/147).
+- [#148 — Implement timezone-aware Daily scheduling](https://github.com/thalesraymond/galaxify-monorepo/issues/148).
+- [#151 — Expose Daily difficulty, completion-effect, and readiness contracts](https://github.com/thalesraymond/galaxify-monorepo/issues/151).
+- [#150 — Paginate Daily History with stable cursors](https://github.com/thalesraymond/galaxify-monorepo/issues/150).
+- [#152 — Expose Expedition quote, typed results, and readiness contracts](https://github.com/thalesraymond/galaxify-monorepo/issues/152).
 
 ### Mock-backed frontend capabilities
 
-- Build authentication, session lifecycle, Profile, and account actions.
-- Build Daily management, completion, and history.
-- Build Ship status and repair.
-- Build Expedition launch, current state, detail, and history.
+- [#153 — Build authentication, session lifecycle, Profile, and account actions](https://github.com/thalesraymond/galaxify-monorepo/issues/153).
+- [#157 — Build Daily management, completion, and history](https://github.com/thalesraymond/galaxify-monorepo/issues/157).
+- [#154 — Build Ship status and repair](https://github.com/thalesraymond/galaxify-monorepo/issues/154).
+- [#156 — Build Expedition launch, current state, detail, and history](https://github.com/thalesraymond/galaxify-monorepo/issues/156).
 
 ### Real-stack convergence
 
-- Converge session and Profile with the real User Service.
-- Converge Dailies with real Daily-to-Ship propagation.
-- Converge Ship repair with real Ship-to-Expedition propagation.
-- Converge Expeditions with real Expedition-to-Ship propagation.
+- [#162 — Converge session and Profile with the real User Service](https://github.com/thalesraymond/galaxify-monorepo/issues/162).
+- [#160 — Converge Dailies with real Daily-to-Ship propagation](https://github.com/thalesraymond/galaxify-monorepo/issues/160).
+- [#159 — Converge Ship repair with real Ship-to-Expedition propagation](https://github.com/thalesraymond/galaxify-monorepo/issues/159).
+- [#158 — Converge Expeditions with real Expedition-to-Ship propagation](https://github.com/thalesraymond/galaxify-monorepo/issues/158).
 
 ### Composition and completion
 
-- Compose the cross-loop Dashboard.
-- Complete the Phase 1 frontend release gate.
+- [#155 — Compose the cross-loop Dashboard](https://github.com/thalesraymond/galaxify-monorepo/issues/155).
+- [#161 — Complete the Phase 1 frontend release gate](https://github.com/thalesraymond/galaxify-monorepo/issues/161).
 
-The linked implementation epic replaces this title-only list with issue links
-and is the canonical live ordering/dependency view.
+### After hours whole-frontend redesign (post-Phase 1 visual replacement)
+
+Visual presentation was subsequently replaced without altering Phase 1 product
+or wire contracts under epic
+[#285 — Deliver Galaxify's After hours frontend redesign](https://github.com/thalesraymond/galaxify-monorepo/issues/285),
+governed by [`frontend-redesign.md`](./frontend-redesign.md):
+
+- [#286 — Establish After hours foundations and responsive navigation](https://github.com/thalesraymond/galaxify-monorepo/issues/286).
+- [#287 — Restyle account forms and Profile](https://github.com/thalesraymond/galaxify-monorepo/issues/287).
+- [#288 — Restyle Daily management and history](https://github.com/thalesraymond/galaxify-monorepo/issues/288).
+- [#289 — Restyle Ship condition and repair](https://github.com/thalesraymond/galaxify-monorepo/issues/289).
+- [#290 — Restyle Expedition planning and outcomes](https://github.com/thalesraymond/galaxify-monorepo/issues/290).
+- [#291 — Compose the After hours Dashboard summary](https://github.com/thalesraymond/galaxify-monorepo/issues/291).
+- [#292 — Verify and close the whole-frontend redesign](https://github.com/thalesraymond/galaxify-monorepo/issues/292).
+
+The linked implementation epics remain the canonical live ordering and
+dependency view.
 
 ## 4. Agent-ready ticket contract
 

@@ -1,6 +1,7 @@
 # Web Frontend Accessibility Checklist — Phase 1 Release
 
 Version: 1 — Phase 1 release gate ([#161](https://github.com/thalesraymond/galaxify-monorepo/issues/161)).
+Version: 2 — After hours redesign verification ([#292](https://github.com/thalesraymond/galaxify-monorepo/issues/292), epic [#285](https://github.com/thalesraymond/galaxify-monorepo/issues/285)).
 
 This is the versioned manual accessibility checklist required by
 [`web-frontend-delivery.md`](./web-frontend-delivery.md) §8: it records build,
@@ -26,17 +27,28 @@ and increment the version.
 | Tester | Automated agent tester via Playwright 1.63 for items 1, 3–9; item 2 requires a human tester (see known limitation) |
 | Run command | `npm run test:a11y` (axe-core + `e2e/a11y-checklist.spec.ts`, 9 tests, all passing) |
 
+### Version 2 build and environment (`#292` / `#285`)
+
+| Item | Value |
+| --- | --- |
+| Build | Clean `npm ci` + `npm run build` at base commit `f9339d1` + `#292` verification changes on branch `feat/292-verify-after-hours-redesign` |
+| Node / npm | Node `v24.22.3`, npm `11.19.1` |
+| Engines | Playwright `1.65.0` (`chromium-1254`, `firefox-1572`, `webkit-2388`) |
+| OS | `Linux 7.3.3-1-cachyos x86_64` |
+| Tester | Automated agent tester via Playwright `1.65.0` for automated checks; item 2 requires a human tester (`NOT PERFORMED`, blocks `#292` closure) |
+| Run commands | `npm run test:a11y` (across `a11y.spec.ts`, `a11y-checklist.spec.ts`, `support-panels.spec.ts`) and `npm run test:cross-browser` (`15 passed`) |
+
 ## Results
 
 | # | Checklist item | Method | Evidence | Result |
 | --- | --- | --- | --- | --- |
-| 1 | Keyboard journeys (skip link, forms, Account menu, dialog trap/Escape/focus restoration) | Automated, keyboard-only traversal | `a11y-checklist.spec.ts` — "keyboard journeys…" and "dialogs trap focus…" | PASS |
-| 2 | Screen-reader smoke (one VoiceOver/Safari or NVDA/Firefox-or-Chrome journey) | Manual — assistive technology | Not performed; see known limitation | NOT PERFORMED (signed off) |
-| 3 | Contrast (4.5:1 text, 3:1 large text/UI) | Automated, axe-core `color-contrast` on signup, login, all six app pages, and the interface-state gallery | `a11y-checklist.spec.ts` — "text and UI contrast…" | PASS (0 violations) |
+| 1 | Keyboard journeys (skip link, forms, Account menu, dialog trap/Escape/focus restoration) | Automated, keyboard-only traversal | `a11y-checklist.spec.ts` — "keyboard journeys…" and "dialogs trap focus…"; `a11y.spec.ts` & `route-error-boundary.ts` recovery link | PASS |
+| 2 | Screen-reader smoke (one VoiceOver/Safari or NVDA/Firefox-or-Chrome journey) | Manual — assistive technology | Not performed; see known limitation & Version 2 status | Version 1 (#161): NOT PERFORMED (signed off 2026-09-16); Version 2 (#292): NOT PERFORMED (blocks #292 closure) |
+| 3 | Contrast (4.5:1 text, 3:1 large text/UI) | Automated, axe-core `color-contrast` on signup, login, all six app pages, interface-state gallery, and route error boundary | `a11y-checklist.spec.ts` — "text and UI contrast…"; `a11y.spec.ts` | PASS (0 violations) |
 | 4 | Live regions (scoped, announced once, polite by default) | Automated | `a11y-checklist.spec.ts` — "command outcomes are announced…" | PASS |
 | 5 | 200% zoom | Automated — 720×450 CSS px (200% of 1440×900), no two-dimensional scrolling, primary content present on every app page | `a11y-checklist.spec.ts` — "200% zoom…" | PASS |
-| 6 | 320 px reflow | Automated — 320×700, no horizontal scrolling, primary content present on every app page | `a11y-checklist.spec.ts` — "320 px reflow…" | PASS (after fixing F1/F2 below) |
-| 7 | Touch targets (DESIGN.md floor: 44×44 px per interactive target) | Automated geometry check on every interactive control; sentence-embedded links exempt per the WCAG 2.5.8 "Inline" exception | `a11y-checklist.spec.ts` — "interactive targets…" | PASS (after fixing F3 below) |
+| 6 | 320 px reflow | Automated — 320×700, no horizontal scrolling, primary content present on every app page + `AppErrorBoundary` + `640/641` Daily row check | `a11y-checklist.spec.ts`, `a11y.spec.ts`, `smoke.spec.ts`, `dailies-layout.spec.ts` | PASS (after fixing F1, F2, and F4 below) |
+| 7 | Touch targets (DESIGN.md floor: 44×44 px per interactive target) | Automated geometry check on every interactive control; sentence-embedded links exempt per the WCAG 2.5.8 "Inline" exception | `a11y-checklist.spec.ts` — "interactive targets…"; `dailies-layout.spec.ts` (`640/641px`) | PASS (after fixing F3 below) |
 | 8 | Orientation (portrait and landscape) | Automated — 390×844 and 844×390, content usable without horizontal scrolling | `a11y-checklist.spec.ts` — "portrait and landscape…" | PASS |
 | 9 | Reduced motion | Automated — `prefers-reduced-motion: reduce` emulation; every computed transition/animation duration ≤ 0.01 ms (tokens.css collapse), status and meaning preserved | `a11y-checklist.spec.ts` — "reduced motion…" | PASS |
 
@@ -61,6 +73,12 @@ Defects found by this checklist were fixed, not masked:
   inside prose, which WCAG 2.5.8 (part of the 2.2 AA contract DESIGN.md
   targets) explicitly exempts from target-size requirements. The exemption is
   encoded in the automated check with a citation, not a blanket mask.
+- **F4 — 320 px reflow overflow on `AppErrorBoundary` (Version 2, `#292`)**:
+  fixed in `apps/web-frontend/src/app/error/AppErrorBoundary.module.css` by adding
+  `min-width: 0; overflow-wrap: anywhere` on `.error` and `overflow-wrap: anywhere`
+  on `.description` so unbroken module URLs wrap cleanly at 320 px. Covered via
+  shared helper `e2e/route-error-boundary.ts` across `e2e/smoke.spec.ts` and
+  `e2e/a11y.spec.ts` (`1440×900` and `320×700`, aborting `**/src/app/pages/ShipPage.tsx*` once).
 
 ## Known limitation: screen-reader smoke (item 2)
 
@@ -79,6 +97,14 @@ evidence is complete.
 
 Sign-off: Thales Raymond (ticket owner), 2026-09-16 — chose "record as known
 limitation" when offered the alternative of performing the smoke personally.
+
+### Version 2 status (`#292` / `#285`): NOT PERFORMED (blocks `#292` closure)
+
+For Version 2 (After hours redesign verification, issue `#292` under epic
+`#285`), the VoiceOver/Safari or NVDA/Chrome-or-Firefox screen-reader smoke
+across the redesigned routes was **NOT PERFORMED** in this automated
+environment. This check **blocks closing `#292`** until a human tester executes
+the procedure below and records the Version 2 sign-off here.
 
 ### Screen-reader smoke procedure (for the human tester, ~10 minutes)
 

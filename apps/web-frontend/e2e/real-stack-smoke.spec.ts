@@ -188,19 +188,40 @@ async function createDaily(page: Page, title: string, dueInMinutes: number): Pro
 
   const due = new Date(Date.now() + dueInMinutes * 60_000)
   await page.getByLabel('Title').fill(title)
-  await page.getByLabel('Due date').fill(toDateInput(due))
-  await page.getByLabel('Due time').fill(toTimeInput(due))
 
-  await page.getByRole('button', { name: 'Create Daily' }).click()
+  // #207 removed manual deadline inputs from DailyForm (the server defaults to
+  // today's end of day), so supply a short deadline on the POST request for
+  // the bounded missed-Daily sweep leg without adding test-only UI fields.
+  const deadlineRoute = async (route: Parameters<Parameters<Page['route']>[1]>[0]) => {
+    if (route.request().method() !== 'POST') {
+      await route.fallback()
+      return
+    }
+    const rawBody = route.request().postData()
+    const payload = rawBody ? (JSON.parse(rawBody) as Record<string, unknown>) : {}
+    await route.continue({
+      postData: JSON.stringify({
+        ...payload,
+        due_local_date: toDateInput(due),
+        due_local_time: toTimeInput(due),
+      }),
+    })
+  }
+  await page.route('**/api/daily/dailies', deadlineRoute)
 
-  await expect(page).toHaveURL(/\/dailies/)
+  try {
+    await page.getByRole('button', { name: 'Create Daily' }).click()
+    await expect(page).toHaveURL(/\/dailies/)
+  } finally {
+    await page.unroute('**/api/daily/dailies', deadlineRoute)
+  }
   await expect(page.getByRole('heading', { level: 3, name: title })).toBeVisible()
 }
 
 async function expectShipMaterials(page: Page, balance: number): Promise<void> {
   await page.goto('/ship')
   await expect(page.getByRole('heading', { level: 2, name: 'Ship status' })).toBeVisible()
-  const materials = page.getByRole('heading', { level: 3, name: 'Materials' }).locator('..')
+  const materials = page.getByRole('region', { name: 'Materials' })
   await expect(materials.getByText(String(balance), { exact: true })).toBeVisible()
 }
 

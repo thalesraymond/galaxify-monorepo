@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 
 import { expectAuthenticatedDashboard, seedAuthenticated } from './session'
 import { expectResultObservationSurvivesNavigation } from './expedition-result'
+import { expectRouteChunkErrorBoundary } from './route-error-boundary'
 
 const primaryNavLabels = ['Dashboard', 'Dailies', 'Ship', 'Expeditions'] as const
 
@@ -78,5 +79,16 @@ test.describe('application shell', () => {
 
     await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible()
     await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible()
+  })
+
+  test('shows the route error boundary when a lazy route module fails to load and recovers to Dashboard', async ({
+    page,
+  }) => {
+    await expectRouteChunkErrorBoundary(page, async (currentPage) => {
+      const overflow = await currentPage.evaluate(
+        () => document.documentElement.scrollWidth > window.innerWidth,
+      )
+      expect(overflow).toBe(false)
+    })
   })
 })

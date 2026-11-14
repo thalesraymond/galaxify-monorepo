@@ -27,11 +27,3 @@
   font-size: 0.875rem;
   line-height: 1.5;
 }
-
-.on-light .title {
-  color: var(--color-ink);
-}
-
-.on-light .description {
-  color: var(--color-muted);
-}
