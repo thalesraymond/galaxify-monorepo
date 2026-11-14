@@ -140,3 +140,18 @@ made pre-launch revalidation failures observable via `refetchQueries`
 kept mission facts plus the timeline on `ResultPending` while a typed result
 is still missing. See the appended note in
 [`subsystems/downstream-reconciliation.md`](subsystems/downstream-reconciliation.md).
+
+## [2026-11-14] refactor | Deepened Downstream Reconciliation and Balance Gate
+
+Architectural deepening (ADR-0014) consolidated scoped expectation stores,
+duplicate conflict policies (`resume`, `once-per-session`,
+`replace-when-settled`, `restart`), atomic `publish -> isSatisfied` metadata
+evaluation, `SessionGuard` (`captureDownstreamSession` / `useDownstreamSession`),
+an injectable `ReconciliationEnvironment` seam (`createTestReconciliationEnvironment`),
+and the full Balance Gate state machine (`gatesBalance` / `useBalanceGate`) inside
+`apps/web-frontend/src/shared/reconciliation/downstreamReconciliation.ts`. Removed
+`balanceGate.ts` and eliminated module-level `Map`/listener/controller state from
+`dailyAwardObservation.ts`, `expeditionRewardObservation.ts`,
+`launchDeductionObservation.ts`, and `useShipBalanceGate.ts`. Updated
+`docs/specs/web-frontend.md` §3.4, `CONTEXT.md`, and
+[`subsystems/downstream-reconciliation.md`](subsystems/downstream-reconciliation.md).

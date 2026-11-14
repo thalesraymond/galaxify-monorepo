@@ -180,11 +180,17 @@ cache. Daily and Expedition reconciliation cross that public seam rather than
 duplicating Ship reads or cache keys. Each observation bypasses cache freshness;
 overlapping observations share the in-flight query, and every view renders the
 facts published into that one shared Ship query rather than a row- or
-panel-local balance. The shared Downstream Reconciliation module owns the
-bounded schedule and Player Retry; domain adapters own the expectation and
-publish fresh facts. A confirmed repair cancels older Ship reads before
-publishing its returned snapshot, so a late response cannot undo the repair.
-Per-Daily progress and the balance-based satisfaction rule remain.
+panel-local balance. The shared Downstream Reconciliation module (`src/shared/reconciliation`, ADR-0014)
+owns the bounded active-time schedule, Player Retry, scoped expectation stores,
+duplicate-registration conflict policies (`resume`, `once-per-session`,
+`replace-when-settled`, `restart`), atomic `publish -> isSatisfied` metadata
+updates, `SessionGuard` session checks, and the session-owned Balance Gate state
+machine. Thin domain adapters (`dailyAwardObservation`, `expeditionRewardObservation`,
+`launchDeductionObservation`, `useShipBalanceGate`, `useShipRepairReconciliation`)
+supply only domain reads, satisfaction predicates, and shared cache publication
+without maintaining adapter-local stores or scheduler bookkeeping. A confirmed repair
+cancels older Ship reads before publishing its returned snapshot, so a late response
+cannot undo the repair. Per-Daily progress and the balance-based satisfaction rule remain.
 
 These reconciliation rules are frontend-only. They preserve the existing
 backend contracts and deliberate event-consumer behavior; no backend contract

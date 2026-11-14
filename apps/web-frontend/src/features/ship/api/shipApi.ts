@@ -1,9 +1,6 @@
 import { zShipGetMeResponse, zShipRepairResponse } from '@/api/generated/ship/zod.gen'
 import { isApiHttpError, type ApiHttpError, type ApiTransport } from '@/api/transport'
-import {
-  getDownstreamSessionGeneration,
-  onClearDownstreamObservations,
-} from '@/shared/reconciliation'
+import { captureDownstreamSession, onClearDownstreamObservations } from '@/shared/reconciliation'
 
 export const shipQueryKey = ['ship'] as const
 
@@ -47,13 +44,10 @@ onClearDownstreamObservations(() => {
 })
 
 export async function getShip(transport: ApiTransport, signal?: AbortSignal): Promise<ShipState> {
-  const sessionGeneration = getDownstreamSessionGeneration()
+  const session = captureDownstreamSession()
   const commandRevision = getShipCommandRevision()
   const assertStillCurrent = (): void => {
-    if (
-      sessionGeneration !== getDownstreamSessionGeneration() ||
-      commandRevision !== getShipCommandRevision()
-    ) {
+    if (!session.isCurrent() || commandRevision !== getShipCommandRevision()) {
       throw new Error('Ship read belongs to a retired session or was superseded by a command.')
     }
   }

@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 
 import { useQueryClient } from '@tanstack/react-query'
 
 import { useApiTransport } from '@/shared/api/TransportContext'
 import {
-  getDownstreamSessionGeneration,
   registerDownstreamObservation,
   useDownstreamObservation,
+  useDownstreamSession,
   type DownstreamObservationView,
 } from '@/shared/reconciliation'
 
@@ -48,11 +48,11 @@ export function useExpeditionResultReconciliation(
 ): DownstreamObservationView {
   const transport = useApiTransport()
   const queryClient = useQueryClient()
-  const [sessionGeneration] = useState(getDownstreamSessionGeneration)
+  const session = useDownstreamSession()
   const missing = isExpeditionResultMissing(expedition)
 
   useEffect(() => {
-    if (!missing || sessionGeneration !== getDownstreamSessionGeneration()) {
+    if (!missing || !session.isCurrent()) {
       return
     }
     registerDownstreamObservation({
@@ -70,7 +70,7 @@ export function useExpeditionResultReconciliation(
         )
       },
     })
-  }, [missing, expeditionId, transport, queryClient, sessionGeneration])
+  }, [missing, expeditionId, transport, queryClient, session])
 
   return useDownstreamObservation(expeditionResultObservationKey(expeditionId), missing)
 }

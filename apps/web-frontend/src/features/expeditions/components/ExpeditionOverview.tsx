@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { getShip, shipQueryKey } from '@/features/ship'
 import { useApiTransport } from '@/shared/api/TransportContext'
-import { getDownstreamSessionGeneration } from '@/shared/reconciliation'
+import { useDownstreamSession } from '@/shared/reconciliation'
 import { Skeleton, UnavailableState } from '@/shared/ui'
 
 import {
@@ -36,7 +36,7 @@ function currentPollInterval(data: CurrentExpedition | undefined): number | fals
  * and at resolution (§5.6, §3.4) and stale-refresh labeling (§3.2).
  */
 export function ExpeditionOverview() {
-  const [sessionGeneration] = useState(getDownstreamSessionGeneration)
+  const session = useDownstreamSession()
   const transport = useApiTransport()
   const queryClient = useQueryClient()
   const currentQuery = useQuery({
@@ -71,13 +71,10 @@ export function ExpeditionOverview() {
   }, [currentQuery.data, shipQuery.data])
 
   useEffect(() => {
-    if (
-      sessionGeneration === getDownstreamSessionGeneration() &&
-      currentQuery.data?.kind === 'current'
-    ) {
+    if (session.isCurrent() && currentQuery.data?.kind === 'current') {
       registerExpeditionReward(currentQuery.data.expedition, queryClient, transport)
     }
-  }, [currentQuery.data, queryClient, transport, sessionGeneration])
+  }, [currentQuery.data, queryClient, transport, session])
 
   const currentStale = currentQuery.isRefetchError
 

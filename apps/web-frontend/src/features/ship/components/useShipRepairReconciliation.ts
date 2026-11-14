@@ -2,11 +2,7 @@ import type { QueryClient } from '@tanstack/react-query'
 
 import type { ApiTransport } from '@/api/transport'
 import { expeditionQuoteQueryKeyFor, getExpeditionQuote } from '@/features/expeditions'
-import {
-  downstreamReconciliation,
-  registerDownstreamObservation,
-  useDownstreamObservation,
-} from '@/shared/reconciliation'
+import { registerDownstreamObservation, useDownstreamObservation } from '@/shared/reconciliation'
 
 import { observeShip } from '../api/shipQueries'
 
@@ -18,12 +14,9 @@ export function useShipRepairReconciliation(queryClient: QueryClient, transport:
   const { phase, retry } = useDownstreamObservation(REPAIR_READINESS_KEY, true)
 
   const beginReconciliation = (): void => {
-    if (downstreamReconciliation.getPhase(REPAIR_READINESS_KEY) !== 'idle') {
-      downstreamReconciliation.retry(REPAIR_READINESS_KEY)
-      return
-    }
     registerDownstreamObservation({
       key: REPAIR_READINESS_KEY,
+      onConflict: 'restart',
       read: async (signal) => {
         const [ship, quote] = await Promise.allSettled([
           observeShip(queryClient, transport, signal),

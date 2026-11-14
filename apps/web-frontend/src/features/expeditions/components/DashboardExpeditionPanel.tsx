@@ -1,9 +1,9 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId } from 'react'
 import { Link } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useApiTransport } from '@/shared/api/TransportContext'
-import { getDownstreamSessionGeneration } from '@/shared/reconciliation'
+import { useDownstreamSession } from '@/shared/reconciliation'
 import { ContentSurface, Skeleton, UnavailableState } from '@/shared/ui'
 
 import { currentExpeditionQueryKey, getCurrentExpedition } from '../api/expeditionApi'
@@ -28,7 +28,7 @@ export function DashboardExpeditionPanel({
   showRewardSync?: boolean
 } = {}) {
   const rewardSync = showRewardSync ? <PendingExpeditionRewards /> : null
-  const [sessionGeneration] = useState(getDownstreamSessionGeneration)
+  const session = useDownstreamSession()
   const transport = useApiTransport()
   const queryClient = useQueryClient()
   const headingId = useId()
@@ -40,13 +40,10 @@ export function DashboardExpeditionPanel({
   const currentStale = currentQuery.isRefetchError
 
   useEffect(() => {
-    if (
-      sessionGeneration === getDownstreamSessionGeneration() &&
-      currentQuery.data?.kind === 'current'
-    ) {
+    if (session.isCurrent() && currentQuery.data?.kind === 'current') {
       registerExpeditionReward(currentQuery.data.expedition, queryClient, transport)
     }
-  }, [currentQuery.data, queryClient, transport, sessionGeneration])
+  }, [currentQuery.data, queryClient, transport, session])
 
   if (currentQuery.isPending) {
     return (

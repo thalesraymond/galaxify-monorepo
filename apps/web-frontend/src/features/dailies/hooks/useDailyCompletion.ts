@@ -1,21 +1,21 @@
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import type { Daily, Difficulty } from '@/api/generated/daily/types.gen'
 import { isApiHttpError, type ApiTransport } from '@/api/transport'
 import { shipQueryKey, type ShipState } from '@/features/ship'
 import {
+  captureDownstreamSession,
   downstreamReconciliation,
-  getDownstreamSessionGeneration,
   type DownstreamObservationPhase,
+  type SessionGuard,
 } from '@/shared/reconciliation'
 
 import { completeDaily, dailiesQueryKey, type DailyListFilters } from '../api/dailyApi'
 import {
   dailyAwardObservationKey,
-  getDailyAwardExpectations,
   registerDailyAwardObservation,
-  subscribeToDailyAwardExpectations,
+  useDailyAwardExpectations,
 } from '../lib/dailyAwardObservation'
 import type { DifficultyRewards } from '../lib/difficulties'
 import { requestFailureMessage } from '../lib/message'
@@ -112,11 +112,7 @@ export function useDailyCompletion(
   const queryClient = useQueryClient()
   const [failures, setFailures] = useState<ReadonlyMap<string, CompletionFailure>>(new Map())
 
-  const expectations = useSyncExternalStore(
-    subscribeToDailyAwardExpectations,
-    getDailyAwardExpectations,
-    getDailyAwardExpectations,
-  )
+  const expectations = useDailyAwardExpectations()
 
   const reconciliations = useMemo(() => {
     const next = new Map<string, ReconciliationState>()
@@ -137,9 +133,9 @@ export function useDailyCompletion(
     }: {
       readonly dailyId: string
       readonly difficulty: Difficulty
-      readonly sessionGeneration: number
+      readonly session: SessionGuard
     }) => completeDaily(transport, dailyId),
-    onMutate: async ({ dailyId, sessionGeneration }) => {
+    onMutate: async ({ dailyId, session }) => {
       // The baseline is read synchronously from the confirmed Ship cache, so
       // the Player's command is never delayed to obtain it.
       const baseline = captureShipBaseline(queryClient)
@@ -148,8 +144,7 @@ export function useDailyCompletion(
       // PENDING filter the completed row belongs in the (hidden) completed
       // section, so it leaves the visible pending list at once.
       await queryClient.cancelQueries({ queryKey: dailiesQueryKey(filters) })
-      if (sessionGeneration !== getDownstreamSessionGeneration())
-        return { previous: undefined, baseline, sessionGeneration }
+      if (!session.isCurrent()) return { previous: undefined, baseline, session }
       const previous = queryClient.getQueryData<Daily[]>(dailiesQueryKey(filters))
       queryClient.setQueryData<Daily[]>(dailiesQueryKey(filters), (current) => {
         if (current === undefined) {
@@ -162,11 +157,10 @@ export function useDailyCompletion(
           daily.id === dailyId ? { ...daily, status: 'COMPLETED' as const } : daily,
         )
       })
-      return { previous, baseline, sessionGeneration }
+      return { previous, baseline, session }
     },
     onError: (error, variables, context) => {
-      if (context === undefined || context.sessionGeneration !== getDownstreamSessionGeneration())
-        return
+      if (context === undefined || !context.session.isCurrent()) return
       const previous = context.previous
       if (previous !== undefined) {
         queryClient.setQueryData<Daily[]>(dailiesQueryKey(filters), (current) =>
@@ -198,7 +192,7 @@ export function useDailyCompletion(
       })
     },
     onSuccess: (completed, _variables, context) => {
-      if (context.sessionGeneration !== getDownstreamSessionGeneration()) return
+      if (!context.session.isCurrent()) return
       setFailures((previousFailures) => {
         const next = new Map(previousFailures)
         next.delete(completed.id)
@@ -222,7 +216,7 @@ export function useDailyCompletion(
       completeMutation.mutate({
         dailyId,
         difficulty,
-        sessionGeneration: getDownstreamSessionGeneration(),
+        session: captureDownstreamSession(),
       })
     },
     [completeMutation],

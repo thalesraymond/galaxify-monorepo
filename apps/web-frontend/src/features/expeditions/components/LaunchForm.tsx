@@ -6,7 +6,7 @@ import { Link } from 'react-router'
 import { isApiHttpError, isApiTransportError } from '@/api/transport'
 import { shipQueryKey, useShipBalanceGate, type ShipState } from '@/features/ship'
 import { useApiTransport } from '@/shared/api/TransportContext'
-import { getDownstreamSessionGeneration } from '@/shared/reconciliation'
+import { captureDownstreamSession } from '@/shared/reconciliation'
 import {
   Button,
   ContentSurface,
@@ -104,7 +104,7 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
     onMutate: () => {
       const state = queryClient.getQueryState<ShipState>(shipQueryKey)
       return {
-        sessionGeneration: getDownstreamSessionGeneration(),
+        session: captureDownstreamSession(),
         baseline:
           state?.status === 'success' && state.data?.kind === 'ready'
             ? state.data.ship.materials_balance
@@ -112,7 +112,7 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
       }
     },
     onSuccess: (expedition, _materials, context) => {
-      if (context.sessionGeneration !== getDownstreamSessionGeneration()) return
+      if (!context.session.isCurrent()) return
       registerLaunchDeduction(expedition, context.baseline, queryClient, transport)
       queryClient.setQueryData(currentExpeditionQueryKey, { kind: 'current', expedition })
       void queryClient.invalidateQueries({ queryKey: currentExpeditionQueryKey })
