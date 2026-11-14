@@ -14,7 +14,7 @@ import type { Expedition } from '../api/expeditionApi'
 import { expeditionDetailQueryKeyFor, getExpeditionById } from '../api/expeditionApi'
 import { registerExpeditionReward } from '../lib/expeditionRewardObservation'
 import { ExpeditionRewardSync } from './ExpeditionRewardSync'
-import { formatAbsoluteTime, formatMaterialReward } from './format'
+import { formatAbsoluteTime, formatMaterialReward, formatPercentChance } from './format'
 import { useCelebration } from './useCelebration'
 import {
   isExpeditionResultMissing,
@@ -99,7 +99,11 @@ export function ResultPanel({
             }}
           />
         ) : null}
-        <ResultPending phase={resultObservation.phase} onRetry={resultObservation.retry} />
+        <ResultPending
+          expedition={expedition}
+          phase={resultObservation.phase}
+          onRetry={resultObservation.retry}
+        />
       </>
     )
   }
@@ -124,6 +128,16 @@ export function ResultPanel({
       </div>
       <p className={styles.reward}>{formatMaterialReward(result.material_reward.materials)}</p>
       {showRewardSync ? <ExpeditionRewardSync expeditionId={expeditionId} /> : null}
+      <dl className={styles.facts}>
+        <div>
+          <dt>Investment</dt>
+          <dd>{expedition.materials_invested} materials</dd>
+        </div>
+        <div>
+          <dt>Chance at launch</dt>
+          <dd>{formatPercentChance(expedition.success_chance)}</dd>
+        </div>
+      </dl>
       <ExpeditionTimeline expedition={expedition} />
     </ContentSurface>
   )
@@ -135,9 +149,11 @@ export function ResultPanel({
  * local Retry on expiry.
  */
 function ResultPending({
+  expedition,
   phase,
   onRetry,
 }: {
+  expedition: Expedition
   phase: DownstreamObservationPhase
   onRetry: () => void
 }) {
@@ -158,6 +174,21 @@ function ResultPending({
           </Button>
         ) : null}
       </div>
+      <dl className={styles.facts}>
+        <div>
+          <dt>Investment</dt>
+          <dd>{expedition.materials_invested} materials</dd>
+        </div>
+        <div>
+          <dt>Chance at launch</dt>
+          <dd>{formatPercentChance(expedition.success_chance)}</dd>
+        </div>
+        <div>
+          <dt>Resolves</dt>
+          <dd>{formatAbsoluteTime(expedition.resolve_at)}</dd>
+        </div>
+      </dl>
+      <ExpeditionTimeline expedition={expedition} />
     </ContentSurface>
   )
 }

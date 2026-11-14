@@ -1,28 +1,36 @@
 .resolveTime {
   margin: var(--space-2) 0 var(--space-4);
-  color: var(--color-text-muted-dark);
+  color: var(--color-muted);
+  font-size: 0.875rem;
 }
 
 .facts {
   display: grid;
   gap: var(--space-2);
   margin: 0 0 var(--space-6);
+  min-width: 0;
 }
 
 .facts > div {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-1) var(--space-4);
   padding-bottom: var(--space-2);
-  border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  border-bottom: 1px solid var(--color-border);
+  min-width: 0;
 }
 
 .facts dt {
-  font-weight: 700;
+  color: var(--color-muted);
+  font-size: 0.875rem;
 }
 
 .facts dd {
   margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
@@ -36,7 +44,7 @@
   min-height: 44px;
   display: inline-flex;
   align-items: center;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .balanceSync {
@@ -46,8 +54,7 @@
   gap: var(--space-2);
   margin: var(--space-4) 0 0;
   padding-top: var(--space-3);
-  border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
-  font-weight: 700;
+  border-top: 1px solid var(--color-border);
   font-variant-numeric: tabular-nums;
 }
 
@@ -65,7 +72,8 @@
 .reward {
   margin: var(--space-4) 0;
   font-size: 1.5rem;
-  font-weight: 700;
+  font-weight: 400;
+  color: var(--color-data);
   font-variant-numeric: tabular-nums;
 }
 
@@ -79,13 +87,21 @@
 
 .timeline li {
   display: flex;
-  gap: var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
   align-items: baseline;
+  min-width: 0;
 }
 
 .timelineLabel {
   min-width: 6rem;
-  font-weight: 700;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.timeline time {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* Restrained 300–500 ms celebration for a newly observed Expedition result
@@ -122,14 +138,9 @@
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-control);
-  background: var(--color-danger-surface);
-  color: var(--color-text-on-danger);
-}
-
-.staleNotice span {
-  font-weight: 700;
+  border: 1px solid var(--color-control);
+  border-radius: var(--radius-notice);
+  color: var(--color-muted);
 }
 
 /* Result-lag reconciliation surface while the typed result is pending. */

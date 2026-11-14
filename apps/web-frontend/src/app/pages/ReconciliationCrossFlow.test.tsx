@@ -432,12 +432,15 @@ describe('slow and failed reads', () => {
     // The deduction round was paused while no Expedition view displayed it;
     // its remaining budget resumes here and expires unobserved.
     await advanceFakeTime(9_000)
-    await advanceUntil(() => screen.queryByText('Update delayed') !== null, 'the delayed deduction')
+    await advanceUntil(
+      () => materialsRegion().queryByText('Update delayed', { selector: 'p *' }) !== null,
+      'the delayed deduction',
+    )
 
     // The next successful read publishes the same fresh balance everywhere.
     balance = 270
     failShipReads = false
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    fireEvent.click(materialsRegion().getAllByRole('button', { name: 'Retry' })[0] as HTMLElement)
     await advanceUntil(
       () => screen.queryByText(/Available materials: 270/) !== null,
       'the fresh deduction facts',
@@ -567,7 +570,8 @@ describe('commands under the balance gate', () => {
     navigateTo('Expeditions')
     await waitForExpeditionsPage()
     fireEvent.change(screen.getByLabelText('Materials to invest'), { target: { value: '40' } })
-    await advanceUntil(() => screen.queryByText('Ready to launch.') !== null, 'the launch quote')
+    await advanceUntil(() => screen.queryByText('Success chance') !== null, 'the launch quote')
+    expect(screen.queryByText('Ready to launch.')).toBeNull()
     const launch = screen.getByRole('button', { name: 'Launch Expedition' })
     expect(launch).toBeDisabled()
     fireEvent.click(launch)
@@ -587,12 +591,15 @@ describe('commands under the balance gate', () => {
     // The deduction observation expires, but an accepted command is
     // authoritative and is never automatically replayed.
     await advanceFakeTime(9_000)
-    await advanceUntil(() => screen.queryByText('Update delayed') !== null, 'the delayed deduction')
+    await advanceUntil(
+      () => materialsRegion().queryByText('Update delayed', { selector: 'p *' }) !== null,
+      'the delayed deduction',
+    )
     expect(launchCommands).toBe(1)
     expect(repairCommands).toBe(0)
 
     // A player-initiated Retry re-observes; it never re-sends the launch.
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    fireEvent.click(materialsRegion().getAllByRole('button', { name: 'Retry' })[0] as HTMLElement)
     await advanceFakeTime(9_000)
     expect(launchCommands).toBe(1)
   })

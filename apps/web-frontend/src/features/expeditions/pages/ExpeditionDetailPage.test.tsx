@@ -1,6 +1,6 @@
 process.env.TZ = 'UTC'
 
-import { act, fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, screen, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -79,17 +79,21 @@ async function renderDetailFake(id: string): Promise<void> {
 }
 
 describe('Expedition detail', () => {
-  it('shows a resolved result and timeline without replaying a celebration', async () => {
+  it('shows a resolved result, mission facts, and timeline without replaying a celebration', async () => {
     await renderDetail(RESOLVED_ID)
 
     await screen.findByText('Expedition resolved')
     const panel = screen.getByRole('region', { name: 'Expedition resolved' })
     expect(panel).toBeInTheDocument()
     expect(panel.className).not.toMatch(/celebrate/)
-    expect(screen.getByText('Success')).toBeInTheDocument()
-    expect(screen.getByText('+80 materials')).toBeInTheDocument()
-    expect(screen.getByText('Launched')).toBeInTheDocument()
-    expect(screen.getByText('Resolved')).toBeInTheDocument()
+    expect(within(panel).getByText('Success')).toBeInTheDocument()
+    expect(within(panel).getByText('+80 materials')).toBeInTheDocument()
+    expect(within(panel).getByText('Investment')).toBeInTheDocument()
+    expect(within(panel).getByText('40 materials')).toBeInTheDocument()
+    expect(within(panel).getByText('Chance at launch')).toBeInTheDocument()
+    expect(within(panel).getByText('62%')).toBeInTheDocument()
+    expect(within(panel).getByText('Launched')).toBeInTheDocument()
+    expect(within(panel).getByText('Resolved')).toBeInTheDocument()
   })
 
   it('recovers a not-found Expedition inside the shell with a link back', async () => {
@@ -279,6 +283,42 @@ describe('Expedition detail', () => {
 
     expect(screen.getByText('Update delayed')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
+
+  it('retains confirmed mission facts while the typed result is missing', async () => {
+    const id = fixedUuid(10, 7)
+    server.server.use(
+      http.get(`/api/expedition/expeditions/${id}`, () =>
+        HttpResponse.json(expeditionWithoutResult(id)),
+      ),
+    )
+    await renderDetailFake(id)
+
+    await advanceUntil(
+      () => screen.queryByText('Confirming your result') !== null,
+      'the pending result',
+    )
+    const pendingPanel = screen.getByRole('region', { name: 'Confirming your result' })
+    expect(within(pendingPanel).getByText('Updating…')).toBeInTheDocument()
+    expect(within(pendingPanel).getByText('Investment')).toBeInTheDocument()
+    expect(within(pendingPanel).getByText('40 materials')).toBeInTheDocument()
+    expect(within(pendingPanel).getByText('Chance at launch')).toBeInTheDocument()
+    expect(within(pendingPanel).getByText('62%')).toBeInTheDocument()
+    expect(within(pendingPanel).getByText('Resolves')).toBeInTheDocument()
+    expect(within(pendingPanel).getByText('Launched')).toBeInTheDocument()
+    expect(within(pendingPanel).getByText('Resolved')).toBeInTheDocument()
+    expect(within(pendingPanel).queryByText('Success')).not.toBeInTheDocument()
+    expect(within(pendingPanel).queryByText('+80 materials')).not.toBeInTheDocument()
+
+    await advanceFakeTime(8_500)
+
+    expect(within(pendingPanel).getByText('Update delayed')).toBeInTheDocument()
+    expect(within(pendingPanel).getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    expect(within(pendingPanel).getByText('40 materials')).toBeInTheDocument()
+    expect(within(pendingPanel).getByText('62%')).toBeInTheDocument()
+    expect(within(pendingPanel).getByText('Launched')).toBeInTheDocument()
+    expect(within(pendingPanel).queryByText('Success')).not.toBeInTheDocument()
+    expect(within(pendingPanel).queryByText('+80 materials')).not.toBeInTheDocument()
   })
 
   it('keeps stale in-flight data labelled Update delayed with a Retry when a refetch fails', async () => {

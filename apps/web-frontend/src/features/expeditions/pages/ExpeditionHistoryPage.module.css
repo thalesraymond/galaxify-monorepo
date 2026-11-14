@@ -1,6 +1,7 @@
 .list {
   display: grid;
   gap: var(--space-6);
+  min-width: 0;
 }
 
 .rows {
@@ -14,42 +15,51 @@
 .rowLink {
   display: grid;
   gap: var(--space-2);
+  min-width: 0;
   min-height: 44px;
   padding: var(--space-4);
-  border-left: 4px solid var(--color-logbook-edge);
-  border-radius: var(--radius-logbook);
-  background: var(--color-logbook);
+  border-radius: var(--radius-section);
+  background: var(--color-surface);
   color: var(--color-ink);
   text-decoration: none;
 }
 
-.rowLink:hover {
-  border-left-color: var(--color-amber-strong);
+@media (hover: hover) and (pointer: fine) {
+  .rowLink:hover {
+    background: var(--color-raised);
+  }
 }
 
 .rowMain {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
-  font-weight: 700;
+  min-width: 0;
+  font-weight: 500;
 }
 
 .rowMeta {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-4);
-  color: var(--color-text-muted-light);
+  min-width: 0;
+  color: var(--color-muted);
   font-size: 0.875rem;
 }
 
+.rowMeta > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .reward {
-  font-weight: 700;
+  color: var(--color-data);
   font-variant-numeric: tabular-nums;
 }
 
 .inFlight {
-  color: var(--color-text-muted-light);
-  font-weight: 700;
+  color: var(--color-muted);
 }
 
 .continuationError {

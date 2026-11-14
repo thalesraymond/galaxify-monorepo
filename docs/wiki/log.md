@@ -126,3 +126,17 @@ and fixed a retained-cache publication path in `observeShip`; see
 [`problems/tanstack-revert-retained-cache.md`](problems/tanstack-revert-retained-cache.md).
 Full frontend gate passed in CI in 5m58s. Remaining non-blocking risk: hiding a
 gate surface can abort a Ship read another observation joined; the round retries.
+
+## [2026-11-13] record | Expedition launch deduction observed in the Ship slot
+
+Issue #290 (`feat/290-expedition-after-hours`) pairs launch planning with the
+shared `ShipStatusPanel` on `/expeditions` and moves the launch deduction's
+visible observer into `LaunchDeductionSync`, mounted in the panel's
+`materialsSync` slot; `ExpeditionOverview` no longer owns that observation.
+The same change tightened launch readiness to the authoritative quote
+(investment match, non-placeholder, settled, eligible, `blocker == null`),
+made pre-launch revalidation failures observable via `refetchQueries`
+`throwOnError` so a failed read cannot be launched from retained cache, and
+kept mission facts plus the timeline on `ResultPending` while a typed result
+is still missing. See the appended note in
+[`subsystems/downstream-reconciliation.md`](subsystems/downstream-reconciliation.md).

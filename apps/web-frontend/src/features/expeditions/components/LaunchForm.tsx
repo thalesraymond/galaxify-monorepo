@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router'
 
 import { isApiHttpError, isApiTransportError } from '@/api/transport'
 import { shipQueryKey, useShipBalanceGate, type ShipState } from '@/features/ship'
@@ -46,6 +47,7 @@ type QuoteQueryState = {
   readonly isPending: boolean
   readonly isError: boolean
   readonly isFetching: boolean
+  readonly isPlaceholderData: boolean
   readonly error: unknown
   readonly data: ExpeditionQuote | undefined
   readonly refetch: () => Promise<unknown>
@@ -77,6 +79,7 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
   const [debouncedValue, setDebouncedValue] = useState('')
   const [launchError, setLaunchError] = useState<LaunchError | undefined>(undefined)
   const [announcement, setAnnouncement] = useState<string | undefined>(undefined)
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -127,20 +130,56 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
           { label: 'Max', value: balance },
         ]
 
-  const quoteEligible = quoteQuery.data?.eligible === true
+  const rawInvestment = parseInvestment(inputValue)
+  const inputSettled = rawInvestment === investment
+  const fieldError =
+    rawInvestment === undefined && inputValue.trim() !== ''
+      ? 'Enter a whole number of materials, at least 1.'
+      : rawInvestment !== undefined &&
+          balance !== undefined &&
+          balance >= 1 &&
+          rawInvestment > balance
+        ? `Enter ${balance} materials or fewer — that is your confirmed balance.`
+        : undefined
+
+  const quote = quoteQuery.data
+  const quoteReady =
+    quote !== undefined &&
+    investment !== undefined &&
+    quote.materials_invested === investment &&
+    !quoteQuery.isPlaceholderData &&
+    !quoteQuery.isFetching &&
+    !quoteQuery.isError &&
+    quote.eligible &&
+    (quote.blocker === null || quote.blocker === undefined)
+  const launchReady =
+    investment !== undefined &&
+    quoteReady &&
+    balanceGate.state === 'open' &&
+    inputSettled &&
+    balance !== undefined &&
+    investment <= balance
+  const launching = submitting || launchMutation.isPending
+  const launchAvailable = launchReady && !launching
 
   async function submitLaunch(): Promise<void> {
-    if (investment === undefined || balanceGate.state !== 'open') {
+    if (!launchAvailable) {
       return
     }
+    setSubmitting(true)
     setLaunchError(undefined)
     try {
       // Always revalidate the authoritative Expedition and quote facts before
       // launching; a stale guess must never be trusted (§3.4, §5.6).
       await Promise.all([
-        queryClient.refetchQueries({ queryKey: currentExpeditionQueryKey }),
+        queryClient.refetchQueries({ queryKey: currentExpeditionQueryKey }, { throwOnError: true }),
         ...(quoteEnabled
-          ? [queryClient.refetchQueries({ queryKey: expeditionQuoteQueryKeyFor(investment) })]
+          ? [
+              queryClient.refetchQueries(
+                { queryKey: expeditionQuoteQueryKeyFor(investment) },
+                { throwOnError: true },
+              ),
+            ]
           : []),
       ])
       const freshCurrent = queryClient.getQueryData<CurrentExpedition>(currentExpeditionQueryKey)
@@ -157,7 +196,12 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
       const freshQuote = queryClient.getQueryData<ExpeditionQuote>(
         expeditionQuoteQueryKeyFor(investment),
       )
-      if (freshQuote !== undefined && (freshQuote.blocker !== null || !freshQuote.eligible)) {
+      if (
+        freshQuote === undefined ||
+        freshQuote.materials_invested !== investment ||
+        freshQuote.blocker != null ||
+        !freshQuote.eligible
+      ) {
         setLaunchError({
           kind: 'conflict',
           message: 'Your quote is out of date. Review the updated quote and launch again.',
@@ -201,6 +245,8 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
       } else {
         setLaunchError({ kind: 'unavailable', message: 'Something went wrong. Try again.' })
       }
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -227,6 +273,7 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
       ) : null}
       <div className={styles.form}>
         <Field
+          error={fieldError}
           hint="Whole materials, at least 1."
           label="Materials to invest"
           min={1}
@@ -238,40 +285,53 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
           type="number"
           value={inputValue}
         />
-        <div className={styles.shortcuts} role="group" aria-label="Investment shortcuts">
-          {shortcuts.map((shortcut) => (
-            <Button
-              aria-pressed={inputValue === String(shortcut.value)}
-              key={shortcut.label}
-              onClick={() => {
-                setInputValue(String(shortcut.value))
-                setLaunchError(undefined)
-              }}
-              variant="secondary"
-            >
-              {shortcut.label}
-            </Button>
-          ))}
-        </div>
+        {balance === 0 ? (
+          <p className={styles.balanceGuidance}>
+            No materials. Complete Dailies to earn materials.{' '}
+            <Link to="/dailies" className={styles.link}>
+              Open Dailies
+            </Link>
+          </p>
+        ) : null}
+        {shortcuts.length > 0 && balance !== 0 ? (
+          <div className={styles.shortcuts} role="group" aria-label="Investment shortcuts">
+            {shortcuts.map((shortcut) => (
+              <Button
+                aria-pressed={inputValue === String(shortcut.value)}
+                key={shortcut.label}
+                onClick={() => {
+                  setInputValue(String(shortcut.value))
+                  setLaunchError(undefined)
+                }}
+                variant="secondary"
+              >
+                {shortcut.label}
+              </Button>
+            ))}
+          </div>
+        ) : null}
 
         <QuoteDetails
           investment={investment}
+          ready={launchAvailable}
           visible={quoteEnabled}
           quoteQuery={{
             isPending: quoteQuery.isPending,
             isError: quoteQuery.isError,
             isFetching: quoteQuery.isFetching,
+            isPlaceholderData: quoteQuery.isPlaceholderData,
             error: quoteQuery.error,
             data: quoteQuery.data,
             refetch: () => quoteQuery.refetch(),
           }}
         />
+        {!inputSettled ? <p className={styles.refreshing}>Confirming investment…</p> : null}
 
         <div className={styles.actions}>
           <Button
-            disabled={!quoteEligible || investment === undefined || balanceGate.state !== 'open'}
+            disabled={!launchAvailable}
             aria-describedby={balanceGate.state !== 'open' ? 'launch-balance-gate' : undefined}
-            loading={launchMutation.isPending}
+            loading={launching}
             onClick={() => {
               void submitLaunch()
             }}
@@ -285,8 +345,8 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
             <FormError>{launchError.message}</FormError>
             <Button
               variant="secondary"
-              loading={launchMutation.isPending}
-              disabled={balanceGate.state !== 'open'}
+              loading={launching}
+              disabled={!launchAvailable}
               aria-describedby={balanceGate.state !== 'open' ? 'launch-balance-gate' : undefined}
               onClick={() => {
                 void submitLaunch()
@@ -302,8 +362,8 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
             <p>Your Ship state is still being provisioned. This usually takes a few seconds.</p>
             <Button
               variant="secondary"
-              loading={launchMutation.isPending}
-              disabled={balanceGate.state !== 'open'}
+              loading={launching}
+              disabled={!launchAvailable}
               aria-describedby={balanceGate.state !== 'open' ? 'launch-balance-gate' : undefined}
               onClick={() => {
                 void submitLaunch()
@@ -318,8 +378,8 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
             <FormError>{launchError.message}</FormError>
             <Button
               variant="secondary"
-              loading={launchMutation.isPending}
-              disabled={balanceGate.state !== 'open'}
+              loading={launching}
+              disabled={!launchAvailable}
               aria-describedby={balanceGate.state !== 'open' ? 'launch-balance-gate' : undefined}
               onClick={() => {
                 void submitLaunch()
@@ -337,10 +397,12 @@ export function LaunchForm({ balance }: { balance: number | undefined }) {
 
 function QuoteDetails({
   investment,
+  ready,
   visible,
   quoteQuery,
 }: {
   investment: number | undefined
+  ready: boolean
   visible: boolean
   quoteQuery: QuoteQueryState
 }) {
@@ -385,10 +447,13 @@ function QuoteDetails({
   if (quote === undefined) {
     return null
   }
+  const authoritative = !quoteQuery.isPlaceholderData && quote.materials_invested === investment
   const blockerMessage =
     quote.blocker === null || quote.blocker === undefined
       ? undefined
       : (BLOCKER_MESSAGES[quote.blocker] ?? 'This investment is not available right now.')
+  const unavailableMessage =
+    blockerMessage ?? (quote.eligible ? undefined : 'This investment is not available right now.')
   const windowText = formatResolveWindow(quote.estimated_resolve_window_seconds)
   return (
     <div className={styles.quote}>
@@ -410,17 +475,31 @@ function QuoteDetails({
           </dd>
         </div>
       </dl>
-      {quote.cooldown_until !== null && quote.cooldown_until !== undefined ? (
+      {authoritative && quote.cooldown_until !== null && quote.cooldown_until !== undefined ? (
         <p className={styles.cooldown}>
           Expeditions are on cooldown until {formatAbsoluteTime(quote.cooldown_until)}.
         </p>
       ) : null}
-      {blockerMessage !== undefined ? (
-        <p className={styles.blocker}>{blockerMessage}</p>
-      ) : (
+      {authoritative && unavailableMessage !== undefined ? (
+        <p className={styles.blocker}>{unavailableMessage}</p>
+      ) : null}
+      {authoritative && unavailableMessage !== undefined ? (
+        <Button
+          disabled={quoteQuery.isFetching}
+          variant="secondary"
+          onClick={() => {
+            void quoteQuery.refetch()
+          }}
+        >
+          Refresh quote
+        </Button>
+      ) : null}
+      {authoritative && unavailableMessage === undefined && ready ? (
         <p className={styles.eligible}>Ready to launch.</p>
-      )}
-      {quoteQuery.isFetching ? <span className={styles.refreshing}>Refreshing quote…</span> : null}
+      ) : null}
+      {quoteQuery.isFetching || !authoritative ? (
+        <span className={styles.refreshing}>Refreshing quote…</span>
+      ) : null}
     </div>
   )
 }
