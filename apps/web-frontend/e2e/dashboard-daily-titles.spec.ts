@@ -7,7 +7,8 @@ const longTitle =
 
 async function expectTaskTitle(title: Locator) {
   await expect(title).toBeVisible()
-  await expect(title).toHaveCSS('font-size', '18px')
+  await expect(title).toHaveCSS('font-size', '16px')
+  await expect(title).toHaveCSS('font-weight', '500')
   await expect(title).toHaveCSS('text-transform', 'none')
   await expect(title).toHaveCSS('letter-spacing', 'normal')
   await expect(title).toHaveCSS('color', 'rgb(255, 255, 255)')

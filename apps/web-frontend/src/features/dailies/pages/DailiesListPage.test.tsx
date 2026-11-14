@@ -98,8 +98,9 @@ describe('/dailies current list', () => {
 
     // Rows show due-time context and difficulty/stakes from the metadata.
     expect(screen.getByText('10:00 (UTC)')).toBeInTheDocument()
-    expect(screen.getByText('EASY · +10 materials')).toBeInTheDocument()
-    expect(screen.getByText('HARD · +50 materials')).toBeInTheDocument()
+    expect(screen.getByText('EASY · +10 materials · −5 hull if missed')).toBeInTheDocument()
+    expect(screen.getByText('MEDIUM · +25 materials · −15 hull if missed')).toBeInTheDocument()
+    expect(screen.getByText('HARD · +50 materials · −30 hull if missed')).toBeInTheDocument()
 
     // Completed rows sit in a collapsible section.
     expect(screen.getByText('Completed (1)')).toBeInTheDocument()
@@ -153,6 +154,52 @@ describe('/dailies current list', () => {
     await user.click(screen.getByRole('button', { name: 'All' }))
     expect(await screen.findByRole('heading', { name: 'Calibrate sensors' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Hydrate the coolant loop' })).toBeInTheDocument()
+  })
+})
+
+describe('/dailies Create Daily availability', () => {
+  it('stays beside the heading while the list is loading', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.server.use(
+      http.get('/api/daily/dailies', async () => {
+        await gate
+        return HttpResponse.json(
+          { error: { code: 'TEST_GATE', message: 'Gated.' } },
+          { status: 500 },
+        )
+      }),
+    )
+    renderAppAt('/dailies')
+    expect(await screen.findByRole('heading', { level: 1, name: 'Dailies' })).toBeInTheDocument()
+
+    expect(screen.getByRole('link', { name: 'Create Daily' })).toBeInTheDocument()
+    release()
+    expect(
+      await screen.findByRole('heading', { name: 'Dailies are unavailable' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Create Daily' })).toBeInTheDocument()
+  })
+
+  it('stays beside the heading while the roster is preparing', async () => {
+    server.reset('provisioning')
+    await seedAuthenticatedSession()
+    renderAppAt('/dailies')
+    expect(await screen.findByText('Preparing your Dailies')).toBeInTheDocument()
+
+    expect(screen.getByRole('link', { name: 'Create Daily' })).toBeInTheDocument()
+  })
+
+  it('stays beside the heading when a status filter is empty', async () => {
+    const user = userEvent.setup()
+    await renderDailies()
+    await user.click(screen.getByRole('button', { name: 'Next day' }))
+    await user.click(screen.getByRole('button', { name: 'Pending' }))
+    expect(await screen.findByRole('heading', { name: 'No Dailies' })).toBeInTheDocument()
+
+    expect(screen.getByRole('link', { name: 'Create Daily' })).toBeInTheDocument()
   })
 })
 

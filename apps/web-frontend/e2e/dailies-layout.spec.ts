@@ -36,6 +36,9 @@ for (const viewport of viewports) {
     expect(heading).not.toBeNull()
     expect(actionBox).not.toBeNull()
     expect(header).not.toBeNull()
+    if (actionBox !== null) {
+      expect(actionBox.height).toBeGreaterThanOrEqual(44)
+    }
     if (actionBox !== null && header !== null && viewport.width <= 850) {
       expect(actionBox.y).toBeGreaterThanOrEqual(header.y + header.height)
       // At 320 px the complete task information wraps; allow at most a short
@@ -142,6 +145,41 @@ for (const viewport of viewports) {
   })
 }
 
+test('a saved long-title row wraps, keeps ≥44px actions, and shows its highlight', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.clock.setFixedTime(new Date('2026-01-15T09:00:00Z'))
+  await seedAuthenticated(page)
+  await page.goto('/dailies')
+
+  const longTitle =
+    'Checktheportnacellethermalcouplingeveryeveningbeforedockwithoutspacesorhyphensincluded'
+  await page.getByRole('link', { name: 'Create Daily', exact: true }).click()
+  await expect(page).toHaveURL(/\/dailies\/new$/)
+  await page.getByLabel('Title', { exact: true }).fill(longTitle)
+  await page.getByRole('button', { name: 'Create Daily', exact: true }).click()
+
+  await expect(page).toHaveURL(/\/dailies$/)
+  const title = page.getByRole('heading', { name: longTitle })
+  await expect(title).toBeFocused()
+  await expect(title).toHaveAttribute('aria-current', 'true')
+
+  const row = page.locator('div[id^="daily-row-"]', { has: title })
+  await expect(row).toHaveCSS('outline-style', 'solid')
+  await expect(row).toHaveCSS('outline-width', '2px')
+  await expect(row).toHaveCSS('outline-color', 'rgb(101, 189, 233)')
+
+  const complete = page.getByRole('button', { name: `Complete ${longTitle}` })
+  await expect(complete).toBeVisible()
+  const actionBox = await complete.boundingBox()
+  expect(actionBox).not.toBeNull()
+  if (actionBox !== null) {
+    expect(actionBox.height).toBeGreaterThanOrEqual(44)
+  }
+  await expectAccessibleReflow(page)
+})
+
 test('date, filters, History, and browser navigation retain their URL semantics', async ({
   page,
 }) => {
@@ -178,6 +216,15 @@ test('date, filters, History, and browser navigation retain their URL semantics'
     .getByRole('link', { name: 'History' })
     .click()
   await expect(page).toHaveURL(/\/dailies\/history$/)
+  await expect(page.getByRole('heading', { level: 1, name: 'Daily history' })).toBeVisible()
+  const january14 = page.getByRole('region', { name: 'January 14, 2026' })
+  await expect(january14.getByRole('heading', { name: 'Calibrate sensors' })).toBeVisible()
+  await expect(january14).toContainText('Completed')
+  await expect(january14).toContainText('+10 materials')
+  const january13 = page.getByRole('region', { name: 'January 13, 2026' })
+  await expect(january13).toContainText('Missed')
+  await expect(january13).toContainText('−5 hull')
+  await expectAccessibleReflow(page)
   await page
     .getByRole('navigation', { name: 'Dailies navigation' })
     .getByRole('link', { name: 'Current', exact: true })

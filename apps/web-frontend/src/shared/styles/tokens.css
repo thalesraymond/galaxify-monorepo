@@ -83,6 +83,7 @@
   --z-toast: 1000;
 
   --frame-max-width: 1248px;
+  --form-max-width: 760px;
   --touch-target: 44px;
   --focus-ring: 3px solid var(--color-focus);
   --transition-fast: 140ms ease;

@@ -170,7 +170,7 @@ export function DailyHistoryPage() {
     <div className={styles.page}>
       <PageHeader title="Daily history" description="Archived Daily outcomes, newest first." />
       <LocalTabs label="Dailies navigation" tabs={dailyTabs} />
-      <ContentSurface aria-labelledby="daily-history-heading">
+      <ContentSurface aria-labelledby="daily-history-heading" className={styles.listSurface}>
         <h2 className={styles.heading} id="daily-history-heading">
           Outcomes
         </h2>
