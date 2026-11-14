@@ -4,10 +4,10 @@ This guide applies to every Go module in the workspace (`apps/*-service`, `pkg/`
 
 ## Go workspace (`go.work`)
 
-This is a **Go workspace monorepo** (see [ADR-0001](../adr/0001-go-workspace-monorepo.md)). There is no single root `go.mod`; each module has its own `go.mod` and the committed root `go.work` unites them:
+This is a **Go workspace monorepo** (see [ADR-0001](../adr/0001-go-workspace-monorepo.md)). Each module has its own `go.mod` and the committed root `go.work` unites them (no root `go.mod`):
 
 - `apps/user-service`, `apps/daily-service`, `apps/ship-service`, `apps/expedition-service` — HTTP API services
-- `pkg` — shared library module (`auth`, `dailytime`, `env`, `events`, `httpcontract`, `rabbitmq`, `sharedhttp`, `timestamptz`)
+- `pkg` — shared library module
 - `workers/daily-cron`, `workers/expedition-worker` — background workers
 
 Rules:
@@ -33,21 +33,17 @@ go test ./internal/handler/ -run TestOpenAPIConformance -count=1
 # or from repo root: make openapi-validate && make openapi-check
 ```
 
-Keep repo-root `Makefile` targets (`make test`, `make coverage`, `make vet`, `make build`) covering every module.
+Keep repo-root `Makefile` targets (`make test`, `make vet`) covering `pkg/` alongside every service and worker.
 
-## Build artifacts (never commit binaries)
+## Build artifacts
 
-- **Always** write compiled binaries to the module's local `bin/` folder — **never** to the module root or repo root:
-  ```sh
-  mkdir -p bin
-  go build -o bin/ .
-  ```
-- **Never commit binaries.** `bin/` is gitignored; remove any stray binary appearing in `git status` before committing.
+- Compile binaries into each module's gitignored `bin/` folder (`mkdir -p bin && go build -o bin/ .`), **never** to the module root or repo root.
+- Remove any stray binary appearing in `git status` before committing.
 
 ## Code conventions
 
-- **Check `pkg/` before writing any service helper**: Reuse existing helpers in `pkg/` (`pkg/sharedhttp`, `pkg/auth`, `pkg/events`, `pkg/env`, `pkg/dailytime`, `pkg/timestamptz`) instead of recreating them in a service. Only extract a new shared package into `pkg/` when duplicating across two or more services.
-- **Name things with domain context**: Avoid generic package-level names like `NewHandler` or `Builder`; include the domain (e.g., `NewDailyApiHandler`, `LoggerBuilder`).
+- **Reuse `pkg/` first**: Check existing packages under `pkg/` before writing service-local helpers; extract a new shared package into `pkg/` only when duplicating across two or more services.
+- **Name symbols with domain context**: Include the domain in package-level constructors and helpers (e.g., `NewDailyApiHandler`, `LoggerBuilder`).
 
 ## Handler and domain conventions
 
@@ -60,7 +56,7 @@ Read [ADR-0008](../adr/0008-handler-owned-interfaces-and-table-driven-tests.md),
 
 ## Shared infrastructure (`pkg/`)
 
-The on-the-wire contract lives in [`docs/specs/cross-cutting.md`](../specs/cross-cutting.md). Read the relevant ADR before touching cross-cutting subsystems:
+The on-the-wire contract lives in [`docs/specs/cross-cutting.md`](../specs/cross-cutting.md); the core implementations live in [`errors.go`](../../pkg/sharedhttp/errors.go), [`middleware.go`](../../pkg/sharedhttp/middleware.go), and [`pkg/auth/`](../../pkg/auth/). Read the relevant ADR before touching cross-cutting subsystems:
 
 | Subsystem | ADR | Read when… |
 | --- | --- | --- |
