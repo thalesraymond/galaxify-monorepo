@@ -1,4 +1,4 @@
-import { act, fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, screen, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
@@ -546,9 +546,10 @@ it('keeps a pending reward observable while the Ship page is visible', async () 
     () => screen.queryByRole('heading', { name: 'Ship', level: 1 }) !== null,
     'Ship page',
   )
-  expect(screen.getByText('Updating…')).toBeInTheDocument()
+  const materials = within(screen.getByRole('region', { name: 'Materials' }))
+  expect(materials.getByText('Updating…')).toBeInTheDocument()
   await advanceFakeTime(10_000)
-  expect(screen.getByText('Update delayed')).toBeInTheDocument()
+  expect(materials.getByText('Update delayed')).toBeInTheDocument()
 })
 
 it('does not register retrospective History rows', async () => {

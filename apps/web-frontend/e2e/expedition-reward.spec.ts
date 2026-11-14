@@ -35,7 +35,7 @@ test('a resolved reward continues observing on the Ship page', async ({ page }) 
     .getByRole('navigation', { name: 'Primary' })
     .getByRole('link', { name: 'Ship' })
     .click()
-  await expect(page.getByText('Updating…')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Materials' }).getByText('Updating…')).toBeVisible()
   await page.evaluate(() => window.dispatchEvent(new Event('test:reward-applied')))
   await expect(page.getByRole('region', { name: 'Materials' }).getByText('330')).toBeVisible({
     timeout: 6_000,

@@ -25,6 +25,7 @@ import { repairShipAndCache } from '../api/shipQueries'
 import { useShipRepairReconciliation } from './useShipRepairReconciliation'
 import styles from './ShipStatusPanel.module.css'
 import { useShipBalanceGate } from './useShipBalanceGate'
+import { ShipHullDiagram } from './ShipHullDiagram'
 
 /** Why the Repair control is presently unavailable; shared by eligibility and typed errors. */
 type RepairBlocker = 'hull_full' | 'no_materials'
@@ -134,17 +135,23 @@ export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode }
       )
     }
     return (
-      <ContentSurface tone="raised" className={styles.loading} aria-busy="true">
-        <Skeleton lines={3} />
+      <ContentSurface className={styles.loading} aria-busy="true">
+        <Skeleton lines={1} />
+        <div className={styles.body}>
+          <div className={styles.diagramSkeleton}>
+            <Skeleton lines={1} />
+          </div>
+          <Skeleton lines={6} />
+        </div>
       </ContentSurface>
     )
   }
 
   if (shipState.kind === 'provisioning') {
     return (
-      <ContentSurface tone="raised" className={styles.stateBlock}>
+      <ContentSurface className={styles.stateBlock} aria-labelledby="ship-preparing-heading">
         <StatusBadge status="preparing" />
-        <h2>Preparing your Ship</h2>
+        <h2 id="ship-preparing-heading">Preparing your Ship</h2>
         <p>The Ship provisions shortly after signup. This usually takes a few seconds.</p>
         <Button variant="secondary" onClick={() => void shipQuery.refetch()}>
           Retry
@@ -169,10 +176,13 @@ export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode }
             : 'repair-summary'
 
   return (
-    <ContentSurface tone="raised" aria-labelledby="ship-status-heading" className={styles.panel}>
-      <h2 ref={statusHeadingRef} id="ship-status-heading" tabIndex={-1}>
-        Ship status
-      </h2>
+    <ContentSurface aria-labelledby="ship-status-heading" className={styles.panel}>
+      <div className={styles.header}>
+        <h2 ref={statusHeadingRef} id="ship-status-heading" tabIndex={-1}>
+          Ship status
+        </h2>
+        <span className={styles.secondary}>Level {ship.level}</span>
+      </div>
 
       {isStale ? (
         <div className={styles.stale}>
@@ -184,90 +194,98 @@ export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode }
         </div>
       ) : null}
 
-      <section className={styles.section} aria-labelledby="ship-hull-heading">
-        <h3 id="ship-hull-heading">Hull</h3>
-        <Gauge label="Hull health" value={ship.hull_health} max={100} />
-      </section>
+      <div className={styles.body}>
+        <ShipHullDiagram hull={ship.hull_health} />
+        <div className={styles.facts}>
+          <section
+            className={`${styles.section} ${styles.hull}`}
+            aria-labelledby="ship-hull-heading"
+          >
+            <h3 id="ship-hull-heading">Hull</h3>
+            <Gauge label="Hull health" value={ship.hull_health} max={100} />
+            <p className={styles.copy}>{ship.hull_health >= 100 ? 'Fully repaired' : 'Damaged'}</p>
+          </section>
+          <section className={styles.section} aria-labelledby="ship-materials-heading">
+            <h3 id="ship-materials-heading">Materials</h3>
+            <div className={styles.balanceRow}>
+              <strong>{ship.materials_balance}</strong>
+              {reconciliation.kind === 'updating' ? <StatusBadge status="updating" /> : null}
+              {reconciliation.kind === 'delayed' ? <StatusBadge status="delayed" /> : null}
+            </div>
+            {materialsSync}
 
-      <section className={styles.section} aria-labelledby="ship-materials-heading">
-        <h3 id="ship-materials-heading">Materials</h3>
-        <div className={styles.balanceRow}>
-          <strong>{ship.materials_balance}</strong>
-          {reconciliation.kind === 'updating' ? <StatusBadge status="updating" /> : null}
-          {reconciliation.kind === 'delayed' ? <StatusBadge status="delayed" /> : null}
-        </div>
-        {materialsSync}
-
-        {reconciliation.kind === 'delayed' ? (
-          <div className={styles.delayed}>
-            <p>
-              The repair is saved, but we could not confirm current Expedition readiness. You can
-              retry now.
-            </p>
-            <Button variant="secondary" onClick={retryReconciliation}>
-              Retry
-            </Button>
-          </div>
-        ) : null}
-
-        <div className={styles.repair}>
-          {balanceGate.state !== 'open' && repairBlocked !== 'hull_full' ? (
-            <div id="repair-balance-gate">
-              <StatusBadge status={balanceGate.state === 'stale' ? 'delayed' : 'updating'} />
-              <p>{balanceGate.reason}</p>
-              {balanceGate.state === 'stale' ? (
-                <Button variant="secondary" onClick={balanceGate.retry}>
+            {reconciliation.kind === 'delayed' ? (
+              <div className={styles.delayed}>
+                <p>
+                  The repair is saved, but we could not confirm current Expedition readiness. You
+                  can retry now.
+                </p>
+                <Button variant="secondary" onClick={retryReconciliation}>
                   Retry
                 </Button>
+              </div>
+            ) : null}
+
+            <div className={styles.repair}>
+              {balanceGate.state !== 'open' && repairBlocked !== 'hull_full' ? (
+                <div id="repair-balance-gate">
+                  <StatusBadge status={balanceGate.state === 'stale' ? 'delayed' : 'updating'} />
+                  <p>{balanceGate.reason}</p>
+                  {balanceGate.state === 'stale' ? (
+                    <Button variant="secondary" onClick={balanceGate.retry}>
+                      Retry
+                    </Button>
+                  ) : null}
+                  <LiveRegion message={balanceGate.reason} />
+                </div>
               ) : null}
-              <LiveRegion message={balanceGate.reason} />
-            </div>
-          ) : null}
-          {repairBlocked !== undefined ? (
-            <p id="repair-guidance" className={styles.copy}>
-              {blockerMessage(repairBlocked, 'eligibility')}{' '}
-              <Link to="/dailies" className={styles.link}>
-                Open Dailies
-              </Link>
-            </p>
-          ) : (
-            <p id="repair-summary" className={styles.copy}>
-              Spend materials; restoration varies.
-            </p>
-          )}
-          <Button
-            ref={repairButtonRef}
-            loading={repairMutation.isPending}
-            disabled={repairBlocked !== undefined || balanceGate.state !== 'open'}
-            aria-describedby={repairDescribedBy}
-            onClick={() => {
-              setRepairOutcome({ kind: 'none' })
-              repairMutation.mutate(getDownstreamSessionGeneration())
-            }}
-          >
-            Repair Ship
-          </Button>
-          {repairOutcome.kind !== 'none' ? (
-            <div ref={outcomeRegionRef} id="repair-outcome" className={styles.outcome}>
-              <RepairOutcomeMessage
-                outcome={repairOutcome}
-                onRetry={retryRepair}
+              <Button
+                ref={repairButtonRef}
+                loading={repairMutation.isPending}
                 disabled={repairBlocked !== undefined || balanceGate.state !== 'open'}
-                describedBy={repairDescribedBy}
-              />
+                aria-describedby={repairDescribedBy}
+                onClick={() => {
+                  setRepairOutcome({ kind: 'none' })
+                  repairMutation.mutate(getDownstreamSessionGeneration())
+                }}
+              >
+                Repair Ship
+              </Button>
+              {repairBlocked !== undefined ? (
+                <p id="repair-guidance" className={styles.copy}>
+                  {blockerMessage(repairBlocked, 'eligibility')}{' '}
+                  <Link to="/dailies" className={styles.link}>
+                    Open Dailies
+                  </Link>
+                </p>
+              ) : (
+                <p id="repair-summary" className={styles.copy}>
+                  Spend materials; restoration varies.
+                </p>
+              )}
+              {repairOutcome.kind !== 'none' ? (
+                <div ref={outcomeRegionRef} id="repair-outcome" className={styles.outcome}>
+                  <RepairOutcomeMessage
+                    outcome={repairOutcome}
+                    onRetry={retryRepair}
+                    disabled={repairBlocked !== undefined || balanceGate.state !== 'open'}
+                    describedBy={repairDescribedBy}
+                  />
+                </div>
+              ) : null}
+              <Disclosure summary="How repair works">
+                <p className={styles.copy}>
+                  Repairing spends materials up to the smaller of the missing hull and your balance.
+                  Each material restores a variable amount of hull.
+                </p>
+              </Disclosure>
             </div>
-          ) : null}
-          <Disclosure summary="How repair works">
-            <p className={styles.copy}>
-              Repairing spends materials up to the smaller of the missing hull and your balance.
-              Each material restores a variable amount of hull.
-            </p>
-          </Disclosure>
+          </section>
         </div>
-      </section>
+      </div>
 
       <p className={styles.secondary}>
-        Level {ship.level} · <ShipUpdatedAt key={ship.updated_at} updatedAt={ship.updated_at} />
+        <ShipUpdatedAt key={ship.updated_at} updatedAt={ship.updated_at} />
       </p>
 
       {reconciliation.kind === 'delayed' ? (

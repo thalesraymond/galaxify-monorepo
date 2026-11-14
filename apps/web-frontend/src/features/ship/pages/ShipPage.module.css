@@ -1,5 +1,5 @@
 .page {
   display: grid;
   gap: var(--space-6);
-  max-width: 40rem;
+  min-width: 0;
 }
