@@ -1,8 +1,13 @@
-import { useCallback, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 
 import {
+  captureDownstreamSession,
   downstreamReconciliation,
+  type BalanceGateInput,
+  type BalanceGateView,
+  type DownstreamExpectation,
   type DownstreamObservationPhase,
+  type SessionGuard,
 } from './downstreamReconciliation'
 
 export type DownstreamObservationView = {
@@ -32,4 +37,62 @@ export function useDownstreamObservation(key: string, active: boolean): Downstre
     downstreamReconciliation.retry(key)
   }, [key])
   return { phase, retry }
+}
+
+/** Subscribes to the session-owned expectations registered under `scope`. */
+export function useDownstreamExpectations<Meta = Record<string, unknown>>(
+  scope: string,
+): ReadonlyMap<string, DownstreamExpectation<Meta>> {
+  const subscribe = useCallback(
+    (onStoreChange: () => void) =>
+      downstreamReconciliation.subscribeExpectations(scope, onStoreChange),
+    [scope],
+  )
+  const getSnapshot = useCallback(
+    () => downstreamReconciliation.getExpectations<Meta>(scope),
+    [scope],
+  )
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
+/**
+ * Subscribes a balance-spending action surface to the session Balance Gate
+ * state machine and runs the bounded approval read after observation expiry.
+ */
+export function useBalanceGate(input: BalanceGateInput): BalanceGateView {
+  const { read, confirmedAt, hasRefreshError } = input
+  const getSnapshot = useCallback(
+    () =>
+      downstreamReconciliation.getBalanceGateState({
+        read,
+        confirmedAt,
+        hasRefreshError,
+      }),
+    [read, confirmedAt, hasRefreshError],
+  )
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => downstreamReconciliation.subscribeBalanceGate(onStoreChange),
+    [],
+  )
+  const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+
+  useEffect(() => {
+    downstreamReconciliation.syncBalanceGate({
+      read,
+      confirmedAt,
+      hasRefreshError,
+    })
+  }, [state, read, confirmedAt, hasRefreshError])
+
+  const retry = useCallback(() => {
+    downstreamReconciliation.retryBalanceGate(read)
+  }, [read])
+
+  return useMemo(() => ({ state, retry }), [state, retry])
+}
+
+/** Captures the active session guard for this mounted component instance. */
+export function useDownstreamSession(): SessionGuard {
+  const [session] = useState(captureDownstreamSession)
+  return session
 }

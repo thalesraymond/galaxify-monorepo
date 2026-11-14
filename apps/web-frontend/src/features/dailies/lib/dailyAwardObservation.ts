@@ -4,13 +4,12 @@ import type { ApiTransport } from '@/api/transport'
 import { getShip, observeShip, shipQueryKey, type ShipState } from '@/features/ship'
 import {
   downstreamReconciliation,
-  onClearDownstreamObservations,
   registerDownstreamObservation,
-  markBalanceGateExpired,
-  registerBalanceGateKey,
-  unregisterBalanceGateKey,
-  type DownstreamObservationPhase,
+  useDownstreamExpectations,
+  type DownstreamExpectation,
 } from '@/shared/reconciliation'
+
+export const DAILY_AWARD_SCOPE = 'daily:award'
 
 /**
  * One expected change per Daily: the typed material award its completion
@@ -21,10 +20,7 @@ export function dailyAwardObservationKey(dailyId: string): string {
   return `daily:${dailyId}:award`
 }
 
-/** What one Daily's expected award looks like right now. */
-export type DailyAwardExpectation = {
-  /** The shared module's phase for this Daily's expected award. */
-  readonly phase: DownstreamObservationPhase
+type DailyAwardMeta = {
   /** The confirmed Ship balance captured before the completion was submitted. */
   readonly baseline: number | undefined
   /** The balance seen by the last fresh Ship observation. */
@@ -32,40 +28,22 @@ export type DailyAwardExpectation = {
   readonly expectedAward: number
 }
 
-/**
- * Session-owned expectations. The shared module owns the observation
- * lifecycle; this store owns what the Daily feature means by it (the
- * pre-command baseline and the typed award) and survives a route change
- * because the expectation belongs to the Player session, not to a view.
- */
-const expectations = new Map<string, DailyAwardExpectation>()
-
-/** Phase subscriptions, so the store learns when a round changes phase. */
-const phaseSubscriptions = new Map<string, () => void>()
-
-const listeners = new Set<() => void>()
-
-/** Cached snapshot: `useSyncExternalStore` needs a stable identity. */
-let snapshot: ReadonlyMap<string, DailyAwardExpectation> = new Map()
-
-function publishSnapshot(): void {
-  snapshot = new Map(expectations)
-  for (const listener of [...listeners]) {
-    listener()
-  }
-}
+/** What one Daily's expected award looks like right now. */
+export type DailyAwardExpectation = DownstreamExpectation<DailyAwardMeta>
 
 /** Subscribes to expectation changes (registration, fresh facts, phase). */
 export function subscribeToDailyAwardExpectations(listener: () => void): () => void {
-  listeners.add(listener)
-  return () => {
-    listeners.delete(listener)
-  }
+  return downstreamReconciliation.subscribeExpectations(DAILY_AWARD_SCOPE, listener)
 }
 
 /** The current expectations, keyed by Daily id. */
 export function getDailyAwardExpectations(): ReadonlyMap<string, DailyAwardExpectation> {
-  return snapshot
+  return downstreamReconciliation.getExpectations<DailyAwardMeta>(DAILY_AWARD_SCOPE)
+}
+
+/** React hook subscribing to session-owned Daily award expectations. */
+export function useDailyAwardExpectations(): ReadonlyMap<string, DailyAwardExpectation> {
+  return useDownstreamExpectations<DailyAwardMeta>(DAILY_AWARD_SCOPE)
 }
 
 /**
@@ -99,8 +77,8 @@ export function confirmShipBalance(queryClient: QueryClient, transport: ApiTrans
  * A Daily id is a stable recurring definition: the same Daily can be
  * completed again later in the session. A completion while a round is still
  * in flight is ignored (that round keeps its budget, baseline, and award),
- * while a completion after the round expired replaces the expectation and
- * restarts the bounded budget with the new numbers.
+ * while a completion after the round settled or expired replaces the
+ * expectation and restarts the bounded budget with the new numbers.
  */
 export function registerDailyAwardObservation(
   dailyId: string,
@@ -109,68 +87,28 @@ export function registerDailyAwardObservation(
   queryClient: QueryClient,
   transport: ApiTransport,
 ): void {
-  const key = dailyAwardObservationKey(dailyId)
-  const phase = downstreamReconciliation.getPhase(key)
-  if (phase === 'updating') {
-    // A genuine in-flight round: its budget, baseline, and award stay as they
-    // are, so a second completion cannot disturb the running observation.
-    return
-  }
-  subscribeToPhases(dailyId)
-  // The expectation belongs to the session, not to the round: the round's
-  // closures read it from the store, so a restarted round judges the new
-  // baseline and award instead of the ones it started with.
-  expectations.set(dailyId, {
-    phase: 'updating',
-    baseline,
-    observed: undefined,
-    expectedAward,
-  })
-  publishSnapshot()
-  registerBalanceGateKey(key)
-  if (phase === 'delayed') {
-    // The previous round expired: restart its bounded budget with the fresh
-    // expectation.
-    downstreamReconciliation.retry(key)
-    return
-  }
-  registerDownstreamObservation({
-    key,
-    read: (signal) => observeShip(queryClient, transport, signal),
-    isSatisfied: (ship) => satisfiesExpectation(dailyId, ship),
-    publish: (ship) => {
-      publishObservation(dailyId, ship, queryClient)
+  registerDownstreamObservation<ShipState, DailyAwardMeta>({
+    key: dailyAwardObservationKey(dailyId),
+    id: dailyId,
+    scope: DAILY_AWARD_SCOPE,
+    gatesBalance: true,
+    onConflict: 'replace-when-settled',
+    meta: {
+      baseline,
+      observed: undefined,
+      expectedAward,
     },
+    read: (signal) => observeShip(queryClient, transport, signal),
+    publish: (ship, meta) => {
+      // Publish fresh Ship facts to the shared cache so every view renders the
+      // same observed facts, and record `observed` in session metadata before
+      // satisfaction is evaluated.
+      queryClient.setQueryData<ShipState>(shipQueryKey, ship)
+      const observed = ship.kind === 'ready' ? ship.ship.materials_balance : undefined
+      return observed !== meta.observed ? { ...meta, observed } : undefined
+    },
+    isSatisfied: (ship, meta) => satisfiesExpectation(ship, meta),
   })
-}
-
-/**
- * Drops every expectation. The Player session owns these records: logout, an
- * account change, or disposal must not leave a Daily looking reconciled.
- */
-function clearDailyAwardExpectations(): void {
-  for (const dailyId of expectations.keys()) {
-    unregisterBalanceGateKey(dailyAwardObservationKey(dailyId))
-  }
-  for (const detach of phaseSubscriptions.values()) {
-    detach()
-  }
-  phaseSubscriptions.clear()
-  if (expectations.size === 0) {
-    return
-  }
-  expectations.clear()
-  publishSnapshot()
-}
-
-/**
- * The expectation a round must use right now. It is read from the store on
- * every use and never captured when the round was registered: a restarted
- * round has to judge the fresh baseline and award, not the ones the previous
- * round started with.
- */
-function currentExpectation(dailyId: string): DailyAwardExpectation | undefined {
-  return expectations.get(dailyId)
 }
 
 /**
@@ -178,69 +116,9 @@ function currentExpectation(dailyId: string): DailyAwardExpectation | undefined 
  * that this Daily's own event was consumed: overlapping awards and spending
  * can satisfy it, and a spending change can delay it.
  */
-function satisfiesExpectation(dailyId: string, ship: ShipState): boolean {
-  const expectation = currentExpectation(dailyId)
-  if (expectation === undefined || expectation.baseline === undefined) {
+function satisfiesExpectation(ship: ShipState, meta: DailyAwardMeta): boolean {
+  if (meta.baseline === undefined || ship.kind !== 'ready') {
     return false
   }
-  if (ship.kind !== 'ready') {
-    return false
-  }
-  return ship.ship.materials_balance - expectation.baseline >= expectation.expectedAward
+  return ship.ship.materials_balance - meta.baseline >= meta.expectedAward
 }
-
-/**
- * Publishes the fresh Ship facts to the shared Ship query, so every view
- * renders the same observed facts instead of a row-local balance.
- */
-function publishObservation(dailyId: string, ship: ShipState, queryClient: QueryClient): void {
-  const expectation = currentExpectation(dailyId)
-  if (expectation !== undefined) {
-    expectations.set(dailyId, {
-      ...expectation,
-      observed: ship.kind === 'ready' ? ship.ship.materials_balance : undefined,
-    })
-    publishSnapshot()
-  }
-  queryClient.setQueryData<ShipState>(shipQueryKey, ship)
-}
-
-/**
- * Follows the shared module's phase for one Daily's expected award. The
- * listener is phase-only: the store learns the round's phase, but it never
- * counts as a visible observer of the affected Ship balance, so reads still
- * pause while no view displays the completed row (spec §3.2).
- */
-function subscribeToPhases(dailyId: string): void {
-  const key = dailyAwardObservationKey(dailyId)
-  const previous = phaseSubscriptions.get(dailyId)
-  if (previous !== undefined) {
-    previous()
-  }
-  const detach = downstreamReconciliation.subscribeToPhase(key, () => {
-    notifyPhase(dailyId)
-  })
-  phaseSubscriptions.set(dailyId, detach)
-}
-
-function notifyPhase(dailyId: string): void {
-  const phase = downstreamReconciliation.getPhase(dailyAwardObservationKey(dailyId))
-  const expectation = expectations.get(dailyId)
-  if (phase === 'idle') {
-    unregisterBalanceGateKey(dailyAwardObservationKey(dailyId))
-  } else {
-    registerBalanceGateKey(dailyAwardObservationKey(dailyId))
-  }
-  if (phase === 'delayed' && expectation !== undefined && expectation.phase !== 'delayed') {
-    markBalanceGateExpired()
-  }
-  if (expectation === undefined || expectation.phase === phase) {
-    return
-  }
-  expectations.set(dailyId, { ...expectation, phase })
-  publishSnapshot()
-}
-
-// The session boundary clears the module's rounds and this store together, so
-// no expectation outlives the Player session that created it.
-onClearDownstreamObservations(clearDailyAwardExpectations)

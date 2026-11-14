@@ -6,7 +6,7 @@ import { Link } from 'react-router'
 
 import { isApiHttpError, isApiTransportError } from '@/api/transport'
 import { useApiTransport } from '@/shared/api/TransportContext'
-import { getDownstreamSessionGeneration } from '@/shared/reconciliation'
+import { captureDownstreamSession, type SessionGuard } from '@/shared/reconciliation'
 import {
   Button,
   ContentSurface,
@@ -60,9 +60,9 @@ export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode }
   )
 
   const repairMutation = useMutation({
-    mutationFn: (generation: number) => repairShipAndCache(queryClient, transport, generation),
-    onSuccess: (_ship, generation) => {
-      if (generation !== getDownstreamSessionGeneration()) return
+    mutationFn: (session: SessionGuard) => repairShipAndCache(queryClient, transport, session),
+    onSuccess: (_ship, session) => {
+      if (!session.isCurrent()) return
       // The Expedition service caches Ship state privately; invalidate its
       // queries so visible downstream data reconciles (`web-frontend.md` §3.4).
       void queryClient.invalidateQueries({ queryKey: ['expeditions'] })
@@ -71,8 +71,8 @@ export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode }
       setRepairSucceededAt((round) => round + 1)
       beginReconciliation()
     },
-    onError: (error: unknown, generation: number) => {
-      if (generation !== getDownstreamSessionGeneration()) return
+    onError: (error: unknown, session: SessionGuard) => {
+      if (!session.isCurrent()) return
       setRepairOutcome(classifyRepairError(error))
     },
   })
@@ -119,7 +119,7 @@ export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode }
     if (balanceGate.state !== 'open') return
     setRepairOutcome({ kind: 'none' })
     repairButtonRef.current?.focus()
-    repairMutation.mutate(getDownstreamSessionGeneration())
+    repairMutation.mutate(captureDownstreamSession())
   }
 
   const shipState = shipQuery.data
@@ -246,7 +246,7 @@ export function ShipStatusPanel({ materialsSync }: { materialsSync?: ReactNode }
                 aria-describedby={repairDescribedBy}
                 onClick={() => {
                   setRepairOutcome({ kind: 'none' })
-                  repairMutation.mutate(getDownstreamSessionGeneration())
+                  repairMutation.mutate(captureDownstreamSession())
                 }}
               >
                 Repair Ship

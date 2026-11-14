@@ -1,14 +1,11 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId } from 'react'
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { Button, ContentSurface, Skeleton, StatusBadge, UnavailableState } from '@/shared/ui'
 import { useApiTransport } from '@/shared/api/TransportContext'
 import { isApiHttpError } from '@/api/transport'
-import {
-  getDownstreamSessionGeneration,
-  type DownstreamObservationPhase,
-} from '@/shared/reconciliation'
+import { useDownstreamSession, type DownstreamObservationPhase } from '@/shared/reconciliation'
 
 import type { Expedition } from '../api/expeditionApi'
 import { expeditionDetailQueryKeyFor, getExpeditionById } from '../api/expeditionApi'
@@ -46,7 +43,7 @@ export function ResultPanel({
 }) {
   const transport = useApiTransport()
   const queryClient = useQueryClient()
-  const [sessionGeneration] = useState(getDownstreamSessionGeneration)
+  const session = useDownstreamSession()
   const query = useQuery({
     queryKey: expeditionDetailQueryKeyFor(expeditionId),
     queryFn: ({ signal }) => getExpeditionById(transport, expeditionId, signal),
@@ -56,9 +53,9 @@ export function ResultPanel({
 
   const expedition = query.data
   useEffect(() => {
-    if (expedition !== undefined && sessionGeneration === getDownstreamSessionGeneration())
+    if (expedition !== undefined && session.isCurrent())
       registerExpeditionReward(expedition, queryClient, transport)
-  }, [expedition, queryClient, transport, sessionGeneration])
+  }, [expedition, queryClient, transport, session])
   const resultMissing = isExpeditionResultMissing(expedition)
   const resultObservation = useExpeditionResultReconciliation(expeditionId, expedition)
 

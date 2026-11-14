@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 
 import type { ApiTransport } from '@/api/transport'
-import { getDownstreamSessionGeneration } from '@/shared/reconciliation'
+import { captureDownstreamSession, type SessionGuard } from '@/shared/reconciliation'
 
 import {
   getShip,
@@ -85,12 +85,12 @@ export async function observeShip(
 export async function repairShipAndCache(
   queryClient: QueryClient,
   transport: ApiTransport,
-  generation = getDownstreamSessionGeneration(),
+  session: SessionGuard = captureDownstreamSession(),
 ) {
   const ship = await repairShip(transport)
-  if (generation !== getDownstreamSessionGeneration()) return ship
+  if (!session.isCurrent()) return ship
   await queryClient.cancelQueries({ queryKey: shipQueryKey, exact: true })
-  if (generation !== getDownstreamSessionGeneration()) return ship
+  if (!session.isCurrent()) return ship
   const published = { kind: 'ready', ship } satisfies ShipState
   queryClient.setQueryData(shipQueryKey, published)
   markShipPublished(published)

@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   DownstreamReconciliation,
+  DownstreamSessionChangedError,
   clearDownstreamObservations,
+  createTestReconciliationEnvironment,
   getDownstreamSessionGeneration,
 } from './downstreamReconciliation'
 
@@ -541,5 +543,322 @@ describe('DownstreamReconciliation', () => {
     store.clear()
 
     expect(cleanup).not.toHaveBeenCalled()
+  })
+})
+
+describe('DownstreamReconciliation deepened capabilities', () => {
+  it('runs the bounded 1/2/4/8s schedule and availability pause/resume on a test environment without fake timers', async () => {
+    const testEnv = createTestReconciliationEnvironment({ now: 1_000, wallNow: 50_000 })
+    const store = new DownstreamReconciliation(testEnv.env)
+    try {
+      const { read, calls } = createRead()
+      store.subscribe(KEY, () => {})
+      store.register({ key: KEY, read, isSatisfied: () => false, publish: () => {} })
+
+      expect(calls).toHaveLength(1)
+      calls[0]?.resolve('still-stale')
+      await testEnv.advance(0)
+      expect(testEnv.pendingTimers()).toBe(1)
+
+      await testEnv.advance(999)
+      expect(calls).toHaveLength(1)
+      await testEnv.advance(1)
+      expect(calls).toHaveLength(2)
+      calls[1]?.resolve('still-stale')
+      await testEnv.advance(0)
+
+      // Pause availability: active elapsed budget freezes until available again.
+      testEnv.setAvailable(false)
+      await testEnv.advance(60_000)
+      expect(calls).toHaveLength(2)
+      expect(store.getPhase(KEY)).toBe('updating')
+
+      testEnv.setAvailable(true)
+      await testEnv.advance(999)
+      expect(calls).toHaveLength(2)
+      await testEnv.advance(1)
+      expect(calls).toHaveLength(3)
+      calls[2]?.resolve('still-stale')
+      await testEnv.advance(0)
+      await testEnv.advance(2_000)
+      expect(calls).toHaveLength(4)
+      calls[3]?.resolve('still-stale')
+      await testEnv.advance(0)
+      await testEnv.advance(4_000)
+      expect(calls).toHaveLength(5)
+      calls[4]?.resolve('still-stale')
+      await testEnv.advance(0)
+      expect(store.getPhase(KEY)).toBe('delayed')
+    } finally {
+      store.dispose()
+    }
+  })
+
+  it('evaluates atomic publish -> isSatisfied with updated metadata and retains settled scoped expectations', async () => {
+    type AwardMeta = {
+      readonly baseline: number
+      readonly observed: number | undefined
+      readonly expectedDelta: number
+    }
+    const testEnv = createTestReconciliationEnvironment()
+    const store = new DownstreamReconciliation(testEnv.env)
+    const scopeListener = vi.fn()
+    try {
+      store.subscribeExpectations('daily:award', scopeListener)
+      store.subscribe('daily:d1:award', () => {})
+
+      let factsToReturn = 15
+      store.register<number, AwardMeta>({
+        key: 'daily:d1:award',
+        id: 'd1',
+        scope: 'daily:award',
+        meta: { baseline: 10, observed: undefined, expectedDelta: 10 },
+        read: () => Promise.resolve(factsToReturn),
+        publish: (facts, meta) => ({ ...meta, observed: facts }),
+        isSatisfied: (_facts, meta) =>
+          meta.observed !== undefined && meta.observed - meta.baseline >= meta.expectedDelta,
+      })
+
+      await testEnv.advance(0)
+      const midSnapshot = store.getExpectations<AwardMeta>('daily:award').get('d1')
+      expect(midSnapshot).toEqual({
+        key: 'daily:d1:award',
+        id: 'd1',
+        phase: 'updating',
+        baseline: 10,
+        observed: 15,
+        expectedDelta: 10,
+      })
+
+      factsToReturn = 22
+      await testEnv.advance(1_000)
+      const doneSnapshot = store.getExpectations<AwardMeta>('daily:award').get('d1')
+      expect(doneSnapshot).toEqual({
+        key: 'daily:d1:award',
+        id: 'd1',
+        phase: 'idle',
+        baseline: 10,
+        observed: 22,
+        expectedDelta: 10,
+      })
+      expect(scopeListener).toHaveBeenCalled()
+
+      store.clear()
+      expect(store.getExpectations<AwardMeta>('daily:award').size).toBe(0)
+    } finally {
+      store.dispose()
+    }
+  })
+
+  it('enforces once-per-session, replace-when-settled, and restart conflict policies', async () => {
+    type CountMeta = { readonly target: number }
+    const testEnv = createTestReconciliationEnvironment()
+    const store = new DownstreamReconciliation(testEnv.env)
+    try {
+      store.subscribe('once', () => {})
+      store.subscribe('replace', () => {})
+      store.subscribe('restart', () => {})
+
+      const onceRead = createRead()
+      store.register<string, CountMeta>({
+        key: 'once',
+        scope: 'test:once',
+        onConflict: 'once-per-session',
+        meta: { target: 1 },
+        read: onceRead.read,
+        isSatisfied: (facts) => facts === 'ok',
+      })
+      onceRead.calls[0]?.resolve('ok')
+      await testEnv.advance(0)
+      expect(store.getPhase('once')).toBe('idle')
+
+      // Even after settling, once-per-session refuses duplicate registrations in the same session.
+      const duplicateOnce = createRead()
+      store.register<string, CountMeta>({
+        key: 'once',
+        scope: 'test:once',
+        onConflict: 'once-per-session',
+        meta: { target: 99 },
+        read: duplicateOnce.read,
+        isSatisfied: () => false,
+      })
+      expect(duplicateOnce.calls).toHaveLength(0)
+      expect(store.getExpectations<CountMeta>('test:once').get('once')?.target).toBe(1)
+
+      // replace-when-settled ignores while updating, then replaces once settled/delayed.
+      const replaceFirst = createRead()
+      store.register<string, CountMeta>({
+        key: 'replace',
+        scope: 'test:replace',
+        onConflict: 'replace-when-settled',
+        meta: { target: 10 },
+        read: replaceFirst.read,
+        isSatisfied: () => true,
+      })
+      const replaceWhileUpdating = createRead()
+      store.register<string, CountMeta>({
+        key: 'replace',
+        scope: 'test:replace',
+        onConflict: 'replace-when-settled',
+        meta: { target: 20 },
+        read: replaceWhileUpdating.read,
+        isSatisfied: () => false,
+      })
+      expect(replaceWhileUpdating.calls).toHaveLength(0)
+
+      replaceFirst.calls[0]?.resolve('done')
+      await testEnv.advance(0)
+      expect(store.getPhase('replace')).toBe('idle')
+
+      const replaceAfterSettle = createRead()
+      store.register<string, CountMeta>({
+        key: 'replace',
+        scope: 'test:replace',
+        onConflict: 'replace-when-settled',
+        meta: { target: 30 },
+        read: replaceAfterSettle.read,
+        isSatisfied: () => false,
+      })
+      expect(replaceAfterSettle.calls).toHaveLength(1)
+      expect(store.getPhase('replace')).toBe('updating')
+      expect(store.getExpectations<CountMeta>('test:replace').get('replace')?.target).toBe(30)
+
+      // restart immediately cancels the active round and starts a fresh one.
+      const restartFirst = createRead()
+      store.register({
+        key: 'restart',
+        onConflict: 'restart',
+        read: restartFirst.read,
+        isSatisfied: () => false,
+      })
+      expect(restartFirst.calls).toHaveLength(1)
+
+      const restartSecond = createRead()
+      store.register({
+        key: 'restart',
+        onConflict: 'restart',
+        read: restartSecond.read,
+        isSatisfied: () => false,
+      })
+      expect(restartFirst.calls[0]?.signal.aborted).toBe(true)
+      expect(restartSecond.calls).toHaveLength(1)
+    } finally {
+      store.dispose()
+    }
+  })
+
+  it('drives the built-in Balance Gate through updating -> refreshing -> stale/open including 5s timeout and availability pause', async () => {
+    const testEnv = createTestReconciliationEnvironment({ now: 0, wallNow: 1_000 })
+    const store = new DownstreamReconciliation(testEnv.env)
+    const gateReads: Array<{
+      readonly signal: AbortSignal
+      resolve: (ok: boolean) => void
+      reject: (error: Error) => void
+    }> = []
+    const gateRead = (signal: AbortSignal): Promise<boolean> =>
+      new Promise<boolean>((resolve, reject) => {
+        gateReads.push({ signal, resolve, reject })
+        signal.addEventListener('abort', () => {
+          reject(new Error('aborted'))
+        })
+      })
+
+    try {
+      const gateListener = vi.fn()
+      const unsubscribeGate = store.subscribeBalanceGate(gateListener)
+      const roundRead = createRead()
+      store.register({
+        key: 'daily:g1:award',
+        gatesBalance: true,
+        read: roundRead.read,
+        isSatisfied: () => false,
+      })
+
+      const gateInput = { read: gateRead, confirmedAt: undefined, hasRefreshError: false }
+      expect(store.getBalanceGateState(gateInput)).toBe('updating')
+      expect(roundRead.calls).toHaveLength(1)
+
+      // Drive the observation to delayed expiry (marks at 0, 1s, 2s, 4s, 8s active).
+      roundRead.calls[0]?.reject(new Error('pending'))
+      await testEnv.advance(0)
+      await testEnv.advance(1_000)
+      roundRead.calls[1]?.reject(new Error('pending'))
+      await testEnv.advance(0)
+      await testEnv.advance(1_000)
+      roundRead.calls[2]?.reject(new Error('pending'))
+      await testEnv.advance(0)
+      await testEnv.advance(2_000)
+      roundRead.calls[3]?.reject(new Error('pending'))
+      await testEnv.advance(0)
+      await testEnv.advance(4_000)
+      roundRead.calls[4]?.reject(new Error('pending'))
+      await testEnv.advance(0)
+      expect(store.getPhase('daily:g1:award')).toBe('delayed')
+      expect(store.getBalanceGateState(gateInput)).toBe('refreshing')
+
+      // Sync starts the gate verification read and bounds it to 5s.
+      store.syncBalanceGate(gateInput)
+      expect(gateReads).toHaveLength(1)
+
+      await testEnv.advance(5_000)
+      expect(gateReads[0]?.signal.aborted).toBe(true)
+      expect(store.getBalanceGateState(gateInput)).toBe('stale')
+
+      // Player retries the gate verification read while keeping daily:g1:award delayed.
+      store.retryBalanceGate(gateRead)
+      expect(store.getPhase('daily:g1:award')).toBe('delayed')
+      expect(store.getBalanceGateState(gateInput)).toBe('refreshing')
+      expect(gateReads).toHaveLength(2)
+
+      // Going unavailable aborts the in-flight verification read and retries cleanly on return.
+      testEnv.setAvailable(false)
+      expect(gateReads[1]?.signal.aborted).toBe(true)
+      testEnv.setAvailable(true)
+      store.syncBalanceGate(gateInput)
+      expect(gateReads).toHaveLength(3)
+
+      // Settling the verification read with true opens the gate; a later confirmedAt also opens it.
+      gateReads[2]?.resolve(true)
+      await testEnv.advance(0)
+      expect(store.getBalanceGateState(gateInput)).toBe('open')
+      expect(
+        store.getBalanceGateState({
+          read: gateRead,
+          confirmedAt: 2_000,
+          hasRefreshError: false,
+        }),
+      ).toBe('open')
+
+      unsubscribeGate()
+    } finally {
+      store.dispose()
+    }
+  })
+
+  it('guards session-scoped callbacks with SessionGuard isCurrent, run, and assertCurrent', () => {
+    const testEnv = createTestReconciliationEnvironment()
+    const store = new DownstreamReconciliation(testEnv.env)
+    try {
+      const session = store.captureSession()
+      expect(session.isCurrent()).toBe(true)
+      expect(() => {
+        session.assertCurrent()
+      }).not.toThrow()
+      expect(session.run(() => 42)).toBe(42)
+
+      store.clear()
+      const effect = vi.fn(() => 'should-not-run')
+      expect(session.isCurrent()).toBe(false)
+      expect(session.run(effect)).toBeUndefined()
+      expect(effect).not.toHaveBeenCalled()
+      expect(() => {
+        session.assertCurrent('Custom session guard error.')
+      }).toThrow(DownstreamSessionChangedError)
+      expect(() => {
+        session.assertCurrent('Custom session guard error.')
+      }).toThrow('Custom session guard error.')
+    } finally {
+      store.dispose()
+    }
   })
 })
