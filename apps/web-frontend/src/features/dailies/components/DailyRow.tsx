@@ -3,6 +3,7 @@ import { Link } from 'react-router'
 import type { Daily } from '@/api/generated/daily/types.gen'
 import { useDownstreamObservation } from '@/shared/reconciliation'
 import { Button, LiveRegion, StatusBadge } from '@/shared/ui'
+import { classNames } from '@/shared/ui/classNames'
 
 import type { CompletionFailure, ReconciliationState } from '../hooks/useDailyCompletion'
 import { dailyAwardObservationKey } from '../lib/dailyAwardObservation'
@@ -40,8 +41,11 @@ export function DailyRow({
   onRetryReconciliation: () => void
 }) {
   const reward = difficultyMeta?.reward
+  const damage = difficultyMeta?.damage
   const stakes =
-    reward === undefined ? daily.difficulty : `${daily.difficulty} · +${reward} materials`
+    reward === undefined || damage === undefined
+      ? daily.difficulty
+      : `${daily.difficulty} · +${reward} materials · −${damage} hull if missed`
 
   // The completed row displays the affected Ship balance, so it is the visible
   // observer of the expected award: while the row is mounted the bounded round
@@ -51,37 +55,53 @@ export function DailyRow({
 
   return (
     <div className={styles.row} id={`daily-row-${daily.id}`}>
-      <div className={styles.rowHead}>
-        <h3
-          aria-current={isCurrent ? 'true' : undefined}
-          className={styles.title}
-          ref={titleRef}
-          tabIndex={-1}
-        >
-          {daily.title}
-        </h3>
-        <span className={styles.status}>
-          {daily.status === 'COMPLETED' ? 'Completed' : 'Pending'}
-        </span>
+      <div className={styles.text}>
+        <div className={styles.rowHead}>
+          <h3
+            aria-current={isCurrent ? 'true' : undefined}
+            className={styles.title}
+            ref={titleRef}
+            tabIndex={-1}
+          >
+            {daily.title}
+          </h3>
+          <span
+            className={classNames(
+              styles.status,
+              daily.status === 'COMPLETED' ? styles.statusCompleted : undefined,
+            )}
+          >
+            {daily.status === 'COMPLETED' ? 'Completed' : 'Pending'}
+          </span>
+        </div>
+        {daily.description !== '' ? (
+          <p className={styles.description}>{daily.description}</p>
+        ) : null}
+        <dl className={styles.facts}>
+          <div>
+            <dt>Due</dt>
+            <dd>{dueTimeContext(daily.due_local_time, daily.time_zone)}</dd>
+          </div>
+          <div>
+            <dt>Difficulty</dt>
+            <dd>{stakes}</dd>
+          </div>
+        </dl>
       </div>
-      {daily.description !== '' ? <p className={styles.description}>{daily.description}</p> : null}
-      <dl className={styles.facts}>
-        <div>
-          <dt>Due</dt>
-          <dd>{dueTimeContext(daily.due_local_time, daily.time_zone)}</dd>
-        </div>
-        <div>
-          <dt>Difficulty</dt>
-          <dd>{stakes}</dd>
-        </div>
-      </dl>
 
       <div className={styles.actions}>
+        <Link className={styles.editLink} to={`/dailies/${daily.id}/edit`}>
+          Edit
+        </Link>
+        <Button aria-label={`Delete ${daily.title}`} variant="danger" onClick={onDelete}>
+          Delete
+        </Button>
         {daily.status === 'PENDING' ? (
           <Button
             aria-label={`Complete ${daily.title}`}
             disabled={completing}
             loading={completing}
+            variant="secondary"
             onClick={onComplete}
           >
             Complete
@@ -93,17 +113,6 @@ export function DailyRow({
               : `Completed · +${reconciliation.expectedAward} materials`}
           </span>
         )}
-        <Link className={styles.editLink} to={`/dailies/${daily.id}/edit`}>
-          Edit
-        </Link>
-        <Button
-          aria-label={`Delete ${daily.title}`}
-          className={styles.deleteButton}
-          variant="quiet"
-          onClick={onDelete}
-        >
-          Delete
-        </Button>
       </div>
 
       {reconciliation !== undefined ? (

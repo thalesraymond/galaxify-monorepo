@@ -1,23 +1,21 @@
 .row {
-  display: grid;
-  gap: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3) var(--space-5);
+  flex-wrap: wrap;
   padding: var(--space-4) 0;
-  border-top: 1px solid color-mix(in srgb, var(--color-ink) 18%, transparent);
 }
 
-.row:first-child {
-  border-top: 0;
-}
-
-.row:focus-visible {
+.row:has(.title[aria-current='true']) {
+  outline: 2px solid var(--color-data);
   outline-offset: 4px;
 }
 
-.row[aria-current='true'] {
-  border-radius: var(--radius-control);
-  background: color-mix(in srgb, var(--color-amber) 18%, transparent);
-  padding-left: var(--space-3);
-  padding-right: var(--space-3);
+.text {
+  display: grid;
+  gap: var(--space-2);
+  flex: 1 1 22rem;
+  min-width: 0;
 }
 
 .rowHead {
@@ -25,53 +23,58 @@
   align-items: baseline;
   gap: var(--space-3);
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .title {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .status {
-  border: 1px solid color-mix(in srgb, var(--color-ink) 30%, transparent);
-  border-radius: 999px;
-  padding: var(--space-1) var(--space-2);
   font-size: 0.875rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-weight: 500;
+  color: var(--color-muted);
+}
+
+.statusCompleted {
+  color: var(--color-data);
 }
 
 .description {
   margin: 0;
-  color: var(--color-text-muted-light);
+  color: var(--color-muted);
   font-size: 0.875rem;
+  overflow-wrap: anywhere;
 }
 
 .facts {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2) var(--space-4);
+  gap: var(--space-1) var(--space-4);
   margin: 0;
+  min-width: 0;
 }
 
 .facts > div {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
+  min-width: 0;
 }
 
 .facts dt {
-  color: var(--color-text-muted-light);
+  color: var(--color-muted);
   font-size: 0.875rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .facts dd {
   margin: 0;
   font-size: 0.875rem;
+  overflow-wrap: anywhere;
 }
 
 .actions {
@@ -79,29 +82,39 @@
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .completedLabel {
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
-  font-weight: 700;
-  color: var(--color-text-muted-light);
+  min-height: var(--touch-target);
+  padding: var(--space-2) 0.875rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-muted);
 }
 
 .editLink {
   display: inline-flex;
-  min-height: 44px;
+  min-height: var(--touch-target);
   align-items: center;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) 0.875rem;
+  border: 1px solid var(--color-control);
   border-radius: var(--radius-control);
   color: var(--color-ink);
-  font-weight: 700;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.2;
   text-decoration: none;
 }
 
-.deleteButton {
-  color: var(--color-danger-strong);
+@media (hover: hover) and (pointer: fine) {
+  .editLink:hover {
+    background: var(--color-raised);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
 }
 
 .reconcile {
@@ -109,11 +122,11 @@
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-control);
-  background: color-mix(in srgb, var(--color-mint) 22%, transparent);
+  flex: 1 1 100%;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-notice);
+  background: var(--color-raised);
   font-size: 0.875rem;
-  font-weight: 700;
 }
 
 .failure {
@@ -121,13 +134,33 @@
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid color-mix(in srgb, var(--color-danger) 45%, transparent);
-  border-radius: var(--radius-control);
-  background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+  flex: 1 1 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-notice);
+  background: var(--color-raised);
 }
 
 .failure p {
   margin: 0;
-  color: var(--color-danger-strong);
+  color: var(--color-danger);
+  font-size: 0.875rem;
+}
+
+@media (max-width: 640px) {
+  .row {
+    align-items: flex-start;
+  }
+
+  .text {
+    flex-basis: 100%;
+  }
+
+  .actions {
+    flex: 1 1 100%;
+  }
+
+  .actions > :last-child {
+    margin-left: auto;
+  }
 }

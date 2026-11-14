@@ -297,6 +297,7 @@ export function DailiesListPage() {
           </EmptyState>
         ) : (
           <div className={styles.list} aria-busy={listQuery.isFetching || undefined}>
+            <h2 className={styles.dateHeading}>{formatOccurrenceDate(selectedDate)}</h2>
             {statusFilter !== 'COMPLETED' && pending.length > 0 ? (
               <section aria-labelledby="pending-dailies-heading" className={styles.section}>
                 <h2 id="pending-dailies-heading">Pending</h2>
@@ -379,7 +380,9 @@ export function DailiesListPage() {
         </div>
       </div>
 
-      <ContentSurface aria-label="Current Dailies">{body}</ContentSurface>
+      <ContentSurface aria-label="Current Dailies" className={styles.listSurface}>
+        {body}
+      </ContentSurface>
 
       {focusAnnouncement !== undefined ? <LiveRegion message={focusAnnouncement} /> : null}
 
