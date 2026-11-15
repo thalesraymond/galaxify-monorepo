@@ -164,3 +164,23 @@ Completed verification and cleanup for the After hours redesign (`#292` under ep
 - **Docs & design system alignment**: Reconciled `apps/web-frontend/DESIGN.md` (including `pyftsubset` Inter font provenance), `docs/specs/frontend-redesign.md`, `docs/specs/web-frontend-delivery.md`, `docs/specs/web-frontend-phase1-release-evidence.md`, and `docs/specs/web-frontend-accessibility-checklist.md` against base commit `galaxify-monorepo@f9339d1`.
 - **Verification & performance fixes**: Fixed 320 px horizontal reflow overflow on `AppErrorBoundary` (`min-width: 0; overflow-wrap: anywhere`) with route error-boundary checks shared via `e2e/route-error-boundary.ts`, added `DailyRow` `640`/`641` px breakpoint checks in `e2e/dailies-layout.spec.ts`, updated `e2e/real-stack-smoke.spec.ts` to match shipped forms and regions, refreshed `ship-reflow-chromium-linux.png` (`320×1091 -> 320×1031`), subsetted `inter.woff2` (`350,352 B -> 67,792 B` source, `67.79 kB` built), and adjusted `DashboardDailiesPanel` `.loading` min-height (`18rem -> 8.75rem`) to restore authenticated Dashboard Lighthouse (`0.84 -> 0.95`, LCP `4.4 s -> 2.9 s`, CLS `0.070 -> 0`).
 - **Automated results**: `npm run verify` (426 unit/integration tests, 6 orchestration tests, `api:check`, `bundle:check`, E2E/mock/cross-browser/a11y/visual, `/login` Lighthouse `0.98`), `npm run perf:dashboard` (`0.95`), and `real-stack-smoke` (Chromium against `make dev`) all pass. The human-only native screen-reader smoke (VoiceOver/Safari or NVDA/Chrome-or-Firefox) was **not performed** and blocks closing `#292`.
+
+## [2026-11-15] specify | Approved password-change contract (#332)
+
+The maintainer confirmed all three authentication/session decisions on issue
+#332, and the approved contract is now recorded in
+[`docs/specs/user-service.md`](../specs/user-service.md) section 9: an
+authenticated `POST /users/me/password` that requires the current password,
+reuses the signup new-password rules, and atomically persists the new hash
+while revoking every refresh-token family (including the caller's) with no
+replacement session. The contract is approved but not implemented; the
+section records the account-wide serialization boundary and the acceptance
+criteria the implementation must prove, including deterministic
+real-database concurrency tests.
+
+Refresh revocation is not instant JWT revocation: access tokens are verified
+locally via EdDSA/JWKS under ADR-0003, so already-issued access JWTs remain
+valid until their normal expiry, at most 15 minutes past the
+credential-change boundary. Denylists and signing-key rotation were
+explicitly left out of scope, preserving independent service verification at
+the cost of a bounded residual access window.

@@ -467,3 +467,38 @@ Each is independently shippable.
 - Audit log.
 - Email and password change via `PATCH /users/me`.
 - Key rotation (multiple active kids).
+
+---
+
+## 9. Approved post-Phase-1 password-change contract (#332)
+
+**Status:** Approved during triage on 2026-11-15; not implemented. Source: issue #332 and the maintainer's explicit approval of all three authentication/session decisions.
+
+### Request and response
+
+The implementation target is authenticated `POST /users/me/password` with JSON fields `current_password` and `new_password`. Require the current password even when the access token is valid. Validate the new password using the existing signup password rules, without introducing a new password policy. Return `204 No Content` on success with no access token or refresh token. The Player must log in again with the new password.
+
+Malformed or invalid input uses `422 VALIDATION_FAILED` and the existing field-error envelope. A wrong current password uses `401 USER_INVALID_CREDENTIALS` and leaves credentials and sessions unchanged. Existing authentication middleware handles missing or invalid access tokens. Database or hashing failures must not leave a partially changed password or partially revoked sessions; report failures using the existing error envelope without logging passwords or tokens.
+
+### Atomic credential change and account-wide refresh revocation
+
+Persist the new password hash and revoke every refresh-token family belonging to the Player, including the caller's family, in one transaction. Issue no replacement session. A failed or rolled-back operation preserves the previous credentials and refresh sessions.
+
+Serialize password changes with refresh rotation and password-based login/session issuance at an account-wide boundary. A concurrent operation using pre-change credentials must either finish before that boundary, with its refresh token included in the revocation, or be rejected after it. It must not leave a usable refresh token after the password-change commit. Revalidate credentials within that boundary so two concurrent changes cannot both succeed using the same stale password. Preserve token-family reuse detection and ordinary logout behavior.
+
+Access-token minting must respect the same credential-change ordering; delaying a response must not allow pre-change credentials to mint a newly timed JWT after the boundary and extend the approved residual-validity window.
+
+### Access-token residual validity
+
+Retain local EdDSA/JWKS verification under ADR-0003 and the existing 15-minute access-token lifetime. Previously issued access JWTs remain valid until their normal expiry, at most 15 minutes after the credential-change boundary. Revoking refresh tokens does not immediately invalidate access JWTs or cancel already accepted requests. The API and eventual UI must not describe this as immediate sign-out on every device.
+
+A token denylist, per-request account lookup, per-password-change signing-key rotation, and other immediate access-token revocation mechanisms are outside this ticket. This preserves independent service verification at the explicit cost of a bounded residual access window.
+
+### Implementation acceptance and scope
+
+- Prove success revokes refresh tokens from multiple independent families, including the caller, returns no replacement credentials, rejects the old password on subsequent login, and permits login with the new password.
+- Prove wrong current password, invalid new password, and transaction failure leave credentials and refresh sessions unchanged.
+- Use deterministic real-database concurrency tests for password change versus refresh, password change versus old-password login, and concurrent password changes. Assert that no pre-change session escapes revocation and no stale password authorizes a second change after the boundary.
+- Verify an already issued access JWT retains its existing expiry and is rejected when expired; do not equate refresh revocation with immediate access-token invalidation.
+- Update OpenAPI and conformance tests when the endpoint is implemented; keep the Phase-1 username-only `PATCH /users/me` contract unchanged.
+- Password recovery, email verification/change, new password-policy rules, and frontend account-security screens are separate work. Frontend flows belong to #353.
