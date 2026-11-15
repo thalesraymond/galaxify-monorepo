@@ -184,3 +184,14 @@ valid until their normal expiry, at most 15 minutes past the
 credential-change boundary. Denylists and signing-key rotation were
 explicitly left out of scope, preserving independent service verification at
 the cost of a bounded residual access window.
+
+## [2026-11-15] record | Approved (not implemented) ship snapshot revision contract for #324
+
+[ADR-0015](../adr/0015-ship-snapshot-aggregate-revisions.md) records the
+approved contract ordering `ShipStatusUpdated` snapshots by a per-Ship
+aggregate revision: version 2 payloads carry a strictly-increasing revision,
+the Expedition cache applies only strictly-newer revisions (lower/equal are
+no-ops, legacy v1 acknowledged), and existing Ships get a resumable
+revision-1 baseline backfill published through the shared outbox during a
+coordinated maintenance cutover. Phase 1 revision-blind upsert remains the
+delivered baseline until #324 lands.

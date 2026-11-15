@@ -147,3 +147,23 @@ This is future-proof: if we introduce variable duration or cancellation, the one
 - Variable expedition duration.
 - Expedition cancellation.
 - Procedural reward tables (beyond materials).
+
+## Approved follow-up: revision-ordered Ship projection (#324)
+
+**Status: approved contract, not implemented.** The Phase 1 behavior above
+remains the delivered baseline until #324 lands.
+
+[ADR-0015](../adr/0015-ship-snapshot-aggregate-revisions.md) defines the
+approved projection and maintenance contract. Valid version 2 Ship snapshots
+insert missing cache rows or update only when the incoming revision is
+strictly greater. Lower and equal revisions are successful no-ops that leave
+all cached fields, including `updated_at`, unchanged. Legacy version 1
+snapshots are acknowledged without application; invalid version 2 revisions
+and unsupported payload versions follow the existing error/dead-letter path.
+
+New-Player cache seeds remain hull 100, materials 0, revision 0, and
+insert-if-absent. Existing cache values start at revision 0 without being
+trusted as baselines. Keep launches unavailable until authoritative Ship
+baselines match the projection during the approved cutover. Update the
+Expedition worker's mirrored schema with the service schema when implementing
+revision storage. This does not make cached funding authoritative.

@@ -28,6 +28,11 @@ This wiki complements, and does not replace, [`docs/adr/`](../adr/) and
 
 ## Decisions
 
+- [Ship snapshot aggregate revisions (ADR-0015)](../adr/0015-ship-snapshot-aggregate-revisions.md) —
+  On 2026-11-15, #324 approved a per-Ship revision on version 2
+  `ShipStatusUpdated` payloads with strict-newer cache application, legacy
+  snapshot acknowledgment, and a coordinated backfill/cutover; approved
+  contract, not implemented.
 - [Wiki location](decisions/wiki-location.md) — On 2026-10-31, the agent wiki
   moved to `docs/wiki/` in this repository, not the personal Obsidian vault.
 - [Stack overlapping layout tickets](decisions/stacked-layout-prs.md) — On

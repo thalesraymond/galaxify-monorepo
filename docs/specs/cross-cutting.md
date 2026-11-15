@@ -574,3 +574,17 @@ Per-service implementation (User Service signup/login/refresh/JWKS endpoint;
 Daily/Ship/Expedition handlers and consumers) is specified in the per-service
 spec tickets (#9, #13, #12, #10), which are unblocked once these three
 implementation tickets land.
+
+## Approved follow-up: Ship snapshot payload version 2 (#324)
+
+**Status: approved contract, not implemented.** The version 1 event definitions
+above describe the delivered baseline.
+
+[ADR-0015](../adr/0015-ship-snapshot-aggregate-revisions.md) adds a required
+positive signed 64-bit `revision` to `ShipStatusUpdated` payload version 2.
+The envelope version remains unchanged. Aggregate revision orders committed
+writes to one Ship; it is distinct from schema version, event identity, and
+timestamps. Existing event-ID deduplication and transactional outbox semantics
+remain in force. The ADR specifies strict-newer cache application, legacy
+snapshot acknowledgment, validation failures, and the coordinated maintenance
+cutover; zero-downtime mixed-version operation is not required.
