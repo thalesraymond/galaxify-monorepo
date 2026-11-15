@@ -40,17 +40,26 @@ Every operation carries `x-implementation-status`:
   `x-planned-changes` and `x-ticket` describing the delta, and may be absent
   from the service's mux.
 
-Additive planned request fields (for example a Daily `time_zone`) are declared
-as optional properties with `x-implementation-status: planned`. Incompatible
-planned shapes (for example cursor-paginated Daily history or the typed
-Expedition reward) keep the operation modelling today's wire bytes and are
-described with a named `*-Planned`-style component schema plus
-`x-planned-changes`.
+Additive planned request fields are declared as optional properties with
+`x-implementation-status: planned`. Incompatible planned shapes keep the
+operation modelling today's wire bytes and are described with a named
+`*-Planned`-style component schema plus `x-planned-changes`.
 
 `planned` is a promise, not a permission: nothing marked `planned` is validated
 against a running service yet. When the follow-up backend ticket lands, flip the
 operation/property to `implemented`, add a conformance case, and remove the
-`x-ticket` note.
+`x-planned-changes` note.
+
+A `planned` component schema may exist without any operation referencing it:
+`MaterialEffect` in `daily-service.yaml` is a reserved, deferred shape —
+`DailyHistory` has no effects today and `dailyComplete` reports its award as
+`awarded_materials`. An unreferenced planned schema is not part of any request
+or response contract; it only surfaces in the generated frontend output as an
+exported declaration (type, Zod schema, index re-export). The schema does not
+link an implementation ticket.
+
+`x-ticket` on an `implemented` element records the ticket that shipped it;
+keep it as historical implementation reference rather than removing it.
 
 ## Validation and drift commands
 
@@ -113,70 +122,36 @@ and repeat in every service that imports the changed code.
 > `go vet`. CI does the same (see
 > [`.github/workflows/reusable-go-build.yml`](../../.github/workflows/reusable-go-build.yml)).
 
-## Frontend generation ordering constraint
+## Frontend generation
 
-The generated frontend wire types and Zod schemas are **not** part of this
-ticket. The npm scripts and generator dependencies land with the frontend
-package tooling (issue #142). This directory must not depend on
-`apps/web-frontend/package.json`, and no files may be created under
-`apps/web-frontend/` from here.
+The frontend package owns the generated wire types and Zod schemas under
+`apps/web-frontend/src/api/generated/{user,daily,ship,expedition}`. The
+generator is `@hey-api/openapi-ts`, configured by
+[`apps/web-frontend/openapi-ts.config.ts`](../../apps/web-frontend/openapi-ts.config.ts),
+which reads the four documents here and enables only the `@hey-api/typescript`
+and `zod` plugins — no HTTP client, SDK, or TanStack Query plugins (feature
+adapters own operations and query semantics).
 
-`make openapi-generate` is a stopgap for local inspection: it runs the pinned
-generator against `docs/openapi` and writes to the gitignored
-`.openapi-generated/`. It does not need the frontend package, and it passes no
-HTTP client or SDK plugins.
+After any contract change, regenerate and commit the output from
+`apps/web-frontend` (see its
+[`package.json`](../../apps/web-frontend/package.json)):
 
-### What issue #142 must add to `apps/web-frontend`
-
-`package.json` (fragment — merge into the existing manifest):
-
-```json
-{
-  "scripts": {
-    "api:generate": "openapi-ts -f openapi-ts.config.ts",
-    "api:check": "npm run api:generate && git diff --exit-code -- src/api/generated"
-  },
-  "dependencies": {
-    "zod": "4.6.4"
-  },
-  "devDependencies": {
-    "@hey-api/openapi-ts": "0.99.0",
-    "typescript": "5.6.3"
-  }
-}
+```sh
+npm run api:generate   # openapi-ts -f openapi-ts.config.ts
+npm run api:check      # generate, then git diff --exit-code -- src/api/generated
 ```
 
-`typescript@5.6.3` is the version verified to run `@hey-api/openapi-ts@0.99.0`;
-if the frontend pins a different TypeScript major, confirm the generator still
-runs before committing.
+`api:check` already runs inside `npm run verify`, so checked-in generated
+output that drifts from `docs/openapi` fails the frontend verify pipeline.
+The resolved generator, TypeScript, and zod versions are the ones in
+[`apps/web-frontend/package-lock.json`](../../apps/web-frontend/package-lock.json)
+— check the lockfile or `npm ls` rather than trusting this document.
 
-`openapi-ts.config.ts`:
+`make openapi-generate` at the repo root is a standalone scratch tool: it runs
+`npx -p typescript@5.6.3 -p @hey-api/openapi-ts@0.99.0 openapi-ts` against every
+document and writes to the gitignored `.openapi-generated/` directory. Its
+pinned versions are independent of the frontend toolchain and are not evidence
+of frontend compatibility; the target also deletes its output directory first.
 
-```ts
-import { defineConfig } from '@hey-api/openapi-ts';
-
-// Generated wire types and Zod schemas only. Do not add client, SDK,
-// TanStack Query, or component plugins (see docs/specs/web-frontend.md §6).
-export default defineConfig({
-  input: [
-    '../../docs/openapi/user-service.yaml',
-    '../../docs/openapi/daily-service.yaml',
-    '../../docs/openapi/ship-service.yaml',
-    '../../docs/openapi/expedition-service.yaml',
-  ],
-  output: [
-    'src/api/generated/user',
-    'src/api/generated/daily',
-    'src/api/generated/ship',
-    'src/api/generated/expedition',
-  ],
-  plugins: ['@hey-api/typescript', 'zod'],
-});
-```
-
-Run `npm run api:generate` after any contract change and commit the regenerated
-`src/api/generated/**`. `npm run api:check` fails CI when the checked-in output
-drifts from `docs/openapi`.
-
-The scripts must not be wired into `npm run verify` before this ticket's
-documents merge, because they read `docs/openapi/` at generation time.
+Ongoing frontend dependency upgrades (TypeScript, MSW, ESLint — e.g. PRs #218,
+#282, #283) are tracked separately and are outside the scope of this directory.
