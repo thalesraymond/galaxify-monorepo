@@ -29,6 +29,7 @@ Entry point for coding agents working in `galaxify-monorepo`. Keep global contex
 
 ## Global rules
 
+- **Work on a topic branch**: Before making changes or committing, check the current branch. If the worktree is on `main`, create and switch to an appropriately named `feat/`, `fix/`, `refactor/`, `docs/`, or other task branch. Never commit directly to local `main`.
 - **Verify every affected module**: Before reporting done, run the verification checks documented in the contextual guide for every changed module (and all dependents when `pkg/` changes).
 - **Keep Go binaries in `bin/`**: Compile service/worker binaries into each module's gitignored `bin/` directory; keep binaries out of git commits.
 - **Apply follow-up refinements**: Treat user refinements in the same session as required amendments and confirm they landed via `git diff`.
