@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
+import { expectRouteChunkErrorBoundary } from './route-error-boundary'
 import { expectAuthenticatedDashboard, seedAuthenticated } from './session'
 
 /** WCAG A/AA rule tags. A violation on any of these blocks the gate. */
@@ -71,4 +72,8 @@ test('form, loading, empty, error, and dialog states have no WCAG A/AA violation
     await page.keyboard.press('Escape')
     await expect(page.getByRole('dialog', { name: 'Delete Daily' })).toBeHidden()
   }
+})
+
+test('route error boundary has no WCAG A/AA accessibility violations', async ({ page }) => {
+  await expectRouteChunkErrorBoundary(page, expectNoWcagAaViolations)
 })

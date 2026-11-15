@@ -29,25 +29,6 @@
   --color-on-primary: #000000;
   --color-focus: #65bde9;
 
-  /* Temporary legacy aliases retained for unmigrated feature CSS (#287-#291) */
-  --color-shell-deep: var(--color-ground);
-  --color-shell: var(--color-surface);
-  --color-shell-raised: var(--color-raised);
-  --color-logbook: var(--color-surface);
-  --color-logbook-warm: var(--color-raised);
-  --color-logbook-edge: var(--color-border);
-  --color-text-on-dark: var(--color-ink);
-  --color-text-muted-dark: var(--color-muted);
-  --color-text-muted-light: var(--color-muted);
-  --color-amber: var(--color-primary);
-  --color-amber-strong: var(--color-data);
-  --color-mint: var(--color-data);
-  --color-mint-surface: var(--color-raised);
-  --color-danger-strong: var(--color-danger);
-  --color-danger-on-dark: var(--color-danger);
-  --color-danger-surface: var(--color-raised);
-  --color-text-on-danger: var(--color-danger);
-
   /* Typography */
   --font-display: 'Inter', sans-serif;
   --font-sans: 'Inter', sans-serif;
@@ -71,8 +52,6 @@
   --radius-input: 8px;
   --radius-notice: 8px;
   --radius-meter: 99px;
-  --radius-panel: var(--radius-section);
-  --radius-logbook: var(--radius-section);
 
   /* Layers, layout & motion */
   --z-base: 0;

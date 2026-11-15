@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { RouterProvider, createMemoryRouter } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -53,6 +54,34 @@ describe('AppErrorBoundary', () => {
       await screen.findByRole('heading', { level: 1, name: 'Something went wrong' }),
     ).toBeInTheDocument()
     expect(screen.getByText('404 Not Found')).toBeInTheDocument()
+
+    consoleError.mockRestore()
+  })
+
+  it('recovers from a route error back to Dashboard via Back to Dashboard', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const user = userEvent.setup()
+
+    const router = createMemoryRouter(
+      [
+        {
+          errorElement: <AppErrorBoundary />,
+          children: [
+            { path: '/broken', element: <BrokenRoute /> },
+            { path: '/dashboard', element: <h1>Dashboard</h1> },
+          ],
+        },
+      ],
+      { initialEntries: ['/broken'] },
+    )
+
+    render(<RouterProvider router={router} />)
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Something went wrong' }),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: 'Back to Dashboard' }))
+    expect(await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument()
 
     consoleError.mockRestore()
   })

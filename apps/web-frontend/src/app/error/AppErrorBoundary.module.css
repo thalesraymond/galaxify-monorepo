@@ -1,7 +1,9 @@
 .error {
   max-width: 760px;
+  min-width: 0;
   margin: var(--space-8) auto;
   padding: var(--space-6);
+  overflow-wrap: anywhere;
   border: 1px solid var(--color-danger);
   border-radius: var(--radius-section);
   background-color: var(--color-surface);
@@ -16,6 +18,7 @@
 }
 
 .description {
+  overflow-wrap: anywhere;
   color: var(--color-muted);
 }
 

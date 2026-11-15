@@ -1,4 +1,3 @@
-import { classNames } from './classNames'
 import styles from './PageHeader.module.css'
 
 export type PageHeaderProps = {
@@ -6,17 +5,15 @@ export type PageHeaderProps = {
   title: string
   /** Optional supporting sentence rendered below the heading. */
   description?: string
-  /** Legacy surface prop retained for compatibility during migration. */
-  tone?: 'on-dark' | 'on-light'
 }
 
 /**
  * Domain-neutral route header. Owns the single logical h1 for a route and
  * supports programmatic focus after route transitions.
  */
-export function PageHeader({ title, description, tone = 'on-dark' }: PageHeaderProps) {
+export function PageHeader({ title, description }: PageHeaderProps) {
   return (
-    <header className={classNames(styles.header, styles[tone])}>
+    <header className={styles.header}>
       <h1 className={styles.title} tabIndex={-1}>
         {title}
       </h1>
