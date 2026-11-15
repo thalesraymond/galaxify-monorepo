@@ -58,10 +58,6 @@ paths:
         `user.created`; the frontend treats it as a typed provisioning state.
       tags: [ship]
       x-implementation-status: implemented
-      x-planned-changes: >-
-        Treat a missing Ship after signup as a typed provisioning outcome
-        (documented `SHIP_NOT_FOUND`); ship status and repair are otherwise
-        unchanged for Phase 1.
       x-ticket: "#141"
       security:
         - bearerAuth: []

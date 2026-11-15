@@ -120,10 +120,23 @@ The service owns an `outbox` table (migration `007_outbox.sql`) plus the shared
 sqlc queries (`InsertOutbox`, `ListPendingOutbox`, `MarkOutboxPublished`).
 Registration and account deletion stage their `user.created` / `user.deleted`
 events **inside the same transaction** as the domain mutation, capturing the
-originating request ID. `main.go` wraps the mux with
-`pkg/events.OutboxDrainer.DrainAfterRequest(mux, 50)` so pending rows are
-published after each handled request (ADR-0004, cross-cutting §6). Consumer-side
-idempotency (`events.NewIdempotentHandler`) handles duplicate delivery.
+originating request ID — see
+[`registration.go`](../../apps/user-service/internal/handler/registration.go)
+and [`me.go`](../../apps/user-service/internal/handler/me.go). `main.go` wraps
+the mux with `pkg/events.OutboxDrainer.DrainAfterRequest(mux, 50)`: after each
+handled request it runs a bounded asynchronous drain of pending rows, calling
+`MarkPublished` only after a successful `Publish`
+([`pkg/events/outbox.go`](../../pkg/events/outbox.go)). Broker delivery is
+therefore asynchronous and independent of the HTTP response; only the staging
+is atomic with the domain write (ADR-0004, cross-cutting §6; ADR-0013
+supersedes ADR-0004 only for the Expedition ownership exception).
+`TestSignup` in
+[`registration_test.go`](../../apps/user-service/internal/handler/registration_test.go)
+and `TestDeleteMe` in
+[`me_test.go`](../../apps/user-service/internal/handler/me_test.go) cover the
+staged outbox payload and failure paths.
+Consumer-side idempotency (`events.NewIdempotentHandler`) handles duplicate
+delivery.
 
 ---
 
@@ -154,18 +167,22 @@ the cross-cutting error envelope and request ID middleware.
 
 **Handler flow:**
 
-1. Validate input → 422 `VALIDATION_FAILED` on failure.
-2. Normalize email: `LOWER(TRIM(email))`.
-3. Hash password with `auth.HashPassword`.
-4. `INSERT INTO users (email, username, password_hash)`.
+1. Validate input → 422 `VALIDATION_FAILED` on failure. Validation also
+   normalizes the email to `LOWER(TRIM(email))`.
+2. Hash password with `auth.HashPassword`.
+3. In a single transaction: `INSERT INTO users (email, username,
+   password_hash)` and `INSERT INTO outbox` staging the `user.created` event
+   with the originating request ID (see §5.1), then commit.
    - Email conflict → 409 `USER_EMAIL_TAKEN`.
    - Username conflict (functional index) → 409 `USER_USERNAME_TAKEN`.
-5. Generate refresh token (32 bytes, crypto/rand, base64url).
-6. `INSERT INTO refresh_tokens (user_id, token, family_id, expires_at)`
-   with a new `family_id` (UUID v4) and `expires_at = now() + 7 days`.
-7. Issue access token via `auth.IssueAccessToken(privKey, kid, userID, email)`.
-8. Naive-publish `user.created` event (see §5.1).
-9. Return 201.
+   - A rollback discards both the user row and the staged event.
+4. **After** the commit, `tokenIssuer.IssueSession` generates the refresh
+   token (32 bytes, crypto/rand, base64url), inserts it into
+   `refresh_tokens` with a new `family_id` (UUID v4) and
+   `expires_at = now() + 7 days`, and issues the access token via
+   `auth.IssueAccessToken(privKey, kid, userID, email)`. Session issuance is
+   not part of the user/outbox transaction.
+5. Return 201.
 
 **Response (201 Created):**
 
@@ -324,9 +341,11 @@ Password confirmation required to prevent stolen-token account deletion.
 
 1. Look up user by ID from context.
 2. `auth.ComparePasswordAndHash` → mismatch → 401 `USER_INVALID_CREDENTIALS`.
-3. `DELETE FROM users WHERE id = $1` — cascades to `refresh_tokens`.
-4. Naive-publish `user.deleted` event (see §5.2).
-5. Return 204 No Content.
+   The password is confirmed before any transaction begins.
+3. In a single transaction: `DELETE FROM users WHERE id = $1` (cascades to
+   `refresh_tokens`) and `INSERT INTO outbox` staging the `user.deleted`
+   event with the originating request ID (see §5.2), then commit.
+4. Return 204 No Content.
 
 ### 3.8 `GET /.well-known/jwks.json`
 
@@ -369,7 +388,9 @@ verify JWTs.
 
 ### 5.1 `user.created`
 
-Published on signup, after the user row is committed.
+Staged on signup inside the same transaction as the `users` insert (§3.1);
+published to the broker asynchronously by the outbox drainer after the
+request completes (§2.4).
 
 ```go
 // pkg/events/user_created.go (already exists)
@@ -386,7 +407,9 @@ transaction; the shared outbox drainer publishes it to `galaxify.events`.
 
 ### 5.2 `user.deleted`
 
-Published on account deletion, after the user row is deleted.
+Staged on account deletion inside the same transaction as the `users`
+delete (§3.7); published to the broker asynchronously by the outbox drainer
+(§2.4).
 
 ```go
 // pkg/events/user_deleted.go (new)

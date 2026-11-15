@@ -290,9 +290,6 @@ paths:
         occurrence is COMPLETED. Existing Daily History records are unchanged.
       tags: [dailies]
       x-implementation-status: implemented
-      x-planned-changes: >-
-        Permit edit after today's completion while preserving history.
-        Accept an IANA time_zone plus local deadline.
       x-ticket: "#147, #148"
       security:
         - bearerAuth: []
