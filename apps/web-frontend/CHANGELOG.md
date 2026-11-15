@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.0](https://github.com/thalesraymond/galaxify-monorepo/compare/web-frontend-v1.1.0...web-frontend-v1.2.0) (2026-11-14)
+
+
+### Features
+
+* **web-frontend:** align Expedition planning and outcomes with After hours ([#300](https://github.com/thalesraymond/galaxify-monorepo/issues/300)) ([9f63224](https://github.com/thalesraymond/galaxify-monorepo/commit/9f6322498fdefb8e436f25c68e464047af2b8c5e))
+* **web-frontend:** compose the After hours Dashboard summary ([#302](https://github.com/thalesraymond/galaxify-monorepo/issues/302)) ([f9339d1](https://github.com/thalesraymond/galaxify-monorepo/commit/f9339d1aa20c7bb633fb4a08d6a84522c4328bee))
+* **web-frontend:** establish After hours foundations and responsive navigation ([#293](https://github.com/thalesraymond/galaxify-monorepo/issues/293)) ([50ed28b](https://github.com/thalesraymond/galaxify-monorepo/commit/50ed28b86ba20e85737337599251a1ee3af67532))
+* **web-frontend:** restyle account forms and Profile ([#295](https://github.com/thalesraymond/galaxify-monorepo/issues/295)) ([11ddaa7](https://github.com/thalesraymond/galaxify-monorepo/commit/11ddaa7f85c917bcc3acab060540b31eadb628b7))
+* **web-frontend:** restyle Daily management and history ([#296](https://github.com/thalesraymond/galaxify-monorepo/issues/296)) ([173ff5d](https://github.com/thalesraymond/galaxify-monorepo/commit/173ff5dab14257eec5f6b3224f5e73d17d3169ba))
+* **web-frontend:** restyle Ship condition and repair ([#297](https://github.com/thalesraymond/galaxify-monorepo/issues/297)) ([771b87b](https://github.com/thalesraymond/galaxify-monorepo/commit/771b87b2d0421fee5386e8e7c4ea2bfecff7e17d))
+
 ## [1.1.0](https://github.com/thalesraymond/galaxify-monorepo/compare/web-frontend-v1.0.1...web-frontend-v1.1.0) (2026-11-01)
 
 
