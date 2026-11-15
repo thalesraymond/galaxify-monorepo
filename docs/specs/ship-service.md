@@ -74,3 +74,21 @@ Events are staged in the `outbox` table inside the domain transaction and later 
 - Ship upgrades/leveling logic (field exists in DB but is static)
 - Multiple ships per user
 - Equipment slots, fuel, customization, ship naming
+
+## Approved follow-up: Ship snapshot revisions (#324)
+
+**Status: approved contract, not implemented.** The Phase 1 behavior above
+remains the delivered baseline until #324 lands.
+
+[ADR-0015](../adr/0015-ship-snapshot-aggregate-revisions.md) defines the
+approved revision and cutover contract. Every successful existing-Ship write
+atomically advances its revision and stages a matching version 2 snapshot,
+including writes that leave values unchanged. Rollbacks and duplicate-event
+suppression do not advance it. New-Player provisioning remains revision 0
+without a snapshot; its first subsequent write emits revision 1.
+
+Existing Ships require a resumable authoritative revision 1 baseline backfill
+and explicit shared-outbox publication during maintenance. Normal Ship
+writers remain paused until Expedition baseline application is verified.
+The one-off maintenance command is included in #324; the general scheduled
+relay and funding serialization remain separate work.
