@@ -34,3 +34,14 @@ Entry point for coding agents working in `galaxify-monorepo`. Keep global contex
 - **Keep Go binaries in `bin/`**: Compile service/worker binaries into each module's gitignored `bin/` directory; keep binaries out of git commits.
 - **Apply follow-up refinements**: Treat user refinements in the same session as required amendments and confirm they landed via `git diff`.
 - **Inspect history on repeated prompts**: If the same prompt arrives verbatim twice, inspect `git status` and `git log` first and report what already landed.
+
+## Worker integration tests
+
+The workers carry `//go:build integration` tests that exercise `Tick` + `NewPgStore` against a real PostgreSQL. Each test spins up a private `initdb` cluster on a Unix socket in a temp dir (no TCP, no shared DB, no `DATABASE_URL`). Shared cluster/migration/commit-gate helpers live in `pkg/pgtest` (also build-tagged `integration`).
+
+**Prerequisites**: `initdb` and `pg_ctl` on `PATH` (a PostgreSQL server install), running as a non-root user. Missing tools fail the tests loudly rather than skipping.
+
+```bash
+(cd workers/daily-cron        && go test -tags=integration ./internal/cron -count=1)
+(cd workers/expedition-worker && go test -tags=integration ./internal/expedition -count=1)
+```
