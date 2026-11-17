@@ -439,6 +439,13 @@ Every Galaxify service provides a standard health check endpoint to indicate it 
 See ADR-0004 for the full rationale. This section records the schema and the
 Go helpers.
 
+**Trigger status.** The HTTP-triggered drain described below is the
+**delivered** implementation. [ADR-0016](../adr/0016-scheduled-outbox-relay.md)
+approves four per-database Azure Container Apps scheduled Jobs as the future
+trigger (approved contract, not implemented; tracked under #334). The schema,
+handler transaction, and drain semantics below are unchanged by that
+decision.
+
 ### Schema (per publishing service)
 
 ```sql
@@ -523,25 +530,49 @@ func (drainer *OutboxDrainer) Drain(ctx context.Context, maxRows int32) {
 }
 ```
 
-### Portability note (NOT the optimal solution)
+### Current trigger vs. approved scheduled relay
 
-The HTTP-triggered drain couples event latency to user activity. The pattern
-is **portable** to AWS Lambda / Azure Functions without changing the schema,
-handler transaction, or idempotency contract — replace the in-process
-goroutine with a scheduled Lambda invocation that polls the same `outbox`
-table every N seconds. Both rely on `FOR UPDATE SKIP LOCKED`.
+The HTTP-triggered drain couples event latency to user activity: with no
+traffic, committed `PENDING` rows wait for the next request. That trade-off
+was accepted for Phase 1 (see ADR-0004), and it remains the delivered
+behavior.
 
-A **dedicated scheduled worker** (timer-triggered Azure Function or separate
-worker container) would be the optimal solution for the always-free-tier
-deployment, because it decouples draining from user activity. We accept the
-HTTP-triggered trade-off because:
+[ADR-0016](../adr/0016-scheduled-outbox-relay.md) now approves the upgrade:
+four per-database ACA scheduled Jobs that drain each service's `outbox` table
+on a one-minute schedule through the same `OutboxBatch`/`OutboxDrainer` seam,
+preserving the schema, handler transaction, `FOR UPDATE SKIP LOCKED`
+arbitration, and `event_id`-based idempotency contract. Implementation is
+tracked under #334; until it ships, the delivered triggers are the
+HTTP-triggered drain and the productive-batch drains in `workers/daily-cron`
+and `workers/expedition-worker`.
 
-1. Phase 1's background-state-propagation semantics don't need
-   schedule-independent draining.
-2. The implementation is bounded (one helper, no separate resource to manage).
+### Approved scheduled-relay contract (not implemented)
 
-**If Phase 2 introduces real-time UX requirements (push notifications, live
-dashboards), upgrade to a dedicated scheduled worker.**
+Per ADR-0016, the scheduled relay is an **approved contract** with these
+core terms; the ADR is authoritative:
+
+- Four independently configured ACA Jobs (cron `* * * * *` UTC, one replica
+  per execution, shared image), each holding only its own service database
+  credentials plus necessary broker access. No central all-DB credential and
+  no in-app persistent polling; API scale-to-zero is preserved.
+- Finite executions: jobs exit even on empty tables, and each tick still
+  queries existing pending rows. Bounded `FOR UPDATE SKIP LOCKED` batches
+  (initial limit 50 rows, max 20 total attempted batches per invocation
+  including failed attempts) hold locks through publish ack, `MarkPublished`,
+  and commit — no early lock-release leases. A batch with any failed
+  publication counts as failed for retry/outcome purposes even if other rows
+  published; unpublished rows stay `PENDING` rather than being discarded.
+- Bounded operation: 45-second execution budget, max 3 consecutive failed
+  batch attempts with capped full-jitter backoff, cancellable I/O, bounded
+  SIGTERM cleanup, and no unbounded loops or platform retries.
+- At-least-once semantics: publish-then-crash may replay an event; consumers
+  dedupe on `event_id` and the relay never regenerates `event_id`,
+  `request_id`, `occurred_at`, or payload/event type. Failed publications
+  stay `PENDING`.
+- Delivery objective: two minutes from committed outbox write to confirmed
+  broker publish under healthy, within-capacity conditions only — not a hard
+  SLA or end-to-end projection guarantee.
+- The defaults above are unbenchmarked tunables, not deployed behavior.
 
 ### `workers/daily-cron` uses the outbox
 

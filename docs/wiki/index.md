@@ -28,6 +28,12 @@ This wiki complements, and does not replace, [`docs/adr/`](../adr/) and
 
 ## Decisions
 
+- [Scheduled outbox relay (ADR-0016)](../adr/0016-scheduled-outbox-relay.md) —
+  On 2026-11-16, #322 approved four per-database ACA scheduled Jobs draining
+  each service outbox every minute through the shared drainer seam, with
+  bounded batches, retries, and shutdown and a two-minute delivery objective;
+  approved contract, not implemented. The HTTP-triggered drain stays the
+  delivered baseline until #334 ships.
 - [Ship snapshot aggregate revisions (ADR-0015)](../adr/0015-ship-snapshot-aggregate-revisions.md) —
   On 2026-11-15, #324 approved a per-Ship revision on version 2
   `ShipStatusUpdated` payloads with strict-newer cache application, legacy

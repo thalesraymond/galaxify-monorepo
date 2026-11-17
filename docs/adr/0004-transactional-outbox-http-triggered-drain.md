@@ -1,8 +1,14 @@
 # ADR-0004: Transactional outbox pattern with HTTP-triggered drain
 
-- **Status:** Superseded in part by ADR-0013
+- **Status:** Superseded in part by ADR-0013; HTTP-only triggering superseded in part by ADR-0016
 - **Date:** 2026-08-31
 - **Source:** Phase 1 cross-cutting ticket [#11](https://github.com/thalesraymond/galaxify-monorepo/issues/11)
+
+> **2026-11-16 note:** [ADR-0016](0016-scheduled-outbox-relay.md) accepts
+> four per-database ACA scheduled Jobs as the approved future trigger. The
+> HTTP-triggered drain remains the delivered baseline until #334 ships; the
+> schema, transaction atomicity, and `request_id` correlation below stay in
+> force. The rest of this ADR is preserved as written.
 
 ## Context
 

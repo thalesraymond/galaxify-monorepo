@@ -195,3 +195,19 @@ no-ops, legacy v1 acknowledged), and existing Ships get a resumable
 revision-1 baseline backfill published through the shared outbox during a
 coordinated maintenance cutover. Phase 1 revision-blind upsert remains the
 delivered baseline until #324 lands.
+
+## [2026-11-16] specify | Approved (not implemented) scheduled outbox relay for #322
+
+[ADR-0016](../adr/0016-scheduled-outbox-relay.md) records the approved
+contract for idle outbox delivery: four per-database Azure Container Apps
+scheduled Jobs on a one-minute cron, each holding only its own service
+database credentials, reusing `OutboxBatch`/`OutboxDrainer` and bounded
+`FOR UPDATE SKIP LOCKED` batches (50 rows, max 20 batches, 45-second budget,
+3 consecutive failures with capped full-jitter backoff, bounded SIGTERM
+cleanup). At-least-once semantics are explicit: publish-then-crash may replay
+events with stable `event_id`/`request_id`/`occurred_at`/payload for
+transactional consumer dedupe, and failed publications stay `PENDING`. The
+two-minute commit-to-broker-ack objective applies only under healthy,
+within-capacity conditions. The HTTP-triggered drain (ADR-0004) remains the
+delivered baseline until implementation ticket #334 ships; recovery evidence
+is #347, DLQ/replay #336, metrics #338.
